@@ -1,5 +1,6 @@
 node_modules
-dist
+frontend/dist
+web/dist
 dist-release
 src-tauri/target
 src-tauri/gen

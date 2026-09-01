@@ -27,9 +27,21 @@ HOME 격자에서 학생 행의 `출석 · 눌러서 기록 추가`를 누르면
 
 ---
 
+## 저장소 구조
+
+```
+frontend/    데스크톱(Tauri) Vue 앱
+src-tauri/   Rust
+web/         웹앱 — GitHub Pages
+```
+
+데스크톱 앱과 웹앱은 별개다. 웹앱은 결석 번호를 짧은 코드로 바꾸는 계산만 하며
+서버도 DB도 쓰지 않는다. 학생 이름은 웹앱에 오지 않는다.
+
 ## 명령어
 
 사용자가 실행하는 것은 **셋뿐**이다. 나머지는 전부 이 셋의 조립이다.
+웹앱도 `web/`에서 같은 셋을 쓴다.
 
 ```bash
 npm install     # 처음 한 번 (SheetJS는 vendor/의 tarball에서 설치된다)
@@ -50,6 +62,7 @@ GitHub Actions로 돌린다.
 |---|---|---|
 | `ci.yml` | 모든 브랜치 push · PR | `npm test` → `npm run build -- --no-bundle` |
 | `release.yml` | 손으로 실행 (Actions 탭) | 버전 확인 → 테스트 → 빌드 → **초안** 릴리스 |
+| `pages.yml` | `web/` 변경 시 push | 웹앱 빌드 → GitHub Pages 배포 |
 
 - **윈도우 러너에서 돌린다.** 이 앱은 윈도우용이라 경로·파일 잠금처럼 윈도우에서만
   나는 문제를 같은 OS에서 잡아야 한다.
@@ -77,8 +90,8 @@ Welcome  →  초기 설정  →  HOME
 
 HOME이 일일 입력 격자다. 첫 실행에서만 앞의 두 화면을 지나간다.
 
-시각 디자인은 아직 정하지 않았다. 화면은 `src/components/ui/`의 프리미티브와
-`src/style.css`의 토큰만 쓰므로, 디자인을 정하면 그 두 곳만 고치면 된다.
+시각 디자인은 아직 정하지 않았다. 화면은 `frontend/src/components/ui/`의 프리미티브와
+`frontend/src/style.css`의 토큰만 쓰므로, 디자인을 정하면 그 두 곳만 고치면 된다.
 기본 테마는 라이트이고 다크와 "시스템 따름"을 설정에서 고를 수 있다.
 
 불리언 입력에는 체크박스를 쓰지 않는다. 전부 `UiToggle`(큰 토글 버튼)이다.

@@ -7,7 +7,7 @@
     "beforeDevCommand": "vite",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "vite build",
-    "frontendDist": "../dist"
+    "frontendDist": "../frontend/dist"
   },
   "app": {
     "windows": [

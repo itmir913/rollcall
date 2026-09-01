@@ -13,7 +13,7 @@ fn entry(number: i64, name: &str) -> RosterEntry {
 
 // ── 명렬표가 말하는 학급 ──────────────────────────────────────
 //
-// 파일 파싱은 프론트(`services/rosterFile.js`)가 한다. 여기로 오는 것은 이미
+// 파일 파싱은 프론트(`frontend/src/services/rosterFile.js`)가 한다. 여기로 오는 것은 이미
 // (학년, 반, 번호, 이름)으로 정리된 목록이고, 남은 판단은 "어느 학급인가"뿐이다.
 
 fn entry_of(grade: Option<i64>, class_no: Option<i64>, number: i64, name: &str) -> RosterEntry {

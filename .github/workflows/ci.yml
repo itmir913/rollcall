@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  ci:
+  desktop:
     # 이 앱은 윈도우용이다(NSIS 설치본, 윈도우 경로 처리). 같은 OS에서 검사해야
     # 경로·파일 잠금처럼 윈도우에서만 나는 문제가 CI에서 잡힌다. 리눅스에서 돌리면
     # webkit 개발 패키지를 깔아야 하는 대가까지 치르면서 그 문제는 못 잡는다.
@@ -54,3 +54,33 @@ jobs:
         # Rust 빌드는 그대로 수행되므로, 테스트가 못 잡는 Vue 템플릿 오류가 여기서 잡힌다.
         # 설치본 패키징은 release 워크플로에서만 한다.
         run: npm run build -- --no-bundle
+
+  # 웹앱은 별도 앱이라 별도 잡이다. Tauri와 무관하므로 리눅스에서 빠르게 돌린다.
+  # pages 워크플로는 web/이 바뀔 때만 도는데, 그것만 믿으면 배포 시점에야 깨진 걸
+  # 알게 된다. 모든 push에서 여기서 먼저 잡는다.
+  web:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Node 설치
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: 의존성 설치
+        working-directory: web
+        run: npm ci
+
+      - name: 테스트
+        working-directory: web
+        run: npm test
+
+      - name: 빌드
+        working-directory: web
+        run: npm run build

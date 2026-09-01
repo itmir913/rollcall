@@ -1,0 +1,64 @@
+name: pages
+
+# web/이 바뀔 때만 배포한다. 데스크톱 앱만 고쳤는데 Pages가 다시 올라갈 이유가 없다.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'web/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 취소하지 않는다. 중간에 끊기면 사이트가 어중간한 상태로 남는다.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    # 웹앱은 Tauri와 무관하다. 윈도우 러너를 쓸 이유가 없다.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Node 설치
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: 의존성 설치
+        working-directory: web
+        run: npm ci
+
+      - name: 테스트
+        working-directory: web
+        run: npm test
+
+      - name: 빌드
+        working-directory: web
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,39 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+
+/* 데스크톱 앱과 같은 토큰 이름을 쓴다. 두 앱이 나란히 놓이는 화면은 없지만,
+   나중에 색을 정할 때 같은 이름을 고치면 되도록 맞춰 둔다. */
+:root {
+    --c-base: #f6f7fb;
+    --c-surface: #ffffff;
+    --c-raised: #eef1f7;
+    --c-line: #d6dce8;
+    --c-ink: #1b2434;
+    --c-ink-2: #3d4a60;
+    --c-ink-3: #6b7891;
+    --c-accent: #3550d8;
+    --c-warn: #b26a00;
+}
+
+html[data-theme="dark"] {
+    --c-base: #0b0f18;
+    --c-surface: #121826;
+    --c-raised: #182135;
+    --c-line: #263250;
+    --c-ink: #e5ecf5;
+    --c-ink-2: #b9c8de;
+    --c-ink-3: #8398b8;
+    --c-accent: #4c6ef5;
+    --c-warn: #f0a020;
+}
+
+html, body {
+    background: var(--c-base);
+    color: var(--c-ink);
+}
+
+body {
+    margin: 0;
+    font-family: "Pretendard Variable", Pretendard, -apple-system, sans-serif;
+    font-size: 16px;
+}

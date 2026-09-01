@@ -3,6 +3,34 @@
 School-Record-App에서 배운 것을 그대로 가져온 규칙이다. 근거가 적힌 항목은
 그 앱에서 실제로 넘어졌던 지점이다.
 
+## 저장소 구조
+
+```
+frontend/    데스크톱(Tauri) Vue 앱
+src-tauri/   Rust
+web/         웹앱 — GitHub Pages로 배포. 자체 package.json을 가진다
+```
+
+**앱마다 dev/build/test 세 명령이 하나씩 있다.** 뿌리의 세 명령은 데스크톱 앱,
+`web/`의 세 명령은 웹앱을 뜻한다. 한 곳에 몰면 "지금 dev가 어느 앱을 띄우는가"를
+매번 되물어야 한다.
+
+- 뿌리의 `vite.config.js`는 `root: 'frontend'`다. 이 파일이 뿌리에 남아 있는 이유는
+  Tauri의 `beforeDevCommand`가 뿌리에서 실행되기 때문이다.
+- `web/vite.config.js`의 `base`는 `/rollcall/`이다. Pages 프로젝트 페이지가 저장소
+  이름 아래에 놓이므로, 빼면 자원 경로가 루트로 나가 배포된 페이지가 빈 화면이 된다.
+- 웹앱은 **서버도 DB도 쓰지 않는다.** 결석 번호를 짧은 코드로 바꾸는 계산뿐이다.
+  학생 이름은 웹앱에 오지 않는다.
+- 웹앱에 첫 테스트가 생기면 `web/package.json`의 `--passWithNoTests`를 뗀다.
+  두면 테스트가 통째로 사라져도 CI가 초록으로 지나간다.
+
+### 웹앱과 데스크톱이 주고받는 코드
+
+웹앱이 만드는 비트마스크를 데스크톱이 읽는다. **두 구현이 갈라지면 조용히 엉뚱한
+학생이 결석 처리된다.** 인코딩과 디코딩을 각각 만들 때는 반드시 같은 고정 벡터
+파일을 양쪽 테스트가 읽게 한다 — School-Record-App이 암호화 저장 형식에
+`crypto_vector_tests.rs`로 쓴 방법과 같다.
+
 ## ARCHITECTURE
 - Component MUST NOT call `invoke()`. ALWAYS use Store.
 - Rust handles ALL DB and core logic. Frontend = UI + state only.
@@ -78,8 +106,8 @@ Welcome과 설정은 첫 실행에서만 지나간다. 두 화면은 `meta.bare`
 전체 화면으로 뜬다.
 
 ### 컴포넌트
-- 색·여백·모서리를 화면에 직접 적지 않는다. `src/components/ui/`의 프리미티브
-  (`UiButton` `UiCard` `UiTable` `UiToggle` `UiNotice` `UiPage`)와 `style.css`의
+- 색·여백·모서리를 화면에 직접 적지 않는다. `frontend/src/components/ui/`의 프리미티브
+  (`UiButton` `UiCard` `UiTable` `UiToggle` `UiNotice` `UiPage`)와 `frontend/src/style.css`의
   토큰만 쓴다. **시각 디자인은 아직 정해지지 않았다.** 나중에 정할 때 이 두 곳만
   고치면 전 화면이 함께 바뀌도록 하려는 것이다.
 - 같은 모양이 두 화면에 나오면 프리미티브로 올린다.
@@ -106,6 +134,8 @@ npm run build   # 설치본 빌드
 npm test        # Rust + 프론트엔드 전체 테스트
 ```
 
+웹앱도 같은 셋이다. `cd web && npm run dev`.
+
 나머지는 전부 이 셋의 조립이다. `vite`, `cargo`, `vitest`를 별도 스크립트로
 package.json에 추가하지 않는다. 늘어나면 어느 것이 진짜 진입점인지 알 수 없게 된다.
 
@@ -119,7 +149,7 @@ package.json에 추가하지 않는다. 늘어나면 어느 것이 진짜 진입
 
 - **파일이 입력이다.** 붙여넣기 방식을 쓰지 않는다 — 탭인지 쉼표인지, 이름에 쉼표가
   들어갔는지를 텍스트만으로는 확실히 알 수 없다. 파일에는 그 정보가 들어 있다.
-- **열은 이름으로 찾는다. 위치로 찾지 않는다.** 별칭표는 `src/data/columnAliases.js`
+- **열은 이름으로 찾는다. 위치로 찾지 않는다.** 별칭표는 `frontend/src/data/columnAliases.js`
   한 곳에 있다. 인덱스로 읽으면 열 순서가 다른 파일에서 번호 자리에 학년이 들어가도
   숫자라서 조용히 통과한다.
 - 머리글 기본형은 `학년 · 반 · 번호 · 이름`. 번호와 이름만 필수다.
@@ -134,7 +164,7 @@ package.json에 추가하지 않는다. 늘어나면 어느 것이 진짜 진입
 - 이름만 `.xlsx`인 파일은 zip 서명으로 먼저 거른다. 안 그러면 SheetJS가 아무 텍스트나
   시트로 "읽어내" 깨진 글자가 담긴 표를 돌려준다.
 
-**경계**: 파일 형식은 프론트(`services/rosterFile.js`)가, 업무 규칙(차분·저장)은 Rust가
+**경계**: 파일 형식은 프론트(`frontend/src/services/rosterFile.js`)가, 업무 규칙(차분·저장)은 Rust가
 맡는다. xlsx를 다룰 라이브러리가 프론트에 있기 때문이고, 파일 형식은 업무 규칙이 아니다.
 
 ## GIT / COMMIT RULES
