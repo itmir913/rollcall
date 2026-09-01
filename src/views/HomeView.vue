@@ -1,65 +1,41 @@
 <script setup>
 /**
- * HOME — 일일 입력 격자.
+ * HOME — 일일 입력 격자. **마우스로 조작한다.**
  *
- * 기준선: **학생 1명 = 키보드만으로 5초 이내.** 그래서
- *  · 빠른 입력 한 줄로 끝난다 — "2 q 몸살" (번호·단축키·증상)
- *  · Enter로 저장하고 입력창은 비워져 다음 학생을 기다린다
- *  · 확인 대화상자·저장 버튼·드롭다운이 없다
+ *  · 행의 [기록 추가]를 누르면 그 행 아래에 편집기가 펼쳐진다
+ *  · 코드도 교시도 버튼이다. 드롭다운을 쓰지 않는다
+ *  · 타이핑이 필요한 곳은 증상 한 칸뿐이고, 과거에 쓴 단어는 후보 버튼으로 뜬다
+ *  · 저장은 편집기의 [저장] 한 번. 확인 대화상자는 없다
  *  · 전체 행을 항상 띄운다. 빈 행은 출석이고 저장되지 않는다
+ *
+ * 키보드 단축 입력은 배포 직전에 따로 정한다. 지금은 없다.
  */
-import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {computed, onMounted, ref} from 'vue'
 import {useAppStore} from '../stores/app'
 import {useCodeStore} from '../stores/code'
 import {useDayStore} from '../stores/day'
 import {useCheckStore} from '../stores/check'
-import {formatSpan, parseCommand} from '../services/commandParser'
-import {UiButton, UiCard, UiNotice, UiPage, UiTable, UiToggle} from '../components/ui'
+import SpanEditor from '../components/SpanEditor.vue'
+import {UiButton, UiCard, UiNotice, UiPage, UiToggle} from '../components/ui'
 
 const app = useAppStore()
 const day = useDayStore()
 const codeStore = useCodeStore()
 const check = useCheckStore()
 
-const line = ref('')
 const message = ref('')
 const messageKind = ref('ok')
-const commandInput = ref(null)
-const suggestions = ref([])
 
-const parsed = computed(() => parseCommand(line.value, codeStore.codes))
+/** 지금 편집 중인 자리. { studentId, spanId | null } */
+const editing = ref(null)
 
-const columns = computed(() => [
-    {key: 'number', label: '번호', width: '64px'},
-    {key: 'name', label: '성명', width: '110px'},
-    {key: 'span', label: '구간', width: '96px'},
-    {key: 'code', label: '코드', width: '150px'},
-    {key: 'reason', label: '사유'},
-    ...day.items.map((item) => ({key: `item-${item.id}`, label: item.name, width: '128px'})),
-    {key: 'actions', label: '', width: '132px', align: 'right'},
-])
+const editingRow = computed(() =>
+    editing.value ? day.rows.find((r) => r.studentId === editing.value.studentId) ?? null : null,
+)
 
-const preview = computed(() => {
-    const p = parsed.value
-    if (p.error) return {kind: 'error', text: p.error}
-    if (!p.ok) {
-        const row = p.number ? day.rowByNumber(p.number) : null
-        if (p.needs === 'number') return {kind: 'info', text: '번호 → 단축키 → (교시) → 증상'}
-        if (p.needs === 'code') {
-            return row
-                ? {kind: 'info', text: `${row.name} — 단축키를 누르세요`}
-                : {kind: 'error', text: `${p.number}번 학생이 없습니다.`}
-        }
-        if (p.needs === 'slot') return {kind: 'info', text: `${p.code.label} — 교시를 입력하세요`}
-        return {kind: 'info', text: ''}
-    }
-    const row = day.rowByNumber(p.number)
-    if (!row) return {kind: 'error', text: `${p.number}번 학생이 없습니다.`}
-    return {
-        kind: 'ok',
-        text: `${row.name} · ${p.code.label} · ${formatSpan(p.startSlot, p.endSlot)}`
-            + (p.symptom ? ` · ${p.symptom}` : ''),
-    }
+const editingSpan = computed(() => {
+    if (!editing.value?.spanId || !editingRow.value) return null
+    return editingRow.value.spans.find((s) => s.id === editing.value.spanId) ?? null
 })
 
 function say(text, kind = 'ok') {
@@ -76,52 +52,61 @@ async function refresh() {
     ])
 }
 
-async function submit() {
-    const p = parsed.value
-    if (!p.ok) {
-        if (p.error) say(p.error, 'error')
-        return
-    }
-    const row = day.rowByNumber(p.number)
-    if (!row) return say(`${p.number}번 학생이 없습니다.`, 'error')
+function isEditing(row, spanId = null) {
+    return editing.value?.studentId === row.studentId && editing.value?.spanId === spanId
+}
 
+function openNew(row) {
+    editing.value = {studentId: row.studentId, spanId: null}
+}
+
+function openSpan(row, span) {
+    editing.value = {studentId: row.studentId, spanId: span.id}
+}
+
+function closeEditor() {
+    editing.value = null
+}
+
+async function saveSpan(payload) {
+    const row = editingRow.value
+    const span = editingSpan.value
+    if (!row) return
     try {
-        await day.addSpan({
-            studentId: row.studentId,
-            codeId: p.code.id,
-            startSlot: p.startSlot,
-            endSlot: p.endSlot,
-            symptom: p.symptom,
-        })
-        line.value = ''
+        if (span) {
+            await day.updateSpan({id: span.id, ...payload})
+            say(`${row.name} — 구간을 고쳤습니다.`)
+        } else {
+            await day.addSpan({studentId: row.studentId, ...payload})
+            say(`${row.number}번 ${row.name} — 저장했습니다.`)
+        }
+        closeEditor()
         await refresh()
-        say(`${row.number}번 ${row.name} — ${p.code.label} 저장`)
     } catch (e) {
         say(String(e), 'error')
     }
 }
 
-async function removeSpan(spanId) {
+async function removeSpan() {
+    const span = editingSpan.value
+    if (!span) return
     try {
-        await day.deleteSpan(spanId)
+        await day.deleteSpan(span.id)
+        closeEditor()
         await refresh()
         say('구간을 지웠습니다.')
     } catch (e) {
         say(String(e), 'error')
-    } finally {
-        focusCommand()
     }
 }
 
-async function repeatYesterday(row) {
+async function repeatPrevious(row) {
     try {
         const n = await day.copyPrevious(row.studentId)
         await refresh()
         say(`${row.name} — 직전 기록 ${n}건을 그대로 넣었습니다.`)
     } catch (e) {
         say(String(e), 'error')
-    } finally {
-        focusCommand()
     }
 }
 
@@ -131,8 +116,6 @@ async function toggleCheck(row, item, next) {
         await refresh()
     } catch (e) {
         say(String(e), 'error')
-    } finally {
-        focusCommand()
     }
 }
 
@@ -155,109 +138,124 @@ function dueHint(state) {
     return state?.dueDate ? `마감 ${state.dueDate}` : '마감 없음'
 }
 
-function focusCommand() {
-    nextTick(() => commandInput.value?.focus())
-}
-
 async function move(days) {
+    closeEditor()
     day.moveDate(days)
     await refresh()
-    focusCommand()
 }
 
-async function updateSuggestions() {
-    const typed = parsed.value.ok ? parsed.value.symptom : null
-    suggestions.value = typed ? await codeStore.suggestSymptoms(typed, 6) : []
-}
-
-watch(line, updateSuggestions)
-
-onMounted(async () => {
+async function pickDate(event) {
+    closeEditor()
+    day.setDate(event.target.value)
     await refresh()
-    focusCommand()
-})
+}
+
+onMounted(refresh)
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn"
-              text="먼저 설정에서 학년도와 학급을 정해주세요."/>
+    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학년도와 학급을 정해주세요."/>
 
     <UiPage v-else :subtitle="`기록 ${day.recordedCount}명 / 재학 ${day.rows.length}명`"
             :title="day.dateLabel">
         <template #actions>
             <UiButton @click="move(-1)">◀ 어제</UiButton>
-            <input :value="day.date" class="field" type="date"
-                   @change="day.setDate($event.target.value); refresh()"/>
+            <input :value="day.date" class="field" type="date" @change="pickDate"/>
             <UiButton @click="move(1)">내일 ▶</UiButton>
         </template>
 
-        <!-- 빠른 입력 -->
         <UiCard>
-            <div class="quick">
-                <label class="quick__label" for="cmd">빠른 입력</label>
-                <input id="cmd" ref="commandInput" v-model="line" autocomplete="off"
-                       class="field quick__input"
-                       placeholder="예)  2 q 몸살      ·      5 w 6 복통"
-                       @keydown.enter.prevent="submit"/>
-                <UiButton :disabled="!parsed.ok" variant="primary" @click="submit">저장</UiButton>
-            </div>
+            <table class="grid">
+                <thead>
+                <tr>
+                    <th class="grid__num">번호</th>
+                    <th class="grid__name">성명</th>
+                    <th>출결</th>
+                    <th class="grid__reason">나이스 사유</th>
+                    <th v-for="item in day.items" :key="item.id" class="grid__check">
+                        {{ item.name }}
+                    </th>
+                </tr>
+                </thead>
+                <tbody>
+                <template v-for="row in day.rows" :key="row.studentId">
+                    <tr :class="row.spans.length ? 'is-recorded' : ''">
+                        <td class="grid__num">{{ row.number }}</td>
+                        <td class="grid__name">{{ row.name }}</td>
 
-            <UiNotice :kind="preview.kind" :text="preview.text"/>
+                        <td>
+                            <div class="marks">
+                                <button v-for="span in row.spans" :key="span.id"
+                                        :class="['mark', isEditing(row, span.id) ? 'is-open' : '']"
+                                        title="눌러서 고치기"
+                                        type="button"
+                                        @click="openSpan(row, span)">
+                                    <span class="mark__span">{{ span.spanText }}</span>
+                                    <span class="mark__code">{{ span.codeLabel }}</span>
+                                    <span v-if="span.symptom" class="mark__symptom">
+                                        {{ span.symptom }}
+                                    </span>
+                                </button>
 
-            <p v-if="suggestions.length" class="quick__hint">
-                자주 쓴 증상: {{ suggestions.join(' · ') }}
-            </p>
+                                <button v-if="!row.spans.length && !isEditing(row)"
+                                        class="add" type="button" @click="openNew(row)">
+                                    출석 · 눌러서 기록 추가
+                                </button>
+                                <button v-else-if="!isEditing(row)" class="add is-small"
+                                        title="구간을 하나 더 추가" type="button"
+                                        @click="openNew(row)">
+                                    + 구간
+                                </button>
 
-            <div class="quick__keys">
-                <span v-for="c in codeStore.codes.filter((c) => c.shortcut)" :key="c.id"
-                      class="quick__key">
-                    <b>{{ c.shortcut }}</b> {{ c.label }}
-                </span>
-            </div>
-        </UiCard>
+                                <UiButton v-if="!row.spans.length" variant="ghost"
+                                          @click="repeatPrevious(row)">
+                                    어제 것 그대로
+                                </UiButton>
+                            </div>
+                        </td>
 
-        <!-- 격자 -->
-        <UiCard>
-            <UiTable :columns="columns" :rows="day.rows"
-                     empty-text="이 날짜에 재학 중인 학생이 없습니다." row-key="studentId">
-                <template #row="{row}">
-                    <td>{{ row.number }}</td>
-                    <td>{{ row.name }}</td>
-                    <td>
-                        <div v-for="span in row.spans" :key="span.id" class="mono">
-                            {{ span.spanText }}
-                        </div>
-                    </td>
-                    <td>
-                        <div v-for="span in row.spans" :key="span.id" class="code-cell">
-                            <span>{{ span.codeLabel }}</span>
-                            <UiButton title="이 구간 지우기" variant="ghost"
-                                      @click="removeSpan(span.id)">✕</UiButton>
-                        </div>
-                    </td>
-                    <td>
-                        <input v-if="row.reason" :value="row.reason.reason" class="field w-full"
-                               @blur="saveReason(row, $event)"
-                               @keydown.enter="$event.target.blur()"/>
-                    </td>
-                    <td v-for="item in day.items" :key="item.id">
-                        <UiToggle v-if="checkState(row, item.id)"
-                                  :hint="dueHint(checkState(row, item.id))"
-                                  :model-value="checkState(row, item.id).done"
-                                  block off-label="미완료" on-label="완료"
-                                  @update:model-value="toggleCheck(row, item, $event)"/>
-                    </td>
-                    <td class="text-right">
-                        <UiButton v-if="!row.spans.length" @click="repeatYesterday(row)">
-                            어제 것 그대로
-                        </UiButton>
-                    </td>
+                        <td class="grid__reason">
+                            <input v-if="row.reason" :value="row.reason.reason"
+                                   class="field grid__input"
+                                   @blur="saveReason(row, $event)"
+                                   @keydown.enter="$event.target.blur()"/>
+                        </td>
+
+                        <td v-for="item in day.items" :key="item.id" class="grid__check">
+                            <UiToggle v-if="checkState(row, item.id)"
+                                      :hint="dueHint(checkState(row, item.id))"
+                                      :model-value="checkState(row, item.id).done"
+                                      block off-label="미완료" on-label="완료"
+                                      @update:model-value="toggleCheck(row, item, $event)"/>
+                        </td>
+                    </tr>
+
+                    <tr v-if="editing?.studentId === row.studentId">
+                        <td :colspan="4 + day.items.length" class="grid__editor">
+                            <SpanEditor :key="`${row.studentId}-${editing.spanId ?? 'new'}`"
+                                        :codes="codeStore.codes"
+                                        :render-phrase="day.renderPhrase"
+                                        :span="editingSpan"
+                                        :student-name="`${row.number}번 ${row.name}`"
+                                        :suggest="codeStore.suggestSymptoms"
+                                        @cancel="closeEditor"
+                                        @remove="removeSpan"
+                                        @save="saveSpan"/>
+                        </td>
+                    </tr>
                 </template>
-            </UiTable>
+
+                <tr v-if="!day.rows.length">
+                    <td :colspan="4 + day.items.length" class="grid__empty">
+                        이 날짜에 재학 중인 학생이 없습니다.
+                    </td>
+                </tr>
+                </tbody>
+            </table>
         </UiCard>
 
         <div class="summary">
-            <span v-for="s in check.summary" :key="s.itemId" class="summary__item">
+            <span v-for="s in check.summary" :key="s.itemId">
                 {{ s.itemName }} 미완료 <b>{{ s.count }}</b>건
             </span>
             <RouterLink class="summary__link" to="/pending">미제출자 목록 →</RouterLink>
@@ -268,49 +266,115 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-.quick {
+.grid {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.grid th {
+    padding: 10px 12px;
+    color: var(--c-ink-3);
+    font-weight: 500;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.grid td {
+    padding: 8px 12px;
+    border-top: 1px solid var(--c-line);
+    vertical-align: middle;
+}
+
+.grid__num {
+    width: 64px;
+}
+
+.grid__name {
+    width: 110px;
+}
+
+.grid__reason {
+    width: 30%;
+}
+
+.grid__check {
+    width: 128px;
+}
+
+.grid__input {
+    width: 100%;
+}
+
+.grid__editor {
+    padding: 4px 12px 14px;
+}
+
+.grid__empty {
+    text-align: center;
+    color: var(--c-ink-3);
+    padding: 28px 12px;
+}
+
+tr.is-recorded .grid__num,
+tr.is-recorded .grid__name {
+    font-weight: 600;
+}
+
+.marks {
     display: flex;
     align-items: center;
-    gap: 12px;
-}
-
-.quick__label {
-    color: var(--c-ink-3);
-    flex-shrink: 0;
-}
-
-.quick__input {
-    flex: 1;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    min-height: 40px;
-}
-
-.quick__hint {
-    margin: 0;
-    color: var(--c-ink-3);
-}
-
-.quick__keys {
-    display: flex;
-    flex-wrap: wrap;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
-.quick__key {
-    padding: 4px 10px;
-    border-radius: 6px;
-    background: var(--c-raised);
-    color: var(--c-ink-2);
-}
-
-.mono {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.code-cell {
-    display: flex;
+.mark {
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--c-line);
+    background: var(--c-surface);
+    color: var(--c-ink);
+    cursor: pointer;
+}
+
+.mark:hover,
+.mark.is-open {
+    border-color: var(--c-accent);
+}
+
+.mark__span {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--c-ink-3);
+}
+
+.mark__code {
+    font-weight: 600;
+}
+
+.mark__symptom {
+    color: var(--c-ink-3);
+}
+
+.add {
+    min-height: 40px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px dashed var(--c-line);
+    background: transparent;
+    color: var(--c-ink-3);
+    cursor: pointer;
+}
+
+.add:hover {
+    border-color: var(--c-accent);
+    color: var(--c-ink);
+}
+
+.add.is-small {
+    padding: 0 10px;
 }
 
 .summary {
@@ -324,13 +388,5 @@ onMounted(async () => {
     margin-left: auto;
     color: var(--c-accent);
     text-decoration: none;
-}
-
-.w-full {
-    width: 100%;
-}
-
-.text-right {
-    text-align: right;
 }
 </style>

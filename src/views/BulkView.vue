@@ -10,7 +10,9 @@ import {useAppStore} from '../stores/app'
 import {useCodeStore} from '../stores/code'
 import {useDayStore} from '../stores/day'
 import {useRosterStore} from '../stores/roster'
-import {slotCount} from '../services/commandParser'
+import {needsEnd, needsStart} from '../services/slots'
+import CodePicker from '../components/CodePicker.vue'
+import SlotPicker from '../components/SlotPicker.vue'
 import {UiButton, UiCard, UiNotice, UiPage, UiToggle} from '../components/ui'
 
 const app = useAppStore()
@@ -22,8 +24,8 @@ const selected = ref([])
 const from = ref(new Date().toISOString().slice(0, 10))
 const to = ref(new Date().toISOString().slice(0, 10))
 const codeId = ref(null)
-const startSlot = ref('')
-const endSlot = ref('')
+const startSlot = ref(null)
+const endSlot = ref(null)
 const symptom = ref('')
 const days = ref([])
 const skipped = ref(new Set())
@@ -31,7 +33,8 @@ const message = ref('')
 const error = ref('')
 
 const code = computed(() => codeStore.codes.find((c) => c.id === codeId.value) ?? null)
-const needsSlots = computed(() => slotCount(code.value?.slotPrompt))
+const askStart = computed(() => needsStart(code.value?.slotPrompt))
+const askEnd = computed(() => needsEnd(code.value?.slotPrompt))
 const chosenDates = computed(() =>
     days.value.filter((d) => !skipped.value.has(d.date)).map((d) => d.date),
 )
@@ -81,8 +84,8 @@ async function apply() {
             selected.value,
             chosenDates.value,
             codeId.value,
-            needsSlots.value >= 1 ? (startSlot.value || null) : null,
-            needsSlots.value >= 2 ? (endSlot.value || null) : null,
+            askStart.value ? startSlot.value : null,
+            askEnd.value ? endSlot.value : null,
             symptom.value.trim() || null,
         )
         message.value = `${selected.value.length}명 × ${result.days}일을 저장했습니다. `
@@ -116,20 +119,18 @@ onMounted(load)
                 <input v-model="from" class="field" type="date"/>
                 <span>~</span>
                 <input v-model="to" class="field" type="date"/>
-                <select v-model="codeId" class="field">
-                    <option v-for="c in codeStore.codes" :key="c.id" :value="c.id">
-                        {{ c.label }}
-                    </option>
-                </select>
-                <input v-if="needsSlots >= 1" v-model="startSlot" class="field bulk__slot"
-                       placeholder="시작 교시"/>
-                <input v-if="needsSlots >= 2" v-model="endSlot" class="field bulk__slot"
-                       placeholder="끝 교시"/>
-                <input v-model="symptom" class="field" placeholder="사유 (예: 교외체험학습)"/>
-                <UiButton :disabled="!selected.length" variant="primary" @click="makePreview">
-                    미리보기
-                </UiButton>
+                <input v-model="symptom" class="field bulk__reason"
+                       placeholder="사유 (예: 교외체험학습)"/>
             </div>
+
+            <CodePicker v-model="codeId" :codes="codeStore.codes"/>
+            <SlotPicker v-if="askStart" v-model="startSlot" label="시작 교시"/>
+            <SlotPicker v-if="askEnd" v-model="endSlot" label="끝 교시"/>
+
+            <UiButton :disabled="!selected.length" class="bulk__save" variant="primary"
+                      @click="makePreview">
+                미리보기
+            </UiButton>
         </UiCard>
 
         <UiCard v-if="days.length" :title="`미리보기 — ${chosenDates.length}일`"
@@ -168,8 +169,9 @@ onMounted(load)
     flex-wrap: wrap;
 }
 
-.bulk__slot {
-    width: 110px;
+.bulk__reason {
+    flex: 1;
+    min-width: 220px;
 }
 
 .bulk__save {
