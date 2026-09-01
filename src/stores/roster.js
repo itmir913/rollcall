@@ -27,9 +27,12 @@ export const useRosterStore = defineStore('roster', () => {
         }
     }
 
-    /** 붙여넣은 텍스트를 파싱한다. 명렬표가 말하는 학급도 함께 돌려준다. */
-    async function parseText(text) {
-        return await invoke('parse_roster', {text})
+    /**
+     * 명렬표가 말하는 학급. 파일 파싱은 프론트가 하고(services/rosterFile.js),
+     * "어느 학급인가"라는 판단만 Rust에 맡긴다.
+     */
+    async function detectClass(entries) {
+        return await invoke('detect_roster_class', {entries})
     }
 
     async function fetchClasses(yearId) {
@@ -75,7 +78,7 @@ export const useRosterStore = defineStore('roster', () => {
 
     return {
         students, diff, loading, error,
-        fetchStudents, parseText, fetchClasses, preview, apply, updateStudent, withdraw,
+        fetchStudents, detectClass, fetchClasses, preview, apply, updateStudent, withdraw,
         fetchContacts, saveContacts,
     }
 })

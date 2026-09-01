@@ -2,8 +2,8 @@
 /**
  * 학생 명단.
  *
- * **학급은 명렬표에서 나온다.** 나이스 명렬표가 (학년, 반, 번호, 성명)이므로
- * "우리 반이 몇 학년 몇 반입니까"를 따로 묻지 않는다. 두 열만 복사해 왔거나
+ * **학급은 명렬표 파일에서 나온다.** 머리글이 (학년, 반, 번호, 이름)이므로
+ * "우리 반이 몇 학년 몇 반입니까"를 따로 묻지 않는다. 학년·반 열이 없거나
  * 여러 반이 섞여 있을 때만 교사에게 되묻는다.
  *
  * 재가져오기는 교체가 아니라 차분이고, 판정할 수 없는 행(번호 같고 이름 다름)은
@@ -13,6 +13,7 @@ import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {useAppStore} from '../stores/app'
 import {useRosterStore} from '../stores/roster'
+import RosterImport from '../components/RosterImport.vue'
 import StudentPanel from '../components/StudentPanel.vue'
 import {UiButton, UiCard, UiNotice, UiPage, UiTable} from '../components/ui'
 
@@ -20,9 +21,9 @@ const app = useAppStore()
 const roster = useRosterStore()
 const router = useRouter()
 
-const pasted = ref('')
 const effectiveDate = ref(new Date().toISOString().slice(0, 10))
 const rows = ref([])
+const entries = ref([])
 const detected = ref(null)
 const grade = ref(app.grade ?? 1)
 const classNo = ref(app.classNo ?? 1)
@@ -67,21 +68,28 @@ async function load() {
     classNo.value = app.classNo
 }
 
-async function makePreview() {
+/** 파일에서 읽은 목록을 받아 학급을 확인하고 차분을 만든다. */
+async function onLoaded(result) {
     error.value = ''
     message.value = ''
+    entries.value = result.entries
     try {
-        const result = await roster.parseText(pasted.value)
-        if (!result.entries.length) {
-            error.value = '번호와 이름을 찾지 못했습니다. 번호·성명 열을 함께 복사했는지 확인해주세요.'
-            return
-        }
-        detected.value = result.class
-        if (result.class.grade) grade.value = result.class.grade
-        if (result.class.classNo) classNo.value = result.class.classNo
+        detected.value = await roster.detectClass(result.entries)
+        if (detected.value.grade) grade.value = detected.value.grade
+        if (detected.value.classNo) classNo.value = detected.value.classNo
+        await makePreview()
+    } catch (e) {
+        error.value = String(e)
+    }
+}
 
+/** 교사가 학급을 고쳤을 때 같은 목록으로 다시 비교한다. */
+async function makePreview() {
+    if (!entries.value.length) return
+    error.value = ''
+    try {
         rows.value = await roster.preview(
-            app.yearId ?? null, Number(grade.value), Number(classNo.value), result.entries,
+            app.yearId, Number(grade.value), Number(classNo.value), entries.value,
         )
     } catch (e) {
         error.value = String(e)
@@ -96,7 +104,7 @@ async function applyPreview() {
         const result = await roster.apply(app.yearId, g, c, effectiveDate.value, rows.value)
         await app.setContext(g, c)
         rows.value = []
-        pasted.value = ''
+        entries.value = []
         detected.value = null
         await load()
         message.value =
@@ -142,7 +150,7 @@ onMounted(load)
 </script>
 
 <template>
-    <UiPage subtitle="나이스에서 번호·성명 열을 복사해 붙여넣으면 됩니다." title="학생 명단">
+    <UiPage subtitle="엑셀·CSV 명렬표 파일을 넣으면 됩니다." title="학생 명단">
         <template #actions>
             <UiButton v-if="app.ready" variant="primary" @click="router.push('/')">
                 HOME으로
@@ -160,13 +168,11 @@ onMounted(load)
             </div>
         </UiCard>
 
-        <!-- 붙여넣기 -->
-        <UiCard description="탭이든 쉼표든 상관없습니다. (학년, 반, 번호, 성명) 네 열이면 학급도 함께 읽습니다."
-                title="명렬표 붙여넣기">
-            <textarea v-model="pasted" class="field paste"
-                      placeholder="3&#9;6&#9;1&#9;김철수&#10;3&#9;6&#9;2&#9;이영희"></textarea>
+        <!-- 파일 가져오기 -->
+        <UiCard description="엑셀이나 CSV 파일을 그대로 넣습니다. (학년, 반, 번호, 이름) 네 열이면 학급도 함께 읽습니다."
+                title="명렬표 가져오기">
+            <RosterImport @loaded="onLoaded"/>
             <div class="row">
-                <UiButton variant="primary" @click="makePreview">미리보기</UiButton>
                 <label class="muted">적용 기준일</label>
                 <input v-model="effectiveDate" class="field" type="date"/>
             </div>
@@ -211,7 +217,7 @@ onMounted(load)
 
             <div class="row">
                 <UiButton variant="primary" @click="applyPreview">저장</UiButton>
-                <UiButton @click="rows = []; detected = null">취소</UiButton>
+                <UiButton @click="rows = []; entries = []; detected = null">취소</UiButton>
             </div>
         </UiCard>
 
@@ -243,13 +249,6 @@ onMounted(load)
 </template>
 
 <style scoped>
-.paste {
-    width: 100%;
-    min-height: 150px;
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    resize: vertical;
-}
-
 .row {
     display: flex;
     align-items: center;

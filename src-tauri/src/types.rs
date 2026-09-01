@@ -75,13 +75,6 @@ pub struct RosterClass {
     pub mixed: bool,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RosterParseResult {
-    pub entries: Vec<RosterEntry>,
-    pub class: RosterClass,
-}
-
 // ── 연락처 ────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

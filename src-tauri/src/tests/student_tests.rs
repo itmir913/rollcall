@@ -11,54 +11,26 @@ fn entry(number: i64, name: &str) -> RosterEntry {
     }
 }
 
-// ── 붙여넣기 파싱 ─────────────────────────────────────────────
+// ── 명렬표가 말하는 학급 ──────────────────────────────────────
+//
+// 파일 파싱은 프론트(`services/rosterFile.js`)가 한다. 여기로 오는 것은 이미
+// (학년, 반, 번호, 이름)으로 정리된 목록이고, 남은 판단은 "어느 학급인가"뿐이다.
 
-#[test]
-fn parses_tab_separated_paste() {
-    let rows = parse_roster_text("1\t김철수\n2\t이영희\n");
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].number, 1);
-    assert_eq!(rows[1].name, "이영희");
+fn entry_of(grade: Option<i64>, class_no: Option<i64>, number: i64, name: &str) -> RosterEntry {
+    RosterEntry {
+        grade,
+        class_no,
+        number,
+        name: name.to_string(),
+    }
 }
 
 #[test]
-fn parses_comma_separated_paste() {
-    // 교사가 어느 쪽을 붙여넣었는지 되묻지 않는다.
-    let rows = parse_roster_text("1,김철수\n2,이영희");
-    assert_eq!(rows.len(), 2);
-}
-
-#[test]
-fn skips_header_and_blank_lines() {
-    let rows = parse_roster_text("번호\t성명\n\n1\t김철수\n\n");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].name, "김철수");
-}
-
-#[test]
-fn four_column_roster_carries_the_class() {
-    // 나이스 명렬표는 보통 (학년, 반, 번호, 성명)이다. 학급이 여기서 나온다.
-    let rows = parse_roster_text("3	6	7	박민수");
-    assert_eq!(rows[0].grade, Some(3));
-    assert_eq!(rows[0].class_no, Some(6));
-    assert_eq!(rows[0].number, 7);
-    assert_eq!(rows[0].name, "박민수");
-}
-
-#[test]
-fn two_leading_numbers_do_not_guess_the_class() {
-    // 앞의 것이 반인지 순번인지 알 수 없다. 틀린 반으로 저장하는 것보다 비워 둔다.
-    let rows = parse_roster_text("1	7	박민수");
-    assert_eq!(rows[0].number, 7);
-    assert_eq!(rows[0].grade, None);
-    assert_eq!(rows[0].class_no, None);
-}
-
-#[test]
-fn detects_the_class_when_every_row_agrees() {
-    let rows = parse_roster_text("3	6	1	김철수
-3	6	2	이영희");
-    let class = detect_class(&rows);
+fn class_is_confirmed_when_every_row_agrees() {
+    let class = detect_class(&[
+        entry_of(Some(3), Some(6), 1, "김철수"),
+        entry_of(Some(3), Some(6), 2, "이영희"),
+    ]);
     assert_eq!(class.grade, Some(3));
     assert_eq!(class.class_no, Some(6));
     assert!(!class.mixed);
@@ -66,32 +38,30 @@ fn detects_the_class_when_every_row_agrees() {
 
 #[test]
 fn a_mixed_roster_is_flagged_for_the_teacher() {
-    let rows = parse_roster_text("3	6	1	김철수
-3	7	1	최지훈");
-    let class = detect_class(&rows);
+    let class = detect_class(&[
+        entry_of(Some(3), Some(6), 1, "김철수"),
+        entry_of(Some(3), Some(7), 1, "최지훈"),
+    ]);
     assert!(class.mixed);
     assert_eq!(class.class_no, None);
+    // 학년은 같으므로 그것만은 확정된다.
+    assert_eq!(class.grade, Some(3));
 }
 
 #[test]
 fn a_two_column_roster_leaves_the_class_unknown() {
-    let class = detect_class(&parse_roster_text("1	김철수
-2	이영희"));
+    // 파일에 학년·반 열이 없으면 추측하지 않는다. 화면이 묻는다.
+    let class = detect_class(&[entry_of(None, None, 1, "김철수")]);
     assert_eq!(class.grade, None);
+    assert_eq!(class.class_no, None);
     assert!(!class.mixed);
 }
 
 #[test]
-fn trims_whitespace_in_cells() {
-    let rows = parse_roster_text(" 1 \t 김철수 ");
-    assert_eq!(rows[0].name, "김철수");
-}
-
-#[test]
-fn line_without_name_is_dropped() {
-    let rows = parse_roster_text("1\t\n2\t이영희");
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].number, 2);
+fn an_empty_roster_says_nothing() {
+    let class = detect_class(&[]);
+    assert_eq!(class.grade, None);
+    assert!(!class.mixed);
 }
 
 // ── 차분 ──────────────────────────────────────────────────────

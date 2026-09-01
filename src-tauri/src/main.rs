@@ -27,6 +27,7 @@ fn main() {
             migrate_schema,
             export_backup,
             get_db_path,
+            write_bytes_file,
             // 설정
             get_config,
             set_config,
@@ -34,7 +35,7 @@ fn main() {
             create_year,
             update_year,
             // 학생 · 연락처
-            parse_roster,
+            detect_roster_class,
             get_students,
             get_classes,
             preview_roster,

@@ -43,16 +43,21 @@ const router = useRouter()
                     <div>
                         <dt>다음 순서</dt>
                         <dd>
-                            나이스 명렬표를 붙여넣으면 끝입니다. 학년·반도 명렬표에서 읽습니다.
-                            학년도는 앱이 정합니다.
+                            명렬표 엑셀 파일을 끌어다 놓으면 끝입니다. 학년·반도 파일에서
+                            읽습니다. 양식이 없으면 내려받을 수 있고, 학년도는 앱이 정합니다.
                         </dd>
                     </div>
                 </dl>
             </UiCard>
 
-            <UiButton variant="primary" @click="router.push('/roster')">
-                학생 명단 넣고 시작하기
-            </UiButton>
+            <div class="welcome__actions">
+                <UiButton variant="primary" @click="router.push('/roster')">
+                    명렬표 넣고 시작하기
+                </UiButton>
+                <UiButton variant="ghost" @click="router.push('/')">
+                    나중에 하기
+                </UiButton>
+            </div>
 
             <p class="welcome__note">
                 아직 데이터 파일이 암호화되지 않습니다. 건강정보가 들어가므로,
@@ -130,6 +135,12 @@ const router = useRouter()
     margin-top: 4px;
     color: var(--c-ink-3);
     word-break: break-all;
+}
+
+.welcome__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
 }
 
 .welcome__note {

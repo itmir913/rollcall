@@ -1,8 +1,12 @@
 //! 학생 명단과 연락처.
 //!
 //! 명렬표가 (학년, 반, 번호, 이름)이므로 **학급 정보는 명렬표에서 나온다.** 첫 실행에서
-//! "우리 반이 몇 학년 몇 반입니까"를 따로 묻지 않으려는 것이다. 두 열만 복사해 온
-//! 경우에는 화면이 고른 학급을 쓴다.
+//! "우리 반이 몇 학년 몇 반입니까"를 따로 묻지 않으려는 것이다. 두 열만 들어 있는
+//! 파일이면 화면이 고른 학급을 쓴다.
+//!
+//! **파일 읽기는 프론트에서 한다**(`services/rosterFile.js`). xlsx를 다룰 라이브러리가
+//! 거기 있기 때문이고, 그것은 파일 형식 문제지 업무 규칙이 아니다. 여기로 넘어오는
+//! 것은 이미 (학년, 반, 번호, 이름)으로 정리된 목록이다.
 //!
 //! 재가져오기는 **교체가 아니라 차분**이다. 사라진 번호를 지우면 그 학생의 출결
 //! 기록이 FK CASCADE로 함께 사라진다. 전출은 삭제가 아니므로 `enrolled_to`를 채운다.
@@ -14,64 +18,12 @@ use crate::types::*;
 use rusqlite::Connection;
 use tauri::State;
 
-// ── 붙여넣기 파싱 ─────────────────────────────────────────────
+// ── 명렬표가 말하는 학급 ──────────────────────────────────────
 
-/// 나이스 명렬표에서 복사한 텍스트를 파싱한다.
+/// 들어온 명단이 어느 학급인지. 전부 같아야 확정이고, 섞여 있으면 교사가 고른다.
 ///
-/// 탭 구분이 기본이고 쉼표도 받는다 — 교사가 어느 쪽을 붙여넣었는지 프로그램이
-/// 되묻지 않는 편이 빠르다.
-///
-/// 열을 이름으로 찾지 않는다. **이름 칸은 숫자가 아닌 첫 칸**이고, 그 앞의 숫자들이
-/// 학번 구성요소다. 명렬표 양식이 무엇이든 상관없게 하려는 것이다.
-///   숫자 1개  → (번호)
-///   숫자 3개+ → 뒤에서 셋이 (학년, 반, 번호)
-///   숫자 2개  → 마지막만 번호로 본다. 앞의 것이 반인지 순번인지 알 수 없으므로
-///               학급을 추측하지 않는다. 틀린 반으로 저장하는 것보다 낫다.
-pub fn parse_roster_text(text: &str) -> Vec<RosterEntry> {
-    let mut out = Vec::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let cells: Vec<String> = if line.contains('\t') {
-            line.split('\t').map(|c| c.trim().to_string()).collect()
-        } else {
-            line.split(',').map(|c| c.trim().to_string()).collect()
-        };
-
-        let name_pos = cells
-            .iter()
-            .position(|c| !c.is_empty() && c.parse::<i64>().is_err());
-        let Some(name_pos) = name_pos else { continue };
-
-        let nums: Vec<i64> = cells[..name_pos]
-            .iter()
-            .filter_map(|c| c.parse::<i64>().ok())
-            .collect();
-        let Some(&number) = nums.last() else { continue };
-        if number < 1 {
-            continue;
-        }
-
-        let (grade, class_no) = if nums.len() >= 3 {
-            let n = nums.len();
-            (Some(nums[n - 3]), Some(nums[n - 2]))
-        } else {
-            (None, None)
-        };
-
-        out.push(RosterEntry {
-            grade: grade.filter(|g| *g >= 1),
-            class_no: class_no.filter(|c| *c >= 1),
-            number,
-            name: cells[name_pos].clone(),
-        });
-    }
-    out
-}
-
-/// 명렬표가 말하는 학급. 전부 같아야 확정이고, 섞여 있으면 교사가 고른다.
+/// 파일에 학년·반 열이 없으면 둘 다 None이다. 그때는 화면이 학급을 묻는다 —
+/// 프로그램이 추측해서 엉뚱한 반에 넣는 것보다 낫다.
 pub fn detect_class(entries: &[RosterEntry]) -> RosterClass {
     let grades: Vec<i64> = entries.iter().filter_map(|e| e.grade).collect();
     let classes: Vec<i64> = entries.iter().filter_map(|e| e.class_no).collect();
@@ -83,7 +35,8 @@ pub fn detect_class(entries: &[RosterEntry]) -> RosterClass {
 
     let grade = uniform(&grades);
     let class_no = uniform(&classes);
-    let mixed = (!grades.is_empty() && grade.is_none()) || (!classes.is_empty() && class_no.is_none());
+    let mixed =
+        (!grades.is_empty() && grade.is_none()) || (!classes.is_empty() && class_no.is_none());
 
     RosterClass {
         grade,
@@ -423,11 +376,10 @@ pub fn set_contacts_impl(
 
 // ── 커맨드 ────────────────────────────────────────────────────
 
+/// 명렬표가 말하는 학급을 돌려준다. 화면이 "우리 반"을 되묻지 않기 위한 것이다.
 #[tauri::command]
-pub fn parse_roster(text: String) -> RosterParseResult {
-    let entries = parse_roster_text(&text);
-    let class = detect_class(&entries);
-    RosterParseResult { entries, class }
+pub fn detect_roster_class(entries: Vec<RosterEntry>) -> RosterClass {
+    detect_class(&entries)
 }
 
 #[tauri::command]
