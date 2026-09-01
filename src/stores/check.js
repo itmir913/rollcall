@@ -6,6 +6,7 @@ export const useCheckStore = defineStore('check', () => {
     const items = ref([])
     const pending = ref([])
     const summary = ref([])
+    const home = ref(null)
     const error = ref('')
 
     async function fetchItems(activeOnly = true) {
@@ -60,6 +61,18 @@ export const useCheckStore = defineStore('check', () => {
         summary.value = await invoke('get_pending_summary', {yearId, grade, classNo})
     }
 
+    /** HOME이 쓰는 요약. 숫자를 세는 일은 전부 Rust에서 한다. */
+    async function fetchHome(yearId, grade, classNo, date) {
+        error.value = ''
+        try {
+            home.value = await invoke('home_summary', {yearId, grade, classNo, date})
+            return home.value
+        } catch (e) {
+            error.value = String(e)
+            throw e
+        }
+    }
+
     async function exportPendingCsv(yearId, grade, classNo, today, dest) {
         return await invoke('export_pending_csv', {yearId, grade, classNo, today, dest})
     }
@@ -69,9 +82,9 @@ export const useCheckStore = defineStore('check', () => {
     }
 
     return {
-        items, pending, summary, error,
+        items, pending, summary, home, error,
         fetchItems, createItem, updateItem, deactivateItem,
         setCheck, setDue, setGroupCheck,
-        fetchPending, fetchSummary, exportPendingCsv, exportBackupCsv,
+        fetchPending, fetchSummary, fetchHome, exportPendingCsv, exportBackupCsv,
     }
 })

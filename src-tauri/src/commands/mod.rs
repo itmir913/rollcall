@@ -1,6 +1,6 @@
 pub mod attendance;
+pub mod axis;
 pub mod check;
-pub mod code;
 pub mod config;
 pub mod export;
 pub mod project;
@@ -8,8 +8,8 @@ pub mod student;
 pub mod year;
 
 pub use attendance::*;
+pub use axis::*;
 pub use check::*;
-pub use code::*;
 pub use config::*;
 pub use export::*;
 pub use project::*;

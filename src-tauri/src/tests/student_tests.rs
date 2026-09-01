@@ -4,9 +4,10 @@ use crate::types::RosterEntry;
 
 fn entry(number: i64, name: &str) -> RosterEntry {
     RosterEntry {
+        grade: None,
+        class_no: None,
         number,
         name: name.to_string(),
-        guardian_phone: None,
     }
 }
 
@@ -35,11 +36,49 @@ fn skips_header_and_blank_lines() {
 }
 
 #[test]
-fn ignores_leading_columns_before_number() {
-    // 명렬표 양식이 무엇이든 상관없어야 한다. 학년/반 열이 앞에 붙어도 번호를 찾는다.
-    let rows = parse_roster_text("3반\t7\t박민수");
+fn four_column_roster_carries_the_class() {
+    // 나이스 명렬표는 보통 (학년, 반, 번호, 성명)이다. 학급이 여기서 나온다.
+    let rows = parse_roster_text("3	6	7	박민수");
+    assert_eq!(rows[0].grade, Some(3));
+    assert_eq!(rows[0].class_no, Some(6));
     assert_eq!(rows[0].number, 7);
     assert_eq!(rows[0].name, "박민수");
+}
+
+#[test]
+fn two_leading_numbers_do_not_guess_the_class() {
+    // 앞의 것이 반인지 순번인지 알 수 없다. 틀린 반으로 저장하는 것보다 비워 둔다.
+    let rows = parse_roster_text("1	7	박민수");
+    assert_eq!(rows[0].number, 7);
+    assert_eq!(rows[0].grade, None);
+    assert_eq!(rows[0].class_no, None);
+}
+
+#[test]
+fn detects_the_class_when_every_row_agrees() {
+    let rows = parse_roster_text("3	6	1	김철수
+3	6	2	이영희");
+    let class = detect_class(&rows);
+    assert_eq!(class.grade, Some(3));
+    assert_eq!(class.class_no, Some(6));
+    assert!(!class.mixed);
+}
+
+#[test]
+fn a_mixed_roster_is_flagged_for_the_teacher() {
+    let rows = parse_roster_text("3	6	1	김철수
+3	7	1	최지훈");
+    let class = detect_class(&rows);
+    assert!(class.mixed);
+    assert_eq!(class.class_no, None);
+}
+
+#[test]
+fn a_two_column_roster_leaves_the_class_unknown() {
+    let class = detect_class(&parse_roster_text("1	김철수
+2	이영희"));
+    assert_eq!(class.grade, None);
+    assert!(!class.mixed);
 }
 
 #[test]
@@ -238,6 +277,125 @@ fn duplicate_active_number_is_rejected_in_korean() {
     insert_student(&conn, year, 1, "김철수");
     let id = insert_student(&conn, year, 2, "이영희");
 
-    let err = update_student_impl(&conn, id, 1, "이영희", None).unwrap_err();
+    let err = update_student_impl(&conn, id, 1, "이영희").unwrap_err();
     assert!(err.contains("이미 같은 번호"), "영문 원문이 새어나왔다: {err}");
+}
+
+// ── 연락처 ────────────────────────────────────────────────────
+
+#[test]
+fn a_student_can_hold_many_contacts_in_order() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let sid = insert_student(&conn, year, 2, "이영희");
+
+    set_contacts_impl(
+        &conn,
+        sid,
+        &[
+            crate::types::ContactItem {
+                id: 0,
+                label: "어머니".into(),
+                value: "010-1111-1111".into(),
+                note: None,
+                sort_order: 0,
+            },
+            crate::types::ContactItem {
+                id: 0,
+                label: "학생".into(),
+                value: "010-2222-2222".into(),
+                note: Some("본인".into()),
+                sort_order: 0,
+            },
+        ],
+    )
+    .unwrap();
+
+    let contacts = get_contacts_impl(&conn, sid).unwrap();
+    assert_eq!(contacts.len(), 2);
+    assert_eq!(contacts[0].label, "어머니");
+    assert_eq!(contacts[1].note.as_deref(), Some("본인"));
+    // 순서는 저장 시점의 배열 순서를 따른다.
+    assert_eq!(contacts[0].sort_order, 0);
+    assert_eq!(contacts[1].sort_order, 1);
+}
+
+#[test]
+fn saving_contacts_replaces_the_whole_list() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let sid = insert_student(&conn, year, 2, "이영희");
+    let one = |label: &str| crate::types::ContactItem {
+        id: 0,
+        label: label.into(),
+        value: "010-0000-0000".into(),
+        note: None,
+        sort_order: 0,
+    };
+
+    set_contacts_impl(&conn, sid, &[one("어머니"), one("아버지")]).unwrap();
+    set_contacts_impl(&conn, sid, &[one("어머니")]).unwrap();
+
+    let contacts = get_contacts_impl(&conn, sid).unwrap();
+    assert_eq!(contacts.len(), 1);
+}
+
+#[test]
+fn a_blank_contact_is_rejected_and_nothing_is_saved() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let sid = insert_student(&conn, year, 2, "이영희");
+    let bad = crate::types::ContactItem {
+        id: 0,
+        label: "어머니".into(),
+        value: "  ".into(),
+        note: None,
+        sort_order: 0,
+    };
+    assert!(set_contacts_impl(&conn, sid, &[bad]).is_err());
+    assert!(get_contacts_impl(&conn, sid).unwrap().is_empty());
+}
+
+#[test]
+fn contacts_go_away_with_the_student_row() {
+    // 전출을 삭제로 처리하지 않는 이유가 여기에도 있다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let sid = insert_student(&conn, year, 2, "이영희");
+    set_contacts_impl(
+        &conn,
+        sid,
+        &[crate::types::ContactItem {
+            id: 0,
+            label: "어머니".into(),
+            value: "010-0000-0000".into(),
+            note: None,
+            sort_order: 0,
+        }],
+    )
+    .unwrap();
+
+    conn.execute("DELETE FROM student WHERE id = ?1", rusqlite::params![sid])
+        .unwrap();
+    let n: i64 = conn
+        .query_row("SELECT COUNT(*) FROM contact", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(n, 0);
+}
+
+// ── 학급 ──────────────────────────────────────────────────────
+
+#[test]
+fn classes_come_from_the_roster_not_a_separate_table() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 1, "김철수");
+    conn.execute(
+        "INSERT INTO student (year_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, 1, 2, 1, '최지훈', '2026-03-02')",
+        rusqlite::params![year],
+    )
+    .unwrap();
+
+    assert_eq!(get_classes_impl(&conn, year).unwrap(), vec![(1, 2), (3, 6)]);
 }

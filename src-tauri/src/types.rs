@@ -22,19 +22,23 @@ pub struct StudentItem {
     pub class_no: i64,
     pub number: i64,
     pub name: String,
-    pub guardian_phone: Option<String>,
     pub enrolled_from: String,
     pub enrolled_to: Option<String>,
 }
 
-/// 붙여넣기·CSV·직접 입력이 모두 이 형태로 수렴한다.
+/// 명렬표 한 줄. 붙여넣기·CSV·직접 입력이 모두 이 형태로 수렴한다.
+///
+/// 학년·반이 비어 있으면 화면이 고른 학급을 쓴다. 나이스 명렬표는 보통
+/// (학년, 반, 번호, 성명) 네 열이지만, 두 열만 복사해 오는 경우도 흔하다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterEntry {
+    #[serde(default)]
+    pub grade: Option<i64>,
+    #[serde(default)]
+    pub class_no: Option<i64>,
     pub number: i64,
     pub name: String,
-    #[serde(default)]
-    pub guardian_phone: Option<String>,
 }
 
 /// 재가져오기 미리보기 한 줄.
@@ -61,51 +65,112 @@ pub struct RosterApplyResult {
     pub withdrawn: i64,
 }
 
-// ── 출결 코드 ─────────────────────────────────────────────────
-
-#[derive(Debug, Serialize, Clone)]
+/// 명렬표에서 읽어낸 학급. 첫 실행에서 "우리 반"을 되묻지 않기 위한 것이다.
+#[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct AttendanceCodeItem {
+pub struct RosterClass {
+    pub grade: Option<i64>,
+    pub class_no: Option<i64>,
+    /// 명렬표에 학급이 둘 이상 섞여 있는지. 그러면 교사가 골라야 한다.
+    pub mixed: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RosterParseResult {
+    pub entries: Vec<RosterEntry>,
+    pub class: RosterClass,
+}
+
+// ── 연락처 ────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContactItem {
+    #[serde(default)]
     pub id: i64,
-    pub reason: String,
-    #[serde(rename = "type")]
-    pub code_type: String,
     pub label: String,
-    pub phrase_pattern: Option<String>,
-    pub default_start: Option<String>,
-    pub default_end: Option<String>,
+    pub value: String,
+    #[serde(default)]
+    pub note: Option<String>,
+    #[serde(default)]
+    pub sort_order: i64,
+}
+
+// ── 출결 축 ───────────────────────────────────────────────────
+
+/// 축 1 — 질병 · 출석인정 · 미인정 · 기타
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReasonItem {
+    pub id: i64,
+    pub label: String,
     pub shortcut: Option<String>,
     pub sort_order: i64,
     pub valid_from: String,
     pub valid_to: Option<String>,
-    /// 유형에서 파생한 값. 프론트가 다시 계산하지 않도록 함께 내린다.
-    /// none | start | end | both
+}
+
+/// 축 2 — 결석 · 지각 · 조퇴 · 결과
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeItem {
+    pub id: i64,
+    pub label: String,
+    /// none | start | end | both — 교사에게 물어야 하는 교시가 어느 쪽인지.
     pub slot_prompt: String,
+    pub shortcut: Option<String>,
+    pub sort_order: i64,
+    pub valid_from: String,
+    pub valid_to: Option<String>,
+}
+
+/// 두 축이 모두 정해졌을 때만 존재하는 쌍. 문구 패턴이 여기 붙는다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttendanceCodeItem {
+    pub id: i64,
+    pub reason_id: i64,
+    pub type_id: i64,
+    pub reason_label: String,
+    pub type_label: String,
+    pub label: String,
+    pub phrase_pattern: Option<String>,
+    pub sort_order: i64,
+    pub valid_from: String,
+    pub valid_to: Option<String>,
 }
 
 // ── 부재 구간 ─────────────────────────────────────────────────
 
-#[derive(Debug, Serialize)]
+/// 두 축은 각각 비어 있을 수 있다. 비어 있으면 "아직 안 정했다"는 뜻이다.
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SpanItem {
     pub id: i64,
     pub student_id: i64,
     pub date: String,
-    pub code_id: i64,
-    pub code_label: String,
-    pub code_type: String,
+    pub reason_id: Option<i64>,
+    pub type_id: Option<i64>,
+    pub reason_label: Option<String>,
+    pub type_label: Option<String>,
+    /// 두 축이 다 정해졌을 때의 코드 라벨. 아니면 None.
+    pub code_label: Option<String>,
     pub start_slot: Option<String>,
     pub end_slot: Option<String>,
     pub symptom: Option<String>,
     pub group_id: Option<String>,
     /// `"* ~ *"` 같은 요약 표기
     pub span_text: String,
+    /// 두 축이 모두 채워졌는가. false면 나이스에 낼 수 없는 미완성 기록이다.
+    pub complete: bool,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DailyReasonItem {
-    pub code_id: Option<i64>,
+    pub reason_id: Option<i64>,
+    pub type_id: Option<i64>,
     pub reason: String,
 }
 
@@ -183,7 +248,9 @@ pub struct PendingRow {
     pub class_no: i64,
     pub number: i64,
     pub name: String,
-    pub guardian_phone: Option<String>,
+    /// 대표 연락처 하나(sort_order가 가장 앞선 것). 없으면 None.
+    pub contact_label: Option<String>,
+    pub contact_value: Option<String>,
     pub date: String,
     pub item_id: i64,
     pub item_name: String,
@@ -198,4 +265,22 @@ pub struct PendingSummary {
     pub item_id: i64,
     pub item_name: String,
     pub count: i64,
+}
+
+// ── 대시보드 ──────────────────────────────────────────────────
+
+/// HOME이 한 번에 받아 가는 요약. 화면이 여러 커맨드를 조합하지 않게 한다.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HomeSummary {
+    pub date: String,
+    pub date_label: String,
+    pub enrolled: i64,
+    /// 오늘 구간이 하나라도 있는 학생 수
+    pub recorded: i64,
+    /// 두 축 중 하나라도 비어 있는 구간의 수. 채워 넣어야 할 것들이다.
+    pub incomplete: i64,
+    pub pending: Vec<PendingSummary>,
+    /// 마감이 지난 미제출 건수
+    pub overdue: i64,
 }

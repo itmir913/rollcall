@@ -29,8 +29,8 @@ const router = useRouter()
                     <div>
                         <dt>어떻게 입력하나요</dt>
                         <dd>
-                            <code>2 q 몸살</code> 처럼 한 줄이면 끝납니다.
-                            저장 버튼도, 확인 창도 없습니다.
+                            구분을 누르고 종류를 누른 뒤, 학생 이름을 누르면 한 건이 들어갑니다.
+                            같은 사유면 계속 눌러 나가면 됩니다.
                         </dd>
                     </div>
                     <div>
@@ -42,13 +42,16 @@ const router = useRouter()
                     </div>
                     <div>
                         <dt>다음 순서</dt>
-                        <dd>학년도와 학급을 정하고, 명렬표를 붙여넣으면 준비가 끝납니다.</dd>
+                        <dd>
+                            나이스 명렬표를 붙여넣으면 끝입니다. 학년·반도 명렬표에서 읽습니다.
+                            학년도는 앱이 정합니다.
+                        </dd>
                     </div>
                 </dl>
             </UiCard>
 
-            <UiButton variant="primary" @click="router.push('/setup')">
-                시작하기
+            <UiButton variant="primary" @click="router.push('/roster')">
+                학생 명단 넣고 시작하기
             </UiButton>
 
             <p class="welcome__note">

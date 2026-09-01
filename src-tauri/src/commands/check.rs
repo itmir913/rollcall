@@ -7,7 +7,7 @@ use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::due::{days_overdue, due_date, format_date, parse_date};
 use crate::state::DbState;
-use crate::types::{CheckItemDef, PendingRow, PendingSummary};
+use crate::types::{CheckItemDef, HomeSummary, PendingRow, PendingSummary};
 use chrono::Local;
 use rusqlite::Connection;
 use tauri::State;
@@ -245,11 +245,16 @@ pub fn get_pending_impl(
     let today_d = parse_date(today)?;
     let mut stmt = conn
         .prepare(
-            "SELECT s.id, s.grade, s.class_no, s.number, s.name, s.guardian_phone,
+            // 연락처는 대표 하나만 붙인다(sort_order가 가장 앞선 것). 문자 발송은
+            // 학년/반/번호로 수신자를 찾으므로 번호가 없다고 행을 빼지 않는다.
+            "SELECT s.id, s.grade, s.class_no, s.number, s.name, ct.label, ct.value,
                     dc.date, dc.item_id, ci.name, dc.due_date
              FROM daily_check dc
              JOIN student s ON s.id = dc.student_id
              JOIN check_item ci ON ci.id = dc.item_id
+             LEFT JOIN contact ct ON ct.id = (
+                 SELECT id FROM contact WHERE student_id = s.id ORDER BY sort_order, id LIMIT 1
+             )
              WHERE dc.done = 0 AND ci.active = 1
                AND s.year_id = ?1 AND s.grade = ?2 AND s.class_no = ?3
              ORDER BY (dc.due_date IS NULL), dc.due_date, s.number, ci.sort_order",
@@ -258,17 +263,18 @@ pub fn get_pending_impl(
 
     let rows = stmt
         .query_map(rusqlite::params![year_id, grade, class_no], |r| {
-            let due: Option<String> = r.get(9)?;
+            let due: Option<String> = r.get(10)?;
             Ok(PendingRow {
                 student_id: r.get(0)?,
                 grade: r.get(1)?,
                 class_no: r.get(2)?,
                 number: r.get(3)?,
                 name: r.get(4)?,
-                guardian_phone: r.get(5)?,
-                date: r.get(6)?,
-                item_id: r.get(7)?,
-                item_name: r.get(8)?,
+                contact_label: r.get(5)?,
+                contact_value: r.get(6)?,
+                date: r.get(7)?,
+                item_id: r.get(8)?,
+                item_name: r.get(9)?,
                 due_date: due,
                 days_overdue: None,
             })
@@ -323,6 +329,86 @@ pub fn get_pending_summary_impl(
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(rows)
+}
+
+
+// ── 대시보드 ──────────────────────────────────────────────────
+
+/// HOME이 한 번에 받아 가는 요약.
+///
+/// 화면이 커맨드 대여섯 개를 조합해 숫자를 세면, 그 조합 규칙이 프론트엔드의
+/// 비즈니스 로직이 된다. 세는 일은 전부 여기서 한다.
+pub fn home_summary_impl(
+    conn: &Connection,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
+    date: &str,
+) -> Result<HomeSummary, String> {
+    let today = parse_date(date)?;
+
+    let enrolled = crate::commands::student::get_students_on_impl(
+        conn, year_id, grade, class_no, date,
+    )?
+    .len() as i64;
+
+    let recorded: i64 = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT sp.student_id) FROM absence_span sp
+             JOIN student s ON s.id = sp.student_id
+             WHERE sp.date = ?4 AND s.year_id = ?1 AND s.grade = ?2 AND s.class_no = ?3",
+            rusqlite::params![year_id, grade, class_no, date],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    // 날짜를 가리지 않는다. 지난주에 비워둔 채 잊은 기록이 오늘 화면에 떠야 한다.
+    let incomplete: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM absence_span sp
+             JOIN student s ON s.id = sp.student_id
+             WHERE (sp.reason_id IS NULL OR sp.type_id IS NULL)
+               AND s.year_id = ?1 AND s.grade = ?2 AND s.class_no = ?3",
+            rusqlite::params![year_id, grade, class_no],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    let pending = get_pending_summary_impl(conn, year_id, grade, class_no)?;
+
+    let overdue: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM daily_check dc
+             JOIN student s ON s.id = dc.student_id
+             JOIN check_item ci ON ci.id = dc.item_id
+             WHERE dc.done = 0 AND ci.active = 1
+               AND dc.due_date IS NOT NULL AND dc.due_date < ?4
+               AND s.year_id = ?1 AND s.grade = ?2 AND s.class_no = ?3",
+            rusqlite::params![year_id, grade, class_no, date],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+
+    Ok(HomeSummary {
+        date: date.to_string(),
+        date_label: crate::due::format_korean(today),
+        enrolled,
+        recorded,
+        incomplete,
+        pending,
+        overdue,
+    })
+}
+
+#[tauri::command]
+pub fn home_summary(
+    db: State<DbState>,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
+    date: String,
+) -> Result<HomeSummary, String> {
+    with_conn(&db, |c| home_summary_impl(c, year_id, grade, class_no, &date))
 }
 
 // ── 커맨드 ────────────────────────────────────────────────────

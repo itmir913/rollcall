@@ -33,14 +33,23 @@ fn main() {
             get_years,
             create_year,
             update_year,
-            // 학생
+            // 학생 · 연락처
             parse_roster,
             get_students,
+            get_classes,
             preview_roster,
             apply_roster,
             update_student,
             withdraw_student,
-            // 출결 코드
+            get_contacts,
+            set_contacts,
+            // 출결 축 (구분 · 종류 · 쌍)
+            get_reasons,
+            create_reason,
+            retire_reason,
+            get_types,
+            create_type,
+            retire_type,
             get_codes,
             create_code,
             revise_code,
@@ -49,10 +58,11 @@ fn main() {
             // 출결 입력
             get_day_grid,
             render_phrase,
-            add_span,
+            add_spans,
             update_span,
             delete_span,
             set_daily_reason,
+            get_incomplete,
             copy_previous,
             bulk_preview,
             bulk_apply,
@@ -66,6 +76,7 @@ fn main() {
             set_group_check,
             get_pending,
             get_pending_summary,
+            home_summary,
             // 내보내기
             export_pending_csv,
             export_backup_csv,

@@ -1,8 +1,8 @@
 use rusqlite::Connection;
 
 pub mod attendance_tests;
+pub mod axis_tests;
 pub mod check_tests;
-pub mod code_tests;
 pub mod db_tests;
 pub mod due_tests;
 pub mod export_tests;
@@ -40,14 +40,29 @@ pub fn insert_student(conn: &Connection, year_id: i64, number: i64, name: &str) 
     conn.last_insert_rowid()
 }
 
-/// 시드에서 라벨로 코드 id를 찾는다.
-pub fn code_id(conn: &Connection, label: &str) -> i64 {
+/// 시드에서 라벨로 구분 id를 찾는다. (질병 / 출석인정 / 미인정 / 기타)
+pub fn reason_id(conn: &Connection, label: &str) -> i64 {
     conn.query_row(
-        "SELECT id FROM attendance_code WHERE label = ?1 AND valid_to IS NULL",
+        "SELECT id FROM attendance_reason WHERE label = ?1 AND valid_to IS NULL",
         rusqlite::params![label],
         |r| r.get(0),
     )
     .unwrap()
+}
+
+/// 시드에서 라벨로 종류 id를 찾는다. (결석 / 지각 / 조퇴 / 결과)
+pub fn type_id(conn: &Connection, label: &str) -> i64 {
+    conn.query_row(
+        "SELECT id FROM attendance_type WHERE label = ?1 AND valid_to IS NULL",
+        rusqlite::params![label],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+/// 두 축을 한 번에. `axes(&conn, "질병", "결석")`
+pub fn axes(conn: &Connection, reason: &str, r#type: &str) -> (Option<i64>, Option<i64>) {
+    (Some(reason_id(conn, reason)), Some(type_id(conn, r#type)))
 }
 
 pub fn item_id(conn: &Connection, name: &str) -> i64 {

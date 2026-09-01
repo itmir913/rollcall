@@ -7,23 +7,23 @@
  */
 import {computed, onMounted, ref} from 'vue'
 import {useAppStore} from '../stores/app'
-import {useCodeStore} from '../stores/code'
+import {useAxisStore} from '../stores/axis'
 import {useDayStore} from '../stores/day'
 import {useRosterStore} from '../stores/roster'
-import {needsEnd, needsStart} from '../services/slots'
-import CodePicker from '../components/CodePicker.vue'
-import SlotPicker from '../components/SlotPicker.vue'
-import {UiButton, UiCard, UiNotice, UiPage, UiToggle} from '../components/ui'
+import {slotProblem} from '../services/slots'
+import AxisBar from '../components/AxisBar.vue'
+import {UiButton, UiCard, UiNotice, UiPage, UiToggle} from "../components/ui"
 
 const app = useAppStore()
 const day = useDayStore()
-const codeStore = useCodeStore()
+const axis = useAxisStore()
 const roster = useRosterStore()
 
 const selected = ref([])
 const from = ref(new Date().toISOString().slice(0, 10))
 const to = ref(new Date().toISOString().slice(0, 10))
-const codeId = ref(null)
+const reasonId = ref(null)
+const typeId = ref(null)
 const startSlot = ref(null)
 const endSlot = ref(null)
 const symptom = ref('')
@@ -32,9 +32,10 @@ const skipped = ref(new Set())
 const message = ref('')
 const error = ref('')
 
-const code = computed(() => codeStore.codes.find((c) => c.id === codeId.value) ?? null)
-const askStart = computed(() => needsStart(code.value?.slotPrompt))
-const askEnd = computed(() => needsEnd(code.value?.slotPrompt))
+const type = computed(() => axis.typeById(typeId.value))
+const problem = computed(() => slotProblem(type.value?.slotPrompt, startSlot.value, endSlot.value))
+/** 기간 일괄 입력은 사유를 정하고 하는 일이다. 미정으로 스무 날을 찍을 이유가 없다. */
+const undecided = computed(() => reasonId.value === null || typeId.value === null)
 const chosenDates = computed(() =>
     days.value.filter((d) => !skipped.value.has(d.date)).map((d) => d.date),
 )
@@ -53,11 +54,11 @@ async function load() {
     if (!app.ready) return
     await Promise.all([
         roster.fetchStudents(app.yearId, app.grade, app.classNo),
-        codeStore.fetchCodes(),
+        axis.fetchAll(),
     ])
-    codeId.value = codeStore.codes.find((c) => c.label === '출석인정결석')?.id
-        ?? codeStore.codes[0]?.id
-        ?? null
+    // 기간 일괄 입력은 대부분 교외체험학습이다. 가장 흔한 조합을 미리 골라 둔다.
+    reasonId.value = axis.reasons.find((r) => r.label === '출석인정')?.id ?? null
+    typeId.value = axis.types.find((t) => t.label === '결석')?.id ?? null
 }
 
 async function makePreview() {
@@ -83,9 +84,10 @@ async function apply() {
         const result = await day.bulkApply(
             selected.value,
             chosenDates.value,
-            codeId.value,
-            askStart.value ? startSlot.value : null,
-            askEnd.value ? endSlot.value : null,
+            reasonId.value,
+            typeId.value,
+            startSlot.value,
+            endSlot.value,
             symptom.value.trim() || null,
         )
         message.value = `${selected.value.length}명 × ${result.days}일을 저장했습니다. `
@@ -123,9 +125,9 @@ onMounted(load)
                        placeholder="사유 (예: 교외체험학습)"/>
             </div>
 
-            <CodePicker v-model="codeId" :codes="codeStore.codes"/>
-            <SlotPicker v-if="askStart" v-model="startSlot" label="시작 교시"/>
-            <SlotPicker v-if="askEnd" v-model="endSlot" label="끝 교시"/>
+            <AxisBar v-model:end-slot="endSlot" v-model:reason-id="reasonId"
+                     v-model:start-slot="startSlot" v-model:type-id="typeId"
+                     :allow-undecided="false" :reasons="axis.reasons" :types="axis.types"/>
 
             <UiButton :disabled="!selected.length" class="bulk__save" variant="primary"
                       @click="makePreview">
@@ -143,8 +145,10 @@ onMounted(load)
                           :on-label="d.hasExisting ? `${d.label} · 기록 있음` : d.label"
                           @update:model-value="toggleDay(d.date)"/>
             </div>
-            <UiButton :disabled="!chosenDates.length" class="bulk__save" variant="primary"
-                      @click="apply">
+            <UiNotice v-if="undecided" kind="warn"
+                      text="구분과 종류를 정해주세요. 기간 일괄 입력은 사유가 정해진 일에 씁니다."/>
+            <UiButton :disabled="!chosenDates.length || undecided || !!problem"
+                      class="bulk__save" variant="primary" @click="apply">
                 저장
             </UiButton>
         </UiCard>

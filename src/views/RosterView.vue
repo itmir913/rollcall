@@ -2,7 +2,10 @@
 /**
  * 학생 명단.
  *
- * 붙여넣기를 주 경로로 둔다 — 나이스에서 두 열을 복사해 붙여넣으면 끝난다.
+ * **학급은 명렬표에서 나온다.** 나이스 명렬표가 (학년, 반, 번호, 성명)이므로
+ * "우리 반이 몇 학년 몇 반입니까"를 따로 묻지 않는다. 두 열만 복사해 왔거나
+ * 여러 반이 섞여 있을 때만 교사에게 되묻는다.
+ *
  * 재가져오기는 교체가 아니라 차분이고, 판정할 수 없는 행(번호 같고 이름 다름)은
  * 교사가 미리보기에서 고른다.
  */
@@ -10,6 +13,7 @@ import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {useAppStore} from '../stores/app'
 import {useRosterStore} from '../stores/roster'
+import StudentPanel from '../components/StudentPanel.vue'
 import {UiButton, UiCard, UiNotice, UiPage, UiTable} from '../components/ui'
 
 const app = useAppStore()
@@ -19,6 +23,11 @@ const router = useRouter()
 const pasted = ref('')
 const effectiveDate = ref(new Date().toISOString().slice(0, 10))
 const rows = ref([])
+const detected = ref(null)
+const grade = ref(app.grade ?? 1)
+const classNo = ref(app.classNo ?? 1)
+const selectedId = ref(null)
+const contacts = ref([])
 const message = ref('')
 const error = ref('')
 
@@ -38,28 +47,42 @@ const DIFF_COLUMNS = [
 
 const LIST_COLUMNS = [
     {key: 'number', label: '번호', width: '80px'},
-    {key: 'name', label: '성명', width: '140px'},
-    {key: 'phone', label: '보호자 연락처 (선택)'},
-    {key: 'actions', label: '', width: '110px', align: 'right'},
+    {key: 'name', label: '성명', width: '160px'},
+    {key: 'actions', label: '', width: '200px', align: 'right'},
 ]
 
 const changed = computed(() => rows.value.filter((r) => r.action !== 'unchanged'))
+const needsClass = computed(() => !detected.value?.grade || !detected.value?.classNo)
+const selectedRow = computed(() => {
+    const s = roster.students.find((x) => x.id === selectedId.value)
+    if (!s) return null
+    // StudentPanel은 격자 행 모양을 기대한다. 명단 화면에는 그날 기록이 없으므로 비운다.
+    return {studentId: s.id, number: s.number, name: s.name, spans: [], reason: null, checks: []}
+})
 
 async function load() {
     if (!app.ready) return
     await roster.fetchStudents(app.yearId, app.grade, app.classNo)
+    grade.value = app.grade
+    classNo.value = app.classNo
 }
 
 async function makePreview() {
     error.value = ''
     message.value = ''
     try {
-        const entries = await roster.parseText(pasted.value)
-        if (!entries.length) {
-            error.value = '번호와 이름을 찾지 못했습니다. 두 열을 함께 복사했는지 확인해주세요.'
+        const result = await roster.parseText(pasted.value)
+        if (!result.entries.length) {
+            error.value = '번호와 이름을 찾지 못했습니다. 번호·성명 열을 함께 복사했는지 확인해주세요.'
             return
         }
-        rows.value = await roster.preview(app.yearId, app.grade, app.classNo, entries)
+        detected.value = result.class
+        if (result.class.grade) grade.value = result.class.grade
+        if (result.class.classNo) classNo.value = result.class.classNo
+
+        rows.value = await roster.preview(
+            app.yearId ?? null, Number(grade.value), Number(classNo.value), result.entries,
+        )
     } catch (e) {
         error.value = String(e)
     }
@@ -68,13 +91,37 @@ async function makePreview() {
 async function applyPreview() {
     error.value = ''
     try {
-        const result = await roster.apply(
-            app.yearId, app.grade, app.classNo, effectiveDate.value, rows.value,
-        )
+        const g = Number(grade.value)
+        const c = Number(classNo.value)
+        const result = await roster.apply(app.yearId, g, c, effectiveDate.value, rows.value)
+        await app.setContext(g, c)
         rows.value = []
         pasted.value = ''
+        detected.value = null
+        await load()
         message.value =
             `추가 ${result.added}명 · 이름 변경 ${result.renamed}명 · 전출 ${result.withdrawn}명`
+    } catch (e) {
+        error.value = String(e)
+    }
+}
+
+async function switchClass([g, c]) {
+    await app.setContext(g, c)
+    selectedId.value = null
+    await load()
+}
+
+async function selectStudent(student) {
+    selectedId.value = student.id
+    contacts.value = await roster.fetchContacts(student.id)
+}
+
+async function saveContacts(list) {
+    try {
+        await roster.saveContacts(selectedId.value, list)
+        contacts.value = await roster.fetchContacts(selectedId.value)
+        message.value = '연락처를 저장했습니다.'
     } catch (e) {
         error.value = String(e)
     }
@@ -84,17 +131,8 @@ async function withdrawOne(student) {
     error.value = ''
     try {
         await roster.withdraw(student.id, effectiveDate.value)
+        if (selectedId.value === student.id) selectedId.value = null
         await load()
-    } catch (e) {
-        error.value = String(e)
-    }
-}
-
-async function savePhone(student, event) {
-    try {
-        await roster.updateStudent(
-            student.id, student.number, student.name, event.target.value.trim() || null,
-        )
     } catch (e) {
         error.value = String(e)
     }
@@ -104,27 +142,58 @@ onMounted(load)
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학년도와 학급을 정해주세요."/>
-
-    <UiPage v-else title="학생 명단">
+    <UiPage subtitle="나이스에서 번호·성명 열을 복사해 붙여넣으면 됩니다." title="학생 명단">
         <template #actions>
-            <UiButton variant="primary" @click="router.push('/')">HOME으로</UiButton>
+            <UiButton v-if="app.ready" variant="primary" @click="router.push('/')">
+                HOME으로
+            </UiButton>
         </template>
 
-        <UiCard description="나이스에서 번호·성명 두 열을 복사해 그대로 붙여넣으세요. 탭이든 쉼표든 상관없습니다."
+        <!-- 학급 전환 -->
+        <UiCard v-if="app.classes.length > 1" title="학급">
+            <div class="row">
+                <UiButton v-for="[g, c] in app.classes" :key="`${g}-${c}`"
+                          :variant="app.grade === g && app.classNo === c ? 'primary' : 'default'"
+                          @click="switchClass([g, c])">
+                    {{ g }}학년 {{ c }}반
+                </UiButton>
+            </div>
+        </UiCard>
+
+        <!-- 붙여넣기 -->
+        <UiCard description="탭이든 쉼표든 상관없습니다. (학년, 반, 번호, 성명) 네 열이면 학급도 함께 읽습니다."
                 title="명렬표 붙여넣기">
-            <textarea v-model="pasted" class="field roster__paste"
-                      placeholder="1&#9;김철수&#10;2&#9;이영희"></textarea>
-            <div class="roster__row">
+            <textarea v-model="pasted" class="field paste"
+                      placeholder="3&#9;6&#9;1&#9;김철수&#10;3&#9;6&#9;2&#9;이영희"></textarea>
+            <div class="row">
                 <UiButton variant="primary" @click="makePreview">미리보기</UiButton>
-                <label class="roster__label">적용 기준일</label>
+                <label class="muted">적용 기준일</label>
                 <input v-model="effectiveDate" class="field" type="date"/>
             </div>
         </UiCard>
 
-        <UiCard v-if="rows.length"
-                :title="`미리보기 — 바꿀 것 ${changed.length}건`"
-                description="사라진 번호는 삭제하지 않고 전출로 처리합니다. 번호가 같고 이름이 다른 행은 개명인지 전입인지 프로그램이 판정할 수 없으니 직접 골라주세요.">
+        <!-- 미리보기 -->
+        <UiCard v-if="rows.length" :title="`미리보기 — 바꿀 것 ${changed.length}건`">
+            <UiNotice v-if="detected?.mixed" kind="warn"
+                      text="명렬표에 여러 학급이 섞여 있습니다. 어느 반으로 넣을지 정해주세요."/>
+            <UiNotice v-else-if="needsClass" kind="info"
+                      text="명렬표에 학년·반이 없습니다. 아래에서 정해주세요."/>
+            <UiNotice v-else kind="ok"
+                      :text="`명렬표가 말하는 학급: ${grade}학년 ${classNo}반`"/>
+
+            <div class="row">
+                <input v-model="grade" class="field num" min="1" type="number"/>
+                <span>학년</span>
+                <input v-model="classNo" class="field num" min="1" type="number"/>
+                <span>반</span>
+                <UiButton @click="makePreview">이 학급으로 다시 비교</UiButton>
+            </div>
+
+            <p class="muted">
+                사라진 번호는 삭제하지 않고 전출로 처리합니다. 번호가 같고 이름이 다른 행은
+                개명인지 전입인지 프로그램이 판정할 수 없으니 직접 골라주세요.
+            </p>
+
             <UiTable :columns="DIFF_COLUMNS" :rows="rows" row-key="number">
                 <template #row="{row}">
                     <td>{{ row.number }}</td>
@@ -139,28 +208,34 @@ onMounted(load)
                     </td>
                 </template>
             </UiTable>
-            <div class="roster__row">
+
+            <div class="row">
                 <UiButton variant="primary" @click="applyPreview">저장</UiButton>
-                <UiButton @click="rows = []">취소</UiButton>
+                <UiButton @click="rows = []; detected = null">취소</UiButton>
             </div>
         </UiCard>
 
-        <UiCard :title="`재학생 ${roster.students.length}명`">
-            <UiTable :columns="LIST_COLUMNS" :rows="roster.students"
-                     empty-text="아직 명단이 없습니다. 위에 붙여넣어 주세요.">
-                <template #row="{row}">
-                    <td>{{ row.number }}</td>
-                    <td>{{ row.name }}</td>
-                    <td>
-                        <input :value="row.guardianPhone" class="field roster__phone"
-                               placeholder="비워 두어도 됩니다" @blur="savePhone(row, $event)"/>
-                    </td>
-                    <td class="roster__cell-right">
-                        <UiButton variant="danger" @click="withdrawOne(row)">전출</UiButton>
-                    </td>
-                </template>
-            </UiTable>
-        </UiCard>
+        <!-- 현재 명단 + 학생 패널 -->
+        <div v-if="app.ready" class="board">
+            <UiCard class="board__list" :title="`재학생 ${roster.students.length}명`">
+                <UiTable :columns="LIST_COLUMNS" :rows="roster.students"
+                         empty-text="아직 명단이 없습니다. 위에 붙여넣어 주세요.">
+                    <template #row="{row}">
+                        <td>{{ row.number }}</td>
+                        <td>{{ row.name }}</td>
+                        <td class="cell-right">
+                            <UiButton variant="ghost" @click="selectStudent(row)">연락처</UiButton>
+                            <UiButton variant="danger" @click="withdrawOne(row)">전출</UiButton>
+                        </td>
+                    </template>
+                </UiTable>
+            </UiCard>
+
+            <StudentPanel :contacts="contacts" :describe="() => ''" :items="[]"
+                          :row="selectedRow"
+                          @close="selectedId = null"
+                          @save-contacts="saveContacts"/>
+        </div>
 
         <UiNotice :text="message" kind="ok"/>
         <UiNotice :text="error" kind="error"/>
@@ -168,29 +243,43 @@ onMounted(load)
 </template>
 
 <style scoped>
-.roster__paste {
+.paste {
     width: 100%;
     min-height: 150px;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     resize: vertical;
 }
 
-.roster__row {
+.row {
     display: flex;
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
 }
 
-.roster__label {
+.num {
+    width: 90px;
+}
+
+.muted {
     color: var(--c-ink-3);
+    margin: 0;
 }
 
-.roster__phone {
-    width: 220px;
+.cell-right {
+    display: flex;
+    gap: 6px;
+    justify-content: flex-end;
 }
 
-.roster__cell-right {
-    text-align: right;
+.board {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.board__list {
+    flex: 1;
+    min-width: 0;
 }
 </style>

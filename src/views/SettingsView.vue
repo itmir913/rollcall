@@ -3,13 +3,13 @@ import {onMounted, ref} from 'vue'
 import {save} from '@tauri-apps/plugin-dialog'
 import {useAppStore} from '../stores/app'
 import {useCheckStore} from '../stores/check'
-import {useCodeStore} from '../stores/code'
+import {useAxisStore} from '../stores/axis'
 import {useTheme} from '../composables/useTheme'
 import {UiButton, UiCard, UiNotice, UiPage, UiTable, UiToggle} from '../components/ui'
 
 const app = useAppStore()
 const check = useCheckStore()
-const codeStore = useCodeStore()
+const axis = useAxisStore()
 const theme = useTheme()
 
 const THEME_LABELS = {light: '라이트 (기본)', dark: '다크', system: '시스템 따름'}
@@ -28,14 +28,13 @@ const ITEM_COLUMNS = [
 
 const CODE_COLUMNS = [
     {key: 'label', label: '코드', width: '140px'},
-    {key: 'reason', label: '사유', width: '110px'},
-    {key: 'type', label: '유형', width: '90px'},
-    {key: 'shortcut', label: '단축키', width: '90px'},
+    {key: 'reason', label: '구분', width: '110px'},
+    {key: 'type', label: '종류', width: '90px'},
     {key: 'pattern', label: '문구 패턴'},
 ]
 
 async function load() {
-    await Promise.all([check.fetchItems(false), codeStore.fetchCodes()])
+    await Promise.all([check.fetchItems(false), axis.fetchAll()])
 }
 
 function toNumberOrNull(value) {
@@ -172,13 +171,12 @@ onMounted(load)
         </UiCard>
 
         <UiCard description="코드를 고치면 과거 기록의 뜻이 바뀌므로, 수정은 구 코드를 마감하고 새 코드를 추가하는 방식으로 처리됩니다."
-                title="출결 코드">
-            <UiTable :columns="CODE_COLUMNS" :rows="codeStore.codes">
+                title="출결 구분 × 종류">
+            <UiTable :columns="CODE_COLUMNS" :rows="axis.codes">
                 <template #row="{row}">
                     <td>{{ row.label }}</td>
-                    <td>{{ row.reason }}</td>
-                    <td>{{ row.type }}</td>
-                    <td>{{ row.shortcut ?? '—' }}</td>
+                    <td>{{ row.reasonLabel }}</td>
+                    <td>{{ row.typeLabel }}</td>
                     <td class="settings__muted">{{ row.phrasePattern ?? '—' }}</td>
                 </template>
             </UiTable>

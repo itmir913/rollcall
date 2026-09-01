@@ -30,33 +30,13 @@ pub fn format_span(start: Option<&str>, end: Option<&str>) -> String {
     format!("{s} ~ {e}")
 }
 
-/// 교사가 직접 채워야 하는 슬롯이 어느 쪽인지.
+/// `attendance_type.slot_prompt`가 가질 수 있는 값.
 ///
-/// 유형에서 파생한다. `attendance_code`에 컬럼을 더 두지 않는 이유는,
-/// 이 대응이 유형의 정의 그 자체이기 때문이다(결석=하루 전체, 조퇴=시작만,
-/// 지각=끝만, 결과=양쪽). 학교별로 기본값을 바꾸고 싶으면
-/// `default_start`/`default_end`로 덮는다.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SlotPrompt {
-    /// 물어보지 않는다. `* ~ *`
-    None,
-    /// 시작 슬롯만. `N ~ *`
-    Start,
-    /// 끝 슬롯만. `* ~ N`
-    End,
-    /// 양쪽. `N ~ M`
-    Both,
-}
+/// 값 자체는 DB에 있다. 여기서는 저장 전에 알 수 없는 값이 들어오는 것만 막는다.
+pub const SLOT_PROMPTS: &[&str] = &["none", "start", "end", "both"];
 
-pub fn prompt_for_type(code_type: &str) -> SlotPrompt {
-    match code_type {
-        "결석" => SlotPrompt::None,
-        "조퇴" => SlotPrompt::Start,
-        "지각" => SlotPrompt::End,
-        "결과" => SlotPrompt::Both,
-        // 사용자가 유형을 늘릴 여지를 남긴다. 모르는 유형은 양쪽 다 묻는다.
-        _ => SlotPrompt::Both,
-    }
+pub fn is_slot_prompt(value: &str) -> bool {
+    SLOT_PROMPTS.contains(&value)
 }
 
 /// 구간의 유효성. 저장 직전에 부른다.

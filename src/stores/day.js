@@ -34,6 +34,10 @@ export const useDayStore = defineStore('day', () => {
     const items = computed(() => grid.value?.items ?? [])
     const dateLabel = computed(() => formatKorean(date.value))
     const recordedCount = computed(() => rows.value.filter((r) => r.spans.length > 0).length)
+    /** 두 축 중 하나라도 비어 있는 구간을 가진 학생 수 */
+    const incompleteCount = computed(
+        () => rows.value.filter((r) => r.spans.some((s) => !s.complete)).length,
+    )
 
     async function fetchGrid(yearId, grade, classNo) {
         loading.value = true
@@ -62,22 +66,31 @@ export const useDayStore = defineStore('day', () => {
         return rows.value.find((r) => r.number === number) || null
     }
 
-    async function addSpan({studentId, codeId, startSlot, endSlot, symptom}) {
-        return await invoke('add_span', {
-            studentId, date: date.value, codeId, startSlot, endSlot, symptom,
+    /**
+     * 여러 학생에게 같은 출결을 한 번에 찍는다.
+     *
+     * 화면의 입력 방식이 이렇다 — 구분과 종류를 고른 뒤 학생을 눌러 나간다.
+     * 한 명을 눌러도 목록 하나짜리로 같은 경로를 탄다. 두 축이 비어 있어도
+     * 저장된다("안 왔는데 연락이 안 됨").
+     */
+    async function stamp({studentIds, reasonId, typeId, startSlot, endSlot, symptom}) {
+        return await invoke('add_spans', {
+            studentIds, date: date.value, reasonId, typeId, startSlot, endSlot, symptom,
         })
     }
 
-    async function updateSpan({id, codeId, startSlot, endSlot, symptom}) {
-        await invoke('update_span', {id, codeId, startSlot, endSlot, symptom})
+    async function updateSpan({id, reasonId, typeId, startSlot, endSlot, symptom}) {
+        await invoke('update_span', {id, reasonId, typeId, startSlot, endSlot, symptom})
     }
 
     async function deleteSpan(id) {
         await invoke('delete_span', {id})
     }
 
-    async function setReason(studentId, reason, codeId = null) {
-        await invoke('set_daily_reason', {studentId, date: date.value, codeId, reason})
+    async function setReason(studentId, reason, reasonId = null, typeId = null) {
+        await invoke('set_daily_reason', {
+            studentId, date: date.value, reasonId, typeId, reason,
+        })
     }
 
     /** 연속 결석 학생은 이것 하나로 끝난다. */
@@ -85,23 +98,32 @@ export const useDayStore = defineStore('day', () => {
         return await invoke('copy_previous', {studentId, date: date.value})
     }
 
-    async function renderPhrase(codeId, symptom, startSlot, endSlot) {
-        return await invoke('render_phrase', {codeId, symptom, startSlot, endSlot})
+    async function renderPhrase(reasonId, typeId, symptom, startSlot, endSlot) {
+        return await invoke('render_phrase', {
+            reasonId, typeId, symptom, startSlot, endSlot, onDate: date.value,
+        })
     }
 
     async function bulkPreview(studentIds, from, to) {
         return await invoke('bulk_preview', {studentIds, from, to})
     }
 
-    async function bulkApply(studentIds, dates, codeId, startSlot, endSlot, symptom) {
-        return await invoke('bulk_apply', {studentIds, dates, codeId, startSlot, endSlot, symptom})
+    async function bulkApply(studentIds, dates, reasonId, typeId, startSlot, endSlot, symptom) {
+        return await invoke('bulk_apply', {
+            studentIds, dates, reasonId, typeId, startSlot, endSlot, symptom,
+        })
+    }
+
+    /** 아직 두 축이 다 채워지지 않은 구간들. 채워 넣어야 할 목록이다. */
+    async function fetchIncomplete(yearId, grade, classNo) {
+        return await invoke('get_incomplete', {yearId, grade, classNo})
     }
 
     return {
         date, grid, loading, error,
-        rows, items, dateLabel, recordedCount,
+        rows, items, dateLabel, recordedCount, incompleteCount,
         fetchGrid, setDate, moveDate, rowByNumber,
-        addSpan, updateSpan, deleteSpan, setReason, copyPrevious, renderPhrase,
-        bulkPreview, bulkApply,
+        stamp, updateSpan, deleteSpan, setReason, copyPrevious, renderPhrase,
+        bulkPreview, bulkApply, fetchIncomplete,
     }
 })

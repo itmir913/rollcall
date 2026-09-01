@@ -27,8 +27,13 @@ export const useRosterStore = defineStore('roster', () => {
         }
     }
 
+    /** 붙여넣은 텍스트를 파싱한다. 명렬표가 말하는 학급도 함께 돌려준다. */
     async function parseText(text) {
         return await invoke('parse_roster', {text})
+    }
+
+    async function fetchClasses(yearId) {
+        return await invoke('get_classes', {yearId})
     }
 
     async function preview(yearId, grade, classNo, entries) {
@@ -51,8 +56,17 @@ export const useRosterStore = defineStore('roster', () => {
         return result
     }
 
-    async function updateStudent(id, number, name, guardianPhone) {
-        await invoke('update_student', {id, number, name, guardianPhone})
+    async function updateStudent(id, number, name) {
+        await invoke('update_student', {id, number, name})
+    }
+
+    async function fetchContacts(studentId) {
+        return await invoke('get_contacts', {studentId})
+    }
+
+    /** 한 학생의 연락처를 통째로 바꾼다. 화면이 목록 전체를 편집하기 때문이다. */
+    async function saveContacts(studentId, contacts) {
+        await invoke('set_contacts', {studentId, contacts})
     }
 
     async function withdraw(id, date) {
@@ -61,6 +75,7 @@ export const useRosterStore = defineStore('roster', () => {
 
     return {
         students, diff, loading, error,
-        fetchStudents, parseText, preview, apply, updateStudent, withdraw,
+        fetchStudents, parseText, fetchClasses, preview, apply, updateStudent, withdraw,
+        fetchContacts, saveContacts,
     }
 })

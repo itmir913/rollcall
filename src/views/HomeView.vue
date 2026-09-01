@@ -1,392 +1,207 @@
 <script setup>
 /**
- * HOME — 일일 입력 격자. **마우스로 조작한다.**
+ * HOME — 대시보드.
  *
- *  · 행의 [기록 추가]를 누르면 그 행 아래에 편집기가 펼쳐진다
- *  · 코드도 교시도 버튼이다. 드롭다운을 쓰지 않는다
- *  · 타이핑이 필요한 곳은 증상 한 칸뿐이고, 과거에 쓴 단어는 후보 버튼으로 뜬다
- *  · 저장은 편집기의 [저장] 한 번. 확인 대화상자는 없다
- *  · 전체 행을 항상 띄운다. 빈 행은 출석이고 저장되지 않는다
+ * 입력 화면이 아니라 **오늘 할 일로 들어가는 입구**다. 교사가 앱을 켜는 이유는
+ * 둘뿐이다: 오늘 출결을 넣거나, 아직 안 받은 서류를 챙기거나.
  *
- * 키보드 단축 입력은 배포 직전에 따로 정한다. 지금은 없다.
+ * 숫자는 전부 Rust의 `home_summary`가 세어 준다. 화면이 커맨드 대여섯 개를
+ * 조합해 숫자를 만들면 그 조합 규칙이 프론트엔드의 비즈니스 로직이 된다.
  */
 import {computed, onMounted, ref} from 'vue'
+import {useRouter} from 'vue-router'
 import {useAppStore} from '../stores/app'
-import {useCodeStore} from '../stores/code'
-import {useDayStore} from '../stores/day'
+import {useAxisStore} from '../stores/axis'
 import {useCheckStore} from '../stores/check'
-import SpanEditor from '../components/SpanEditor.vue'
-import {UiButton, UiCard, UiNotice, UiPage, UiToggle} from '../components/ui'
+import {useDayStore} from '../stores/day'
+import {UiButton, UiCard, UiNotice, UiPage, UiTable} from '../components/ui'
+import {formatKorean} from '../stores/day'
 
 const app = useAppStore()
-const day = useDayStore()
-const codeStore = useCodeStore()
+const axis = useAxisStore()
 const check = useCheckStore()
+const day = useDayStore()
+const router = useRouter()
 
-const message = ref('')
-const messageKind = ref('ok')
+const incomplete = ref([])
+const error = ref('')
 
-/** 지금 편집 중인 자리. { studentId, spanId | null } */
-const editing = ref(null)
+const summary = computed(() => check.home)
 
-const editingRow = computed(() =>
-    editing.value ? day.rows.find((r) => r.studentId === editing.value.studentId) ?? null : null,
-)
+const PENDING_COLUMNS = [
+    {key: 'number', label: '번호', width: '72px'},
+    {key: 'name', label: '성명', width: '110px'},
+    {key: 'date', label: '결석일', width: '150px'},
+    {key: 'item', label: '항목'},
+    {key: 'due', label: '마감', width: '150px'},
+]
 
-const editingSpan = computed(() => {
-    if (!editing.value?.spanId || !editingRow.value) return null
-    return editingRow.value.spans.find((s) => s.id === editing.value.spanId) ?? null
-})
+const INCOMPLETE_COLUMNS = [
+    {key: 'date', label: '날짜', width: '150px'},
+    {key: 'who', label: '학생'},
+    {key: 'state', label: '지금 상태'},
+]
 
-function say(text, kind = 'ok') {
-    message.value = text
-    messageKind.value = kind
-}
-
-async function refresh() {
+async function load() {
     if (!app.ready) return
-    await Promise.all([
-        day.fetchGrid(app.yearId, app.grade, app.classNo),
-        codeStore.fetchCodes(day.date),
-        check.fetchSummary(app.yearId, app.grade, app.classNo),
-    ])
-}
-
-function isEditing(row, spanId = null) {
-    return editing.value?.studentId === row.studentId && editing.value?.spanId === spanId
-}
-
-function openNew(row) {
-    editing.value = {studentId: row.studentId, spanId: null}
-}
-
-function openSpan(row, span) {
-    editing.value = {studentId: row.studentId, spanId: span.id}
-}
-
-function closeEditor() {
-    editing.value = null
-}
-
-async function saveSpan(payload) {
-    const row = editingRow.value
-    const span = editingSpan.value
-    if (!row) return
+    error.value = ''
     try {
-        if (span) {
-            await day.updateSpan({id: span.id, ...payload})
-            say(`${row.name} — 구간을 고쳤습니다.`)
-        } else {
-            await day.addSpan({studentId: row.studentId, ...payload})
-            say(`${row.number}번 ${row.name} — 저장했습니다.`)
-        }
-        closeEditor()
-        await refresh()
+        await Promise.all([
+            check.fetchHome(app.yearId, app.grade, app.classNo, day.date),
+            check.fetchPending(app.yearId, app.grade, app.classNo, day.date),
+            axis.fetchAll(),
+        ])
+        incomplete.value = await day.fetchIncomplete(app.yearId, app.grade, app.classNo)
     } catch (e) {
-        say(String(e), 'error')
+        error.value = String(e)
     }
 }
 
-async function removeSpan() {
-    const span = editingSpan.value
-    if (!span) return
-    try {
-        await day.deleteSpan(span.id)
-        closeEditor()
-        await refresh()
-        say('구간을 지웠습니다.')
-    } catch (e) {
-        say(String(e), 'error')
-    }
+/** 마감이 지난 것부터 몇 건만. 전체는 미제출 화면이 보여준다. */
+const overdueFirst = computed(() => check.pending.slice(0, 6))
+
+function studentName(span) {
+    const row = day.rows.find((r) => r.studentId === span.studentId)
+    return row ? `${row.number}번 ${row.name}` : `학생 #${span.studentId}`
 }
 
-async function repeatPrevious(row) {
-    try {
-        const n = await day.copyPrevious(row.studentId)
-        await refresh()
-        say(`${row.name} — 직전 기록 ${n}건을 그대로 넣었습니다.`)
-    } catch (e) {
-        say(String(e), 'error')
-    }
-}
-
-async function toggleCheck(row, item, next) {
-    try {
-        await check.setCheck(row.studentId, day.date, item.id, next)
-        await refresh()
-    } catch (e) {
-        say(String(e), 'error')
-    }
-}
-
-async function saveReason(row, event) {
-    const text = event.target.value.trim()
-    if (!text || text === row.reason?.reason) return
-    try {
-        await day.setReason(row.studentId, text, row.reason?.codeId ?? null)
-        await refresh()
-    } catch (e) {
-        say(String(e), 'error')
-    }
-}
-
-function checkState(row, itemId) {
-    return row.checks.find((c) => c.itemId === itemId) ?? null
-}
-
-function dueHint(state) {
-    return state?.dueDate ? `마감 ${state.dueDate}` : '마감 없음'
-}
-
-async function move(days) {
-    closeEditor()
-    day.moveDate(days)
-    await refresh()
-}
-
-async function pickDate(event) {
-    closeEditor()
-    day.setDate(event.target.value)
-    await refresh()
-}
-
-onMounted(refresh)
+onMounted(load)
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학년도와 학급을 정해주세요."/>
+    <UiNotice v-if="!app.ready" kind="warn"
+              text="아직 학생 명단이 없습니다. 명단을 넣으면 시작할 수 있습니다."/>
 
-    <UiPage v-else :subtitle="`기록 ${day.recordedCount}명 / 재학 ${day.rows.length}명`"
-            :title="day.dateLabel">
+    <UiPage v-else :subtitle="summary ? summary.dateLabel : ''" title="오늘">
         <template #actions>
-            <UiButton @click="move(-1)">◀ 어제</UiButton>
-            <input :value="day.date" class="field" type="date" @change="pickDate"/>
-            <UiButton @click="move(1)">내일 ▶</UiButton>
+            <UiButton variant="primary" @click="router.push('/attendance')">
+                오늘의 출결 입력
+            </UiButton>
         </template>
 
-        <UiCard>
-            <table class="grid">
-                <thead>
-                <tr>
-                    <th class="grid__num">번호</th>
-                    <th class="grid__name">성명</th>
-                    <th>출결</th>
-                    <th class="grid__reason">나이스 사유</th>
-                    <th v-for="item in day.items" :key="item.id" class="grid__check">
-                        {{ item.name }}
-                    </th>
-                </tr>
-                </thead>
-                <tbody>
-                <template v-for="row in day.rows" :key="row.studentId">
-                    <tr :class="row.spans.length ? 'is-recorded' : ''">
-                        <td class="grid__num">{{ row.number }}</td>
-                        <td class="grid__name">{{ row.name }}</td>
-
-                        <td>
-                            <div class="marks">
-                                <button v-for="span in row.spans" :key="span.id"
-                                        :class="['mark', isEditing(row, span.id) ? 'is-open' : '']"
-                                        title="눌러서 고치기"
-                                        type="button"
-                                        @click="openSpan(row, span)">
-                                    <span class="mark__span">{{ span.spanText }}</span>
-                                    <span class="mark__code">{{ span.codeLabel }}</span>
-                                    <span v-if="span.symptom" class="mark__symptom">
-                                        {{ span.symptom }}
-                                    </span>
-                                </button>
-
-                                <button v-if="!row.spans.length && !isEditing(row)"
-                                        class="add" type="button" @click="openNew(row)">
-                                    출석 · 눌러서 기록 추가
-                                </button>
-                                <button v-else-if="!isEditing(row)" class="add is-small"
-                                        title="구간을 하나 더 추가" type="button"
-                                        @click="openNew(row)">
-                                    + 구간
-                                </button>
-
-                                <UiButton v-if="!row.spans.length" variant="ghost"
-                                          @click="repeatPrevious(row)">
-                                    어제 것 그대로
-                                </UiButton>
-                            </div>
-                        </td>
-
-                        <td class="grid__reason">
-                            <input v-if="row.reason" :value="row.reason.reason"
-                                   class="field grid__input"
-                                   @blur="saveReason(row, $event)"
-                                   @keydown.enter="$event.target.blur()"/>
-                        </td>
-
-                        <td v-for="item in day.items" :key="item.id" class="grid__check">
-                            <UiToggle v-if="checkState(row, item.id)"
-                                      :hint="dueHint(checkState(row, item.id))"
-                                      :model-value="checkState(row, item.id).done"
-                                      block off-label="미완료" on-label="완료"
-                                      @update:model-value="toggleCheck(row, item, $event)"/>
-                        </td>
-                    </tr>
-
-                    <tr v-if="editing?.studentId === row.studentId">
-                        <td :colspan="4 + day.items.length" class="grid__editor">
-                            <SpanEditor :key="`${row.studentId}-${editing.spanId ?? 'new'}`"
-                                        :codes="codeStore.codes"
-                                        :render-phrase="day.renderPhrase"
-                                        :span="editingSpan"
-                                        :student-name="`${row.number}번 ${row.name}`"
-                                        :suggest="codeStore.suggestSymptoms"
-                                        @cancel="closeEditor"
-                                        @remove="removeSpan"
-                                        @save="saveSpan"/>
-                        </td>
-                    </tr>
-                </template>
-
-                <tr v-if="!day.rows.length">
-                    <td :colspan="4 + day.items.length" class="grid__empty">
-                        이 날짜에 재학 중인 학생이 없습니다.
-                    </td>
-                </tr>
-                </tbody>
-            </table>
-        </UiCard>
-
-        <div class="summary">
-            <span v-for="s in check.summary" :key="s.itemId">
-                {{ s.itemName }} 미완료 <b>{{ s.count }}</b>건
-            </span>
-            <RouterLink class="summary__link" to="/pending">미제출자 목록 →</RouterLink>
+        <!-- 숫자 요약 -->
+        <div class="tiles">
+            <div class="tile">
+                <span class="tile__label">재학</span>
+                <b class="tile__value">{{ summary?.enrolled ?? '—' }}</b>
+                <span class="tile__unit">명</span>
+            </div>
+            <div class="tile">
+                <span class="tile__label">오늘 기록</span>
+                <b class="tile__value">{{ summary?.recorded ?? '—' }}</b>
+                <span class="tile__unit">명</span>
+            </div>
+            <RouterLink :class="['tile', summary?.incomplete ? 'is-warn' : '']" to="/attendance">
+                <span class="tile__label">구분 · 종류 미정</span>
+                <b class="tile__value">{{ summary?.incomplete ?? '—' }}</b>
+                <span class="tile__unit">건</span>
+            </RouterLink>
+            <RouterLink :class="['tile', summary?.overdue ? 'is-warn' : '']" to="/pending">
+                <span class="tile__label">마감 지난 미제출</span>
+                <b class="tile__value">{{ summary?.overdue ?? '—' }}</b>
+                <span class="tile__unit">건</span>
+            </RouterLink>
         </div>
 
-        <UiNotice :kind="messageKind" :text="message"/>
+        <!-- 채워야 할 기록 -->
+        <UiCard v-if="incomplete.length"
+                description="안 왔는데 연락이 닿지 않아 비워 둔 기록입니다. 출결 입력 화면에서 구분과 종류를 채우면 됩니다."
+                title="아직 못 정한 출결">
+            <template #actions>
+                <UiButton @click="router.push('/attendance')">채우러 가기</UiButton>
+            </template>
+            <UiTable :columns="INCOMPLETE_COLUMNS" :rows="incomplete">
+                <template #row="{row}">
+                    <td>{{ formatKorean(row.date) }}</td>
+                    <td>{{ studentName(row) }}</td>
+                    <td class="is-warn-text">{{ axis.describe(row.reasonId, row.typeId) }}</td>
+                </template>
+            </UiTable>
+        </UiCard>
+
+        <!-- 미제출 -->
+        <UiCard description="마감이 지난 것부터 보여줍니다." title="서류 · 나이스 미제출">
+            <template #actions>
+                <UiButton @click="router.push('/pending')">전체 보기</UiButton>
+            </template>
+            <UiTable :columns="PENDING_COLUMNS" :rows="overdueFirst"
+                     empty-text="미제출 항목이 없습니다.">
+                <template #row="{row}">
+                    <td>{{ row.number }}</td>
+                    <td>{{ row.name }}</td>
+                    <td>{{ formatKorean(row.date) }}</td>
+                    <td>{{ row.itemName }}</td>
+                    <td :class="row.daysOverdue > 0 ? 'is-warn-text' : 'is-muted'">
+                        {{ row.dueDate ? formatKorean(row.dueDate) : '마감 없음' }}
+                    </td>
+                </template>
+            </UiTable>
+            <p v-if="check.pending.length > overdueFirst.length" class="more">
+                외 {{ check.pending.length - overdueFirst.length }}건
+            </p>
+        </UiCard>
+
+        <UiNotice :text="error" kind="error"/>
     </UiPage>
 </template>
 
 <style scoped>
-.grid {
-    width: 100%;
-    border-collapse: collapse;
+.tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
 }
 
-.grid th {
-    padding: 10px 12px;
-    color: var(--c-ink-3);
-    font-weight: 500;
-    text-align: left;
-    white-space: nowrap;
-}
-
-.grid td {
-    padding: 8px 12px;
-    border-top: 1px solid var(--c-line);
-    vertical-align: middle;
-}
-
-.grid__num {
-    width: 64px;
-}
-
-.grid__name {
-    width: 110px;
-}
-
-.grid__reason {
-    width: 30%;
-}
-
-.grid__check {
-    width: 128px;
-}
-
-.grid__input {
-    width: 100%;
-}
-
-.grid__editor {
-    padding: 4px 12px 14px;
-}
-
-.grid__empty {
-    text-align: center;
-    color: var(--c-ink-3);
-    padding: 28px 12px;
-}
-
-tr.is-recorded .grid__num,
-tr.is-recorded .grid__name {
-    font-weight: 600;
-}
-
-.marks {
+.tile {
     display: flex;
-    align-items: center;
-    gap: 8px;
+    align-items: baseline;
+    gap: 6px;
     flex-wrap: wrap;
-}
-
-.mark {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-height: 40px;
-    padding: 0 12px;
-    border-radius: 8px;
+    padding: 16px 18px;
+    border-radius: 12px;
     border: 1px solid var(--c-line);
     background: var(--c-surface);
-    color: var(--c-ink);
-    cursor: pointer;
-}
-
-.mark:hover,
-.mark.is-open {
-    border-color: var(--c-accent);
-}
-
-.mark__span {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    color: var(--c-ink-3);
-}
-
-.mark__code {
-    font-weight: 600;
-}
-
-.mark__symptom {
-    color: var(--c-ink-3);
-}
-
-.add {
-    min-height: 40px;
-    padding: 0 14px;
-    border-radius: 8px;
-    border: 1px dashed var(--c-line);
-    background: transparent;
-    color: var(--c-ink-3);
-    cursor: pointer;
-}
-
-.add:hover {
-    border-color: var(--c-accent);
-    color: var(--c-ink);
-}
-
-.add.is-small {
-    padding: 0 10px;
-}
-
-.summary {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    color: var(--c-ink-2);
-}
-
-.summary__link {
-    margin-left: auto;
-    color: var(--c-accent);
+    color: inherit;
     text-decoration: none;
+}
+
+a.tile:hover {
+    border-color: var(--c-accent);
+}
+
+.tile.is-warn {
+    border-color: var(--c-warn);
+}
+
+.tile__label {
+    width: 100%;
+    color: var(--c-ink-3);
+}
+
+.tile__value {
+    font-size: 1.9rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.tile.is-warn .tile__value {
+    color: var(--c-warn);
+}
+
+.tile__unit {
+    color: var(--c-ink-3);
+}
+
+.is-warn-text {
+    color: var(--c-warn);
+}
+
+.is-muted {
+    color: var(--c-ink-3);
+}
+
+.more {
+    margin: 0;
+    color: var(--c-ink-3);
 }
 </style>

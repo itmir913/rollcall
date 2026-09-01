@@ -46,6 +46,7 @@ pub fn build_pending_csv(rows: &[crate::types::PendingRow]) -> String {
         "미제출 항목".into(),
         "마감일".into(),
         "경과일".into(),
+        "연락처 관계".into(),
         "연락처".into(),
     ]));
     out.push('\n');
@@ -73,7 +74,8 @@ pub fn build_pending_csv(rows: &[crate::types::PendingRow]) -> String {
             r.item_name.clone(),
             due_label,
             overdue,
-            r.guardian_phone.clone().unwrap_or_default(),
+            r.contact_label.clone().unwrap_or_default(),
+            r.contact_value.clone().unwrap_or_default(),
         ]));
         out.push('\n');
     }
@@ -89,11 +91,13 @@ pub fn build_backup_csv_impl(
 ) -> Result<String, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT s.number, s.name, sp.date, c.label, sp.start_slot, sp.end_slot,
+            // 축은 LEFT JOIN이다. 아직 안 정한 기록도 백업에 들어가야 한다.
+            "SELECT s.number, s.name, sp.date, r.label, t.label, sp.start_slot, sp.end_slot,
                     sp.symptom, dr.reason, sp.group_id
              FROM absence_span sp
              JOIN student s ON s.id = sp.student_id
-             JOIN attendance_code c ON c.id = sp.code_id
+             LEFT JOIN attendance_reason r ON r.id = sp.reason_id
+             LEFT JOIN attendance_type t ON t.id = sp.type_id
              LEFT JOIN daily_reason dr
                     ON dr.student_id = sp.student_id AND dr.date = sp.date
              WHERE s.year_id = ?1 AND s.grade = ?2 AND s.class_no = ?3
@@ -107,12 +111,13 @@ pub fn build_backup_csv_impl(
                 r.get::<_, i64>(0)?,
                 r.get::<_, String>(1)?,
                 r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(3)?,
                 r.get::<_, Option<String>>(4)?,
                 r.get::<_, Option<String>>(5)?,
                 r.get::<_, Option<String>>(6)?,
                 r.get::<_, Option<String>>(7)?,
                 r.get::<_, Option<String>>(8)?,
+                r.get::<_, Option<String>>(9)?,
             ))
         })
         .map_err(|e| e.to_string())?
@@ -124,7 +129,8 @@ pub fn build_backup_csv_impl(
         "번호".into(),
         "성명".into(),
         "날짜".into(),
-        "출결구분".into(),
+        "구분".into(),
+        "종류".into(),
         "시작교시".into(),
         "끝교시".into(),
         "증상".into(),
@@ -133,13 +139,14 @@ pub fn build_backup_csv_impl(
     ]));
     out.push('\n');
 
-    for (number, name, date, label, start, end, symptom, reason, group) in rows {
+    for (number, name, date, reason_label, type_label, start, end, symptom, reason, group) in rows {
         let date_label = parse_date(&date).map(format_korean).unwrap_or(date);
         out.push_str(&csv_line(&[
             number.to_string(),
             name,
             date_label,
-            label,
+            reason_label.unwrap_or_else(|| "미정".into()),
+            type_label.unwrap_or_else(|| "미정".into()),
             start.unwrap_or_else(|| "*".into()),
             end.unwrap_or_else(|| "*".into()),
             symptom.unwrap_or_default(),

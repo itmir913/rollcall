@@ -46,7 +46,7 @@ fn migration_list_matches_schema_version() {
 fn foreign_keys_are_enforced() {
     let conn = setup_test_db();
     let err = conn.execute(
-        "INSERT INTO absence_span (student_id, date, code_id) VALUES (9999, '2026-08-26', 1)",
+        "INSERT INTO absence_span (student_id, date, reason_id) VALUES (9999, '2026-08-26', 1)",
         [],
     );
     assert!(err.is_err());
@@ -58,11 +58,13 @@ fn deleting_a_student_takes_its_records_with_it() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
     let sid = insert_student(&conn, year, 2, "이영희");
-    crate::commands::attendance::add_span_impl(
+    let (r, t) = axes(&conn, "질병", "결석");
+    crate::commands::attendance::add_spans_impl(
         &conn,
-        sid,
+        &[sid],
         "2026-08-26",
-        code_id(&conn, "질병결석"),
+        r,
+        t,
         None,
         None,
         None,

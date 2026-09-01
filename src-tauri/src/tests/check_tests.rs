@@ -1,9 +1,18 @@
-use crate::commands::attendance::{add_span_impl, bulk_apply_impl, delete_span_impl};
+use crate::commands::attendance::{add_spans_impl, bulk_apply_impl, delete_span_impl, get_spans_on_impl};
 use crate::commands::check::*;
 use crate::tests::*;
 
+/// 질병결석 한 건을 넣고 그 구간 id를 돌려준다.
 fn absent(conn: &rusqlite::Connection, sid: i64, date: &str) -> i64 {
-    add_span_impl(conn, sid, date, code_id(conn, "질병결석"), None, None, Some("몸살")).unwrap()
+    let (r, t) = axes(conn, "질병", "결석");
+    add_spans_impl(conn, &[sid], date, r, t, None, None, Some("몸살")).unwrap();
+    get_spans_on_impl(conn, date)
+        .unwrap()
+        .into_iter()
+        .filter(|sp| sp.student_id == sid)
+        .next_back()
+        .unwrap()
+        .id
 }
 
 #[test]
@@ -195,7 +204,8 @@ fn group_check_toggles_the_whole_period_at_once() {
             "2026-08-31".to_string(),
             "2026-09-01".to_string(),
         ],
-        code_id(&conn, "출석인정결석"),
+        Some(reason_id(&conn, "출석인정")),
+        Some(type_id(&conn, "결석")),
         None,
         None,
         Some("교외체험학습"),

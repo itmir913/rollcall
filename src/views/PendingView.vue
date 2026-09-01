@@ -20,6 +20,7 @@ const COLUMNS = [
     {key: 'item', label: '항목'},
     {key: 'due', label: '마감일', width: '160px'},
     {key: 'state', label: '상태', width: '130px'},
+    {key: 'contact', label: '연락처', width: '190px'},
 ]
 
 async function load() {
@@ -79,6 +80,12 @@ onMounted(load)
                     <td>{{ row.dueDate ? formatKorean(row.dueDate) : '—' }}</td>
                     <td :class="row.daysOverdue > 0 ? 'is-overdue' : 'is-calm'">
                         {{ overdueLabel(row) }}
+                    </td>
+                    <td class="is-calm">
+                        <template v-if="row.contactValue">
+                            {{ row.contactLabel }} {{ row.contactValue }}
+                        </template>
+                        <template v-else>—</template>
                     </td>
                 </template>
             </UiTable>

@@ -30,17 +30,13 @@ fn open_ends_render_as_asterisk() {
 }
 
 #[test]
-fn slot_prompt_follows_type_definition() {
-    assert_eq!(prompt_for_type("결석"), SlotPrompt::None);
-    assert_eq!(prompt_for_type("조퇴"), SlotPrompt::Start);
-    assert_eq!(prompt_for_type("지각"), SlotPrompt::End);
-    assert_eq!(prompt_for_type("결과"), SlotPrompt::Both);
-}
-
-#[test]
-fn unknown_type_asks_for_both_ends() {
-    // 사용자가 유형을 늘려도 입력이 막히지 않아야 한다.
-    assert_eq!(prompt_for_type("공결"), SlotPrompt::Both);
+fn slot_prompt_values_are_fixed() {
+    // 값은 attendance_type 행에 있다. 여기서는 알 수 없는 값만 막는다.
+    for v in ["none", "start", "end", "both"] {
+        assert!(is_slot_prompt(v));
+    }
+    assert!(!is_slot_prompt("가운데"));
+    assert!(!is_slot_prompt(""));
 }
 
 #[test]
