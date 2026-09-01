@@ -42,6 +42,33 @@ npm test        # Rust(cargo test) + 프론트엔드(vitest) 전체
 IntelliJ에서는 `.idea/runConfigurations/`의 `dev` · `build` · `test` 구성이 같은 셋을
 그대로 가리킨다. 이 세 파일만 git에 포함하고 나머지 `.idea`는 제외한다.
 
+## CI · 배포
+
+GitHub Actions로 돌린다.
+
+| 워크플로 | 언제 | 하는 일 |
+|---|---|---|
+| `ci.yml` | 모든 브랜치 push · PR | `npm test` → `npm run build -- --no-bundle` |
+| `release.yml` | 손으로 실행 (Actions 탭) | 버전 확인 → 테스트 → 빌드 → **초안** 릴리스 |
+
+- **윈도우 러너에서 돌린다.** 이 앱은 윈도우용이라 경로·파일 잠금처럼 윈도우에서만
+  나는 문제를 같은 OS에서 잡아야 한다.
+- CI의 빌드는 `--no-bundle`이다. NSIS 패키징만 건너뛰고 프런트엔드 컴파일과 릴리스
+  모드 Rust 빌드는 그대로 한다 — **단위 테스트가 못 잡는 Vue 템플릿 오류**가 여기서 잡힌다.
+- 배포 버전은 `src-tauri/tauri.conf.json`의 `version` **하나만** 본다. 태그 push로
+  자동 배포하지 않는 이유는 태그와 그 값이 어긋난 채 나가는 사고를 막기 위해서다.
+- 같은 버전의 릴리스가 이미 있으면 빌드 전에 멈춘다.
+- 릴리스는 **초안**으로 만들어진다. 노트를 손보고 사람이 직접 공개한다.
+- 산출물은 설치본과 포터블 둘 다이며 zip으로 올린다 — `.exe`를 그대로 올리면
+  브라우저와 백신이 내려받기를 막는 경우가 있다.
+
+### 버전 올리기
+
+`src-tauri/tauri.conf.json`의 `version`을 올린다. 스키마를 고쳤다면 `SCHEMA_VERSION`도
+함께 올려야 한다(CLAUDE.md의 DB SCHEMA RULES).
+
+---
+
 ## 화면 흐름
 
 ```
