@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>출결관리</title>
+    <script>
+      // 테마는 첫 페인트 전에 정해져야 한다. Vue가 마운트된 뒤 적용하면 흰 화면이
+      // 한 번 번쩍이고 나서 어두워진다. DB(app_config)에 두면 비동기라 이 시점에
+      // 읽을 수 없으므로, 테마만은 localStorage에 둔다.
+      // 기본은 라이트다. 저장된 값이 없으면 시스템 설정을 따라가지 않는다.
+      (function () {
+        var saved = null;
+        try { saved = localStorage.getItem('theme'); } catch (e) { /* 시크릿 모드 등 */ }
+        var resolved =
+          saved === 'dark' ? 'dark'
+          : saved === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+            : 'light';
+        document.documentElement.setAttribute('data-theme', resolved);
+      })();
+    </script>
+    <style>
+      /* style.css가 로드되기 전의 배경. 토큰과 같은 값을 쓴다. */
+      html[data-theme="dark"] { background-color: #0b0f18; color: #e5ecf5; }
+      html { background-color: #f6f7fb; color: #1b2434; }
+      body { margin: 0; font-family: "Pretendard Variable", Pretendard, -apple-system, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

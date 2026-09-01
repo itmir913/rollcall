@@ -1,0 +1,15 @@
+node_modules
+dist
+src-tauri/target
+src-tauri/gen
+*.db
+*.db.backup
+
+# IntelliJ — 실행 구성(dev/build/test)만 공유하고 나머지는 사람마다 다르므로 뺀다.
+#
+# `.idea`를 통째로 무시하면 git이 그 폴더로 내려가지 않아 아래 negation이 먹지 않는다.
+# 반드시 디렉터리가 아니라 **그 안의 항목**을 무시해야 한다.
+/.idea/*
+!/.idea/runConfigurations/
+/.idea/runConfigurations/*
+!/.idea/runConfigurations/*.xml
