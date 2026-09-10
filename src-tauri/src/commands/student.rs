@@ -10,6 +10,10 @@
 //!
 //! 재가져오기는 **교체가 아니라 차분**이다. 사라진 번호를 지우면 그 학생의 출결
 //! 기록이 FK CASCADE로 함께 사라진다. 전출은 삭제가 아니므로 `enrolled_to`를 채운다.
+//!
+//! 학생은 **학교에 매달린다.** 순회 교사가 같은 해에 학교를 둘 이상 맡으면
+//! (학년도, 학년, 반)만으로는 3학년 6반이 두 곳에서 겹친다. 그래서 명단을 읽고
+//! 고치는 모든 함수가 `school_id`를 받아 먼저 거른다.
 
 use crate::commands::with_conn;
 use crate::db::with_transaction;
@@ -103,24 +107,36 @@ pub fn diff_roster(
 
 // ── DB ────────────────────────────────────────────────────────
 
-const STUDENT_COLS: &str = "id, year_id, grade, class_no, number, name, enrolled_from, enrolled_to";
+const STUDENT_COLS: &str =
+    "id, school_id, year_id, grade, class_no, number, name, enrolled_from, enrolled_to";
 
 fn map_student(row: &rusqlite::Row) -> rusqlite::Result<StudentItem> {
     Ok(StudentItem {
         id: row.get(0)?,
-        year_id: row.get(1)?,
-        grade: row.get(2)?,
-        class_no: row.get(3)?,
-        number: row.get(4)?,
-        name: row.get(5)?,
-        enrolled_from: row.get(6)?,
-        enrolled_to: row.get(7)?,
+        school_id: row.get(1)?,
+        year_id: row.get(2)?,
+        grade: row.get(3)?,
+        class_no: row.get(4)?,
+        number: row.get(5)?,
+        name: row.get(6)?,
+        enrolled_from: row.get(7)?,
+        enrolled_to: row.get(8)?,
     })
 }
 
 /// 그날 재학 중인 학생만. 격자가 이 목록으로 그려진다.
+///
+/// 기간은 `enrolled_from <= d < enrolled_to`다. 이 저장소의 `valid_to`와 같은 규칙이고,
+/// 개요·기록·서류 화면이 세는 재학생도 같은 식으로 센다 — 한 곳만 경계일을 재학으로
+/// 보면 그날 격자에 30명, 개요에 29명이 뜬다.
+/// 같은 날 번호를 물려받는 경우(전출 + 전입이 한 번의 적용에 함께 들어온다)도
+/// 경계일을 닫아야 그 번호가 하루 동안 두 학생으로 보이지 않는다.
+/// 그 날짜에 재학 중이던 학생. 지금은 테스트만 부르지만, 전출 학생을 어느 시점 기준으로
+/// 세는지가 여러 화면에 걸쳐 같아야 해서 규칙을 한 곳에 둔다.
+#[allow(dead_code)]
 pub fn get_students_on_impl(
     conn: &Connection,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
@@ -128,14 +144,17 @@ pub fn get_students_on_impl(
 ) -> Result<Vec<StudentItem>, String> {
     let sql = format!(
         "SELECT {STUDENT_COLS} FROM student
-         WHERE year_id = ?1 AND grade = ?2 AND class_no = ?3
-           AND enrolled_from <= ?4
-           AND (enrolled_to IS NULL OR ?4 <= enrolled_to)
+         WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
+           AND enrolled_from <= ?5
+           AND (enrolled_to IS NULL OR ?5 < enrolled_to)
          ORDER BY number"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params![year_id, grade, class_no, date], map_student)
+        .query_map(
+            rusqlite::params![school_id, year_id, grade, class_no, date],
+            map_student,
+        )
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -145,35 +164,46 @@ pub fn get_students_on_impl(
 /// 재학 중인 학생 전체(전출 제외).
 pub fn get_students_impl(
     conn: &Connection,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
 ) -> Result<Vec<StudentItem>, String> {
     let sql = format!(
         "SELECT {STUDENT_COLS} FROM student
-         WHERE year_id = ?1 AND grade = ?2 AND class_no = ?3 AND enrolled_to IS NULL
+         WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
+           AND enrolled_to IS NULL
          ORDER BY number"
     );
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params![year_id, grade, class_no], map_student)
+        .query_map(
+            rusqlite::params![school_id, year_id, grade, class_no],
+            map_student,
+        )
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
     Ok(rows)
 }
 
-/// 이 학년도에 명단이 들어 있는 학급 목록. 첫 실행 뒤 학급 전환에 쓴다.
-pub fn get_classes_impl(conn: &Connection, year_id: i64) -> Result<Vec<(i64, i64)>, String> {
+/// 그 학교·학년도에 명단이 들어 있는 학급 목록. 첫 실행 뒤 학급 전환에 쓴다.
+pub fn get_classes_impl(
+    conn: &Connection,
+    school_id: i64,
+    year_id: i64,
+) -> Result<Vec<(i64, i64)>, String> {
     let mut stmt = conn
         .prepare(
             "SELECT DISTINCT grade, class_no FROM student
-             WHERE year_id = ?1 AND enrolled_to IS NULL
+             WHERE school_id = ?1 AND year_id = ?2 AND enrolled_to IS NULL
              ORDER BY grade, class_no",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params![year_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .query_map(rusqlite::params![school_id, year_id], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -182,11 +212,12 @@ pub fn get_classes_impl(conn: &Connection, year_id: i64) -> Result<Vec<(i64, i64
 
 fn current_tuples(
     conn: &Connection,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
 ) -> Result<Vec<(i64, i64, String)>, String> {
-    Ok(get_students_impl(conn, year_id, grade, class_no)?
+    Ok(get_students_impl(conn, school_id, year_id, grade, class_no)?
         .into_iter()
         .map(|s| (s.id, s.number, s.name))
         .collect())
@@ -194,12 +225,13 @@ fn current_tuples(
 
 pub fn preview_roster_impl(
     conn: &Connection,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
     incoming: &[RosterEntry],
 ) -> Result<Vec<RosterDiffRow>, String> {
-    let current = current_tuples(conn, year_id, grade, class_no)?;
+    let current = current_tuples(conn, school_id, year_id, grade, class_no)?;
     Ok(diff_roster(&current, incoming))
 }
 
@@ -209,6 +241,7 @@ pub fn preview_roster_impl(
 /// 개명(`renamed`)으로 볼지, 전출+전입(`withdrawn` + `added`)으로 볼지는 교사가 정한다.
 pub fn apply_roster_impl(
     conn: &Connection,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
@@ -223,32 +256,46 @@ pub fn apply_roster_impl(
         };
 
         // 전출을 먼저 처리한다. 같은 번호를 새 학생이 물려받는 경우,
-        // 부분 유니크 인덱스(ux_student_active)가 순서를 강제하기 때문이다.
+        // 부분 유니크 인덱스(ux_student_active_number)가 순서를 강제하기 때문이다.
         for row in rows.iter().filter(|r| r.action == "withdrawn") {
             let id = row
                 .student_id
                 .ok_or_else(|| format!("{}번: 전출 대상 학생을 찾을 수 없습니다.", row.number))?;
-            conn.execute(
-                "UPDATE student SET enrolled_to = ?1 WHERE id = ?2 AND enrolled_to IS NULL",
-                rusqlite::params![effective_date, id],
-            )
-            .map_err(|e| e.to_string())?;
+            let n = conn
+                .execute(
+                    "UPDATE student SET enrolled_to = ?1
+                     WHERE id = ?2 AND school_id = ?3 AND enrolled_to IS NULL",
+                    rusqlite::params![effective_date, id, school_id],
+                )
+                .map_err(|e| e.to_string())?;
+            if n == 0 {
+                return Err(format!(
+                    "{}번: 전출 대상 학생을 찾을 수 없습니다: {id}",
+                    row.number
+                ));
+            }
             result.withdrawn += 1;
         }
 
         for row in rows {
             match row.action.as_str() {
                 "added" => {
-                    let name = row.incoming_name.as_deref().unwrap_or("");
-                    if name.trim().is_empty() {
+                    let name = row.incoming_name.as_deref().unwrap_or("").trim();
+                    if name.is_empty() {
                         return Err(format!("{}번: 추가할 이름이 비어 있습니다.", row.number));
                     }
                     conn.execute(
                         "INSERT INTO student
-                           (year_id, grade, class_no, number, name, enrolled_from)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                           (school_id, year_id, grade, class_no, number, name, enrolled_from)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                         rusqlite::params![
-                            year_id, grade, class_no, row.number, name, effective_date
+                            school_id,
+                            year_id,
+                            grade,
+                            class_no,
+                            row.number,
+                            name,
+                            effective_date
                         ],
                     )
                     .map_err(|e| {
@@ -266,12 +313,21 @@ pub fn apply_roster_impl(
                     let name = row
                         .incoming_name
                         .as_deref()
+                        .map(str::trim)
+                        .filter(|n| !n.is_empty())
                         .ok_or_else(|| format!("{}번: 새 이름이 비어 있습니다.", row.number))?;
-                    conn.execute(
-                        "UPDATE student SET name = ?1 WHERE id = ?2",
-                        rusqlite::params![name, id],
-                    )
-                    .map_err(|e| e.to_string())?;
+                    let n = conn
+                        .execute(
+                            "UPDATE student SET name = ?1 WHERE id = ?2 AND school_id = ?3",
+                            rusqlite::params![name, id, school_id],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    if n == 0 {
+                        return Err(format!(
+                            "{}번: 이름을 고칠 학생을 찾을 수 없습니다: {id}",
+                            row.number
+                        ));
+                    }
                     result.renamed += 1;
                 }
                 // unchanged / withdrawn(위에서 처리) 은 여기서 할 일이 없다.
@@ -285,6 +341,7 @@ pub fn apply_roster_impl(
 
 pub fn update_student_impl(
     conn: &Connection,
+    school_id: i64,
     id: i64,
     number: i64,
     name: &str,
@@ -292,33 +349,54 @@ pub fn update_student_impl(
     if number < 1 {
         return Err(format!("번호는 1 이상이어야 합니다: {number}"));
     }
-    if name.trim().is_empty() {
+    let name = name.trim();
+    if name.is_empty() {
         return Err("이름이 비어 있습니다.".to_string());
     }
-    conn.execute(
-        "UPDATE student SET number = ?1, name = ?2 WHERE id = ?3",
-        rusqlite::params![number, name, id],
-    )
-    .map_err(|e| constraint_err(&e, &format!("이미 같은 번호의 재학생이 있습니다: {number}번")))?;
+    let n = conn
+        .execute(
+            "UPDATE student SET number = ?1, name = ?2 WHERE id = ?3 AND school_id = ?4",
+            rusqlite::params![number, name, id, school_id],
+        )
+        .map_err(|e| {
+            constraint_err(&e, &format!("이미 같은 번호의 재학생이 있습니다: {number}번"))
+        })?;
+    if n == 0 {
+        return Err(format!("학생을 찾을 수 없습니다: {id}"));
+    }
     Ok(())
 }
 
 /// 전출 처리. 삭제가 아니다.
-pub fn withdraw_student_impl(conn: &Connection, id: i64, date: &str) -> Result<(), String> {
-    conn.execute(
-        "UPDATE student SET enrolled_to = ?1 WHERE id = ?2",
-        rusqlite::params![date, id],
-    )
-    .map_err(|e| e.to_string())?;
+pub fn withdraw_student_impl(
+    conn: &Connection,
+    school_id: i64,
+    id: i64,
+    date: &str,
+) -> Result<(), String> {
+    let n = conn
+        .execute(
+            "UPDATE student SET enrolled_to = ?1 WHERE id = ?2 AND school_id = ?3",
+            rusqlite::params![date, id, school_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("학생을 찾을 수 없습니다: {id}"));
+    }
     Ok(())
 }
 
 // ── 연락처 ────────────────────────────────────────────────────
 
+/// 연락처는 `label` · `value` · 순서 셋뿐이다.
+///
+/// `ContactItem.note`는 저장하지 않는다 — `contact` 테이블에 자리가 없다.
+/// 덧붙일 말은 `label`에 적는다(`어머니(직장)`). 관계와 번호 외에 무엇을 더 적을지는
+/// 아직 정해지지 않았고, 자리를 먼저 만들면 무엇을 넣을지부터 되묻게 된다.
 pub fn get_contacts_impl(conn: &Connection, student_id: i64) -> Result<Vec<ContactItem>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, label, value, note, sort_order FROM contact
+            "SELECT id, label, value, sort_order FROM contact
              WHERE student_id = ?1 ORDER BY sort_order, id",
         )
         .map_err(|e| e.to_string())?;
@@ -328,8 +406,8 @@ pub fn get_contacts_impl(conn: &Connection, student_id: i64) -> Result<Vec<Conta
                 id: r.get(0)?,
                 label: r.get(1)?,
                 value: r.get(2)?,
-                note: r.get(3)?,
-                sort_order: r.get(4)?,
+                note: None,
+                sort_order: r.get(3)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -364,9 +442,9 @@ pub fn set_contacts_impl(
         .map_err(|e| e.to_string())?;
         for (i, c) in contacts.iter().enumerate() {
             conn.execute(
-                "INSERT INTO contact (student_id, label, value, note, sort_order)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![student_id, c.label.trim(), c.value.trim(), c.note, i as i64],
+                "INSERT INTO contact (student_id, label, value, sort_order)
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![student_id, c.label.trim(), c.value.trim(), i as i64],
             )
             .map_err(|e| e.to_string())?;
         }
@@ -385,34 +463,43 @@ pub fn detect_roster_class(entries: Vec<RosterEntry>) -> RosterClass {
 #[tauri::command]
 pub fn get_students(
     db: State<DbState>,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
 ) -> Result<Vec<StudentItem>, String> {
-    with_conn(&db, |c| get_students_impl(c, year_id, grade, class_no))
+    with_conn(&db, |c| {
+        get_students_impl(c, school_id, year_id, grade, class_no)
+    })
 }
 
 #[tauri::command]
-pub fn get_classes(db: State<DbState>, year_id: i64) -> Result<Vec<(i64, i64)>, String> {
-    with_conn(&db, |c| get_classes_impl(c, year_id))
+pub fn get_classes(
+    db: State<DbState>,
+    school_id: i64,
+    year_id: i64,
+) -> Result<Vec<(i64, i64)>, String> {
+    with_conn(&db, |c| get_classes_impl(c, school_id, year_id))
 }
 
 #[tauri::command]
 pub fn preview_roster(
     db: State<DbState>,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
     entries: Vec<RosterEntry>,
 ) -> Result<Vec<RosterDiffRow>, String> {
     with_conn(&db, |c| {
-        preview_roster_impl(c, year_id, grade, class_no, &entries)
+        preview_roster_impl(c, school_id, year_id, grade, class_no, &entries)
     })
 }
 
 #[tauri::command]
 pub fn apply_roster(
     db: State<DbState>,
+    school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
@@ -420,23 +507,37 @@ pub fn apply_roster(
     rows: Vec<RosterDiffRow>,
 ) -> Result<RosterApplyResult, String> {
     with_conn(&db, |c| {
-        apply_roster_impl(c, year_id, grade, class_no, &effective_date, &rows)
+        apply_roster_impl(
+            c,
+            school_id,
+            year_id,
+            grade,
+            class_no,
+            &effective_date,
+            &rows,
+        )
     })
 }
 
 #[tauri::command]
 pub fn update_student(
     db: State<DbState>,
+    school_id: i64,
     id: i64,
     number: i64,
     name: String,
 ) -> Result<(), String> {
-    with_conn(&db, |c| update_student_impl(c, id, number, &name))
+    with_conn(&db, |c| update_student_impl(c, school_id, id, number, &name))
 }
 
 #[tauri::command]
-pub fn withdraw_student(db: State<DbState>, id: i64, date: String) -> Result<(), String> {
-    with_conn(&db, |c| withdraw_student_impl(c, id, &date))
+pub fn withdraw_student(
+    db: State<DbState>,
+    school_id: i64,
+    id: i64,
+    date: String,
+) -> Result<(), String> {
+    with_conn(&db, |c| withdraw_student_impl(c, school_id, id, &date))
 }
 
 #[tauri::command]

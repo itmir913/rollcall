@@ -22,18 +22,33 @@ fn main() {
         .manage(DbState(Mutex::new(None)))
         .manage(DbPathState(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
-            // 파일
+            // 파일 · DB
             init_db,
             migrate_schema,
             export_backup,
             get_db_path,
             write_bytes_file,
-            // 설정
+            // 앱 설정 (마지막에 연 학교 · 학년도 · 학급)
             get_config,
             set_config,
             get_years,
             create_year,
             update_year,
+            // 학교 설정 — 최대 교시 · 제출 기한 · 휴업일 · 태그 · 한도 규정
+            get_schools,
+            get_school,
+            update_school,
+            get_off_days,
+            add_off_day,
+            remove_off_day,
+            get_tags,
+            create_tag,
+            rename_tag,
+            retire_tag,
+            get_quota_rules,
+            create_quota_rule,
+            revise_quota_rule,
+            retire_quota_rule,
             // 학생 · 연락처
             detect_roster_class,
             get_students,
@@ -55,32 +70,30 @@ fn main() {
             create_code,
             revise_code,
             retire_code,
-            get_symptom_suggestions,
-            // 출결 입력
+            get_memo_suggestions,
+            // 출결 입력 · 수정
             get_day_grid,
-            render_phrase,
-            add_spans,
-            update_span,
+            stamp_span,
+            edit_span,
             delete_span,
-            set_daily_reason,
-            get_incomplete,
-            copy_previous,
-            bulk_preview,
-            bulk_apply,
-            // 체크
-            get_check_items,
-            create_check_item,
-            update_check_item,
-            deactivate_check_item,
-            set_check,
-            set_check_due,
-            set_group_check,
-            get_pending,
-            get_pending_summary,
-            home_summary,
+            set_span_memo,
+            set_span_tag,
+            get_month_log,
+            preview_bulk,
+            apply_bulk,
+            // 서류 · 나이스 표시
+            set_doc_done,
+            set_neis_done,
+            mark_day_neis,
+            get_doc_pending,
+            get_neis_pending,
+            // 개요 · 통계
+            get_home_summary,
+            get_quota_reports,
             // 내보내기
+            export_spans_csv,
             export_pending_csv,
-            export_backup_csv,
+            export_quota_csv,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

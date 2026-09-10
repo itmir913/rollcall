@@ -92,11 +92,15 @@ pub fn create_reason_impl(
 
 pub fn retire_reason_impl(conn: &Connection, id: i64, valid_to: &str) -> Result<(), String> {
     with_transaction(conn, || {
-        conn.execute(
-            "UPDATE attendance_reason SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
-            rusqlite::params![valid_to, id],
-        )
-        .map_err(|e| e.to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE attendance_reason SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
+                rusqlite::params![valid_to, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err(format!("이미 마감되었거나 없는 구분입니다: {id}"));
+        }
         // 축이 마감되면 그 축을 쓰는 쌍도 함께 마감된다. 남겨두면 목록에서
         // 사라진 구분을 가진 코드가 계속 유효한 것으로 조회된다.
         conn.execute(
@@ -142,7 +146,7 @@ pub fn create_type_impl(
     }
     if !is_slot_prompt(slot_prompt) {
         return Err(format!(
-            "교시를 묻는 방식이 올바르지 않습니다: {slot_prompt} (none / start / end / both)"
+            "교시를 묻는 방식이 올바르지 않습니다: {slot_prompt} (none / start / end / multi)"
         ));
     }
     conn.execute(
@@ -156,11 +160,15 @@ pub fn create_type_impl(
 
 pub fn retire_type_impl(conn: &Connection, id: i64, valid_to: &str) -> Result<(), String> {
     with_transaction(conn, || {
-        conn.execute(
-            "UPDATE attendance_type SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
-            rusqlite::params![valid_to, id],
-        )
-        .map_err(|e| e.to_string())?;
+        let n = conn
+            .execute(
+                "UPDATE attendance_type SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
+                rusqlite::params![valid_to, id],
+            )
+            .map_err(|e| e.to_string())?;
+        if n == 0 {
+            return Err(format!("이미 마감되었거나 없는 종류입니다: {id}"));
+        }
         conn.execute(
             "UPDATE attendance_code SET valid_to = ?1 WHERE type_id = ?2 AND valid_to IS NULL",
             rusqlite::params![valid_to, id],
@@ -205,6 +213,9 @@ pub fn get_codes_impl(
 }
 
 /// 두 축으로 쌍을 찾는다. 한쪽이라도 비면 코드가 없다 — 그것이 정상이다.
+/// 두 축으로 코드를 찾는다. 지금은 테스트만 부르지만, "그 날짜에 유효했던 코드"를
+/// 고르는 규칙(valid_from/valid_to)이 여기 한 곳에만 있어야 문구 생성과 검증이 갈라지지 않는다.
+#[allow(dead_code)]
 pub fn find_code_impl(
     conn: &Connection,
     reason_id: Option<i64>,
@@ -257,12 +268,19 @@ pub fn create_code_impl(
     Ok(conn.last_insert_rowid())
 }
 
+/// 마감은 한 번뿐이다. 이미 마감된 것을 다시 마감하면 **말해 준다** — 조용히 넘기면
+/// 교사는 방금 누른 것이 처리된 줄 알고, `revise_code_impl`은 마감되지 않은 채
+/// 새 행을 만들어 같은 쌍이 둘이 된다.
 pub fn retire_code_impl(conn: &Connection, id: i64, valid_to: &str) -> Result<(), String> {
-    conn.execute(
-        "UPDATE attendance_code SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
-        rusqlite::params![valid_to, id],
-    )
-    .map_err(|e| e.to_string())?;
+    let n = conn
+        .execute(
+            "UPDATE attendance_code SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
+            rusqlite::params![valid_to, id],
+        )
+        .map_err(|e| e.to_string())?;
+    if n == 0 {
+        return Err(format!("이미 마감되었거나 없는 코드입니다: {id}"));
+    }
     Ok(())
 }
 
@@ -299,28 +317,49 @@ pub fn revise_code_impl(
     })
 }
 
-/// 증상 자동완성 후보.
+/// 메모 자동완성 후보. 자주 쓴 것이 앞에 온다.
 ///
-/// 과거 `absence_span.symptom`에서 뽑는다. **별도 테이블을 두지 않는다** —
-/// 쓸수록 후보가 쌓이고, 관리할 목록이 하나 줄어든다.
-pub fn get_symptom_suggestions_impl(
+/// 과거 `absence_span.memo`에서 뽑는다. **별도 테이블을 두지 않는다** — 쓸수록
+/// 후보가 쌓이고, 관리할 목록이 하나 줄어든다.
+///
+/// 학급으로 거르는 이유는 후보가 **그 반에서 실제로 쓰인 말**이어야 도움이 되기
+/// 때문이다. 전체에서 뽑으면 작년 다른 반의 말이 섞여 버튼 자리를 차지한다.
+///
+/// 빈 메모는 후보가 아니다. 공백만 친 것도 마찬가지로 뺀다.
+///
+/// 앞뒤 공백을 떼고 센다. 저장은 교사가 친 그대로 하므로(`set_span_memo`), 떼지 않으면
+/// `복통`과 `복통 `이 똑같이 생긴 버튼 두 개로 나와 자리만 차지한다.
+pub fn get_memo_suggestions_impl(
     conn: &Connection,
-    prefix: &str,
+    school_id: i64,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
     limit: i64,
 ) -> Result<Vec<String>, String> {
-    let pattern = format!("{}%", prefix.replace('%', "\\%").replace('_', "\\_"));
+    if limit < 1 {
+        return Ok(Vec::new());
+    }
     let mut stmt = conn
         .prepare(
-            "SELECT symptom, COUNT(*) AS n
-             FROM absence_span
-             WHERE symptom IS NOT NULL AND symptom <> '' AND symptom LIKE ?1 ESCAPE '\\'
-             GROUP BY symptom
-             ORDER BY n DESC, symptom
-             LIMIT ?2",
+            "SELECT TRIM(s.memo) AS m, COUNT(*) AS n
+             FROM absence_span s
+                      JOIN student st ON st.id = s.student_id
+             WHERE st.school_id = ?1
+               AND st.year_id = ?2
+               AND st.grade = ?3
+               AND st.class_no = ?4
+               AND TRIM(s.memo) <> ''
+             GROUP BY m
+             ORDER BY n DESC, m
+             LIMIT ?5",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(rusqlite::params![pattern, limit], |r| r.get::<_, String>(0))
+        .query_map(
+            rusqlite::params![school_id, year_id, grade, class_no, limit],
+            |r| r.get::<_, String>(0),
+        )
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -441,12 +480,15 @@ pub fn retire_code(db: State<DbState>, id: i64, valid_to: String) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn get_symptom_suggestions(
+pub fn get_memo_suggestions(
     db: State<DbState>,
-    prefix: String,
+    school_id: i64,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
     limit: Option<i64>,
 ) -> Result<Vec<String>, String> {
     with_conn(&db, |c| {
-        get_symptom_suggestions_impl(c, &prefix, limit.unwrap_or(8))
+        get_memo_suggestions_impl(c, school_id, year_id, grade, class_no, limit.unwrap_or(8))
     })
 }
