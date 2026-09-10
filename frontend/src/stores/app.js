@@ -1,131 +1,112 @@
 import {defineStore} from 'pinia'
-import {computed, ref} from 'vue'
 import {invoke} from '@tauri-apps/api/core'
 
-const K_YEAR = 'current_year_id'
-const K_GRADE = 'current_grade'
-const K_CLASS = 'current_class_no'
-
 /**
- * 학년도는 3월에 시작한다. 1~2월에 앱을 켜면 아직 지난해 학년도다.
- * `getFullYear()`를 그대로 쓰면 2027년 2월에 "2027학년도"를 만들어 버린다.
+ * 앱이 지금 무엇을 보고 있는가 — 학교 · 학년도 · 학급 · 오늘.
+ *
+ * 이 값들은 **앱 설정**(app_config)에 남는다. 마지막에 연 학급으로 다시 열려야
+ * 매일 아침 같은 것을 다시 고르지 않는다.
+ * 최대 교시와 제출 기한은 여기가 아니라 **학교**가 들고 있다(school 행).
  */
-export function academicYearOf(date = new Date()) {
-    return date.getMonth() + 1 >= 3 ? date.getFullYear() : date.getFullYear() - 1
+export const useAppStore = defineStore('app', {
+    state: () => ({
+        booted: false,
+        error: '',
+        schoolId: null,
+        school: null,
+        years: [],
+        yearId: null,
+        grade: null,
+        classNo: null,
+        today: isoToday(),
+    }),
+
+    getters: {
+        /** 학생 명단과 학급이 정해졌는가. 아니면 첫 실행 흐름으로 보낸다. */
+        ready: (s) => Boolean(s.schoolId && s.yearId && s.grade && s.classNo),
+        /** 하루의 마지막 교시. 화면이 앱 상수를 알지 않게 한다. */
+        maxSlot: (s) => s.school?.maxSlot ?? 7,
+        currentYear: (s) => s.years.find((y) => y.id === s.yearId) ?? null,
+        /** 커맨드 대부분이 함께 받는 네 값. 화면이 매번 조합하지 않게 한다. */
+        scope: (s) => ({
+            schoolId: s.schoolId,
+            yearId: s.yearId,
+            grade: s.grade,
+            classNo: s.classNo,
+        }),
+    },
+
+    actions: {
+        async boot() {
+            this.error = ''
+            try {
+                await invoke('init_db')
+                const schools = await invoke('get_schools')
+                this.schoolId = schools[0]?.id ?? null
+                this.school = schools[0] ?? null
+                this.years = await invoke('get_years')
+
+                // app_config는 키 하나씩 읽는다. 담는 것은 마지막에 연 학급뿐이다.
+                const [year, grade, classNo] = await Promise.all([
+                    invoke('get_config', {key: 'yearId'}),
+                    invoke('get_config', {key: 'grade'}),
+                    invoke('get_config', {key: 'classNo'}),
+                ])
+                this.yearId = toNumber(year) ?? this.years[0]?.id ?? null
+                this.grade = toNumber(grade)
+                this.classNo = toNumber(classNo)
+                this.booted = true
+            } catch (e) {
+                this.error = String(e)
+                this.booted = true
+                throw e
+            }
+        },
+
+        async refreshSchool() {
+            this.error = ''
+            try {
+                this.school = await invoke('get_school', {schoolId: this.schoolId})
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
+
+        async selectClass({yearId, grade, classNo}) {
+            this.error = ''
+            this.yearId = yearId
+            this.grade = grade
+            this.classNo = classNo
+            try {
+                await Promise.all([
+                    invoke('set_config', {key: 'yearId', value: String(yearId)}),
+                    invoke('set_config', {key: 'grade', value: String(grade)}),
+                    invoke('set_config', {key: 'classNo', value: String(classNo)}),
+                ])
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
+    },
+})
+
+/** 오늘 날짜를 ISO로. 저장은 언제나 ISO다. */
+export function isoToday(now = new Date()) {
+    const pad = (n) => String(n).padStart(2, '0')
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-/**
- * 앱 전역 상태 — DB 열기, 학년도, 지금 보고 있는 학급.
- *
- * **학년도를 교사에게 묻지 않는다.** 3월 기준으로 앱이 정해서 만든다. 학년도
- * 추가는 1년에 한 번 있는 일이라 첫 실행에 낼 질문이 아니고, 학급은 명렬표가
- * 알려준다.
- *
- * 컴포넌트는 invoke를 직접 부르지 않는다. 전부 이 계층을 거친다.
- */
-export const useAppStore = defineStore('app', () => {
-    const status = ref(null)
-    const years = ref([])
-    const yearId = ref(null)
-    const grade = ref(null)
-    const classNo = ref(null)
-    const classes = ref([])
-    const loading = ref(false)
-    const error = ref('')
+/** 화면·내보내기 표기. `2026.09.10.(목)` */
+export function formatKorean(iso) {
+    if (!iso) return ''
+    const [y, m, d] = iso.split('-').map(Number)
+    const week = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()]
+    return `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}.(${week})`
+}
 
-    const ready = computed(
-        () => yearId.value !== null && grade.value !== null && classNo.value !== null,
-    )
-    const currentYear = computed(() => years.value.find((y) => y.id === yearId.value) || null)
-
-    async function init() {
-        loading.value = true
-        error.value = ''
-        try {
-            status.value = await invoke('init_db')
-            if (status.value.needsMigration) await invoke('migrate_schema')
-            await ensureCurrentYear()
-            await restoreContext()
-        } catch (e) {
-            error.value = String(e)
-            // 에러를 삼키면 "데이터 없음"과 구분되지 않는 빈 화면이 그대로 보인다.
-            throw e
-        } finally {
-            loading.value = false
-        }
-    }
-
-    async function fetchYears() {
-        years.value = await invoke('get_years')
-    }
-
-    /** 올해 학년도가 없으면 만든다. 있으면 그대로 쓴다. */
-    async function ensureCurrentYear() {
-        await fetchYears()
-        const year = academicYearOf()
-        let row = years.value.find((y) => y.year === year)
-        if (!row) {
-            await invoke('create_year', {
-                year,
-                startsOn: `${year}-03-01`,
-                endsOn: `${year + 1}-02-28`,
-            })
-            await fetchYears()
-            row = years.value.find((y) => y.year === year)
-        }
-        yearId.value = row?.id ?? years.value[0]?.id ?? null
-    }
-
-    /**
-     * 저장된 학급을 되살린다. 없으면 명단이 있는 학급 중 첫 번째를 고른다.
-     * 학급은 학년도마다 다르므로 학년도별로 저장한다.
-     */
-    async function restoreContext() {
-        if (yearId.value === null) return
-        classes.value = await invoke('get_classes', {yearId: yearId.value})
-
-        const [savedYear, g, c] = await Promise.all([
-            invoke('get_config', {key: K_YEAR}),
-            invoke('get_config', {key: `${K_GRADE}.${yearId.value}`}),
-            invoke('get_config', {key: `${K_CLASS}.${yearId.value}`}),
-        ])
-        if (savedYear !== null && years.value.some((y) => y.id === Number(savedYear))) {
-            yearId.value = Number(savedYear)
-        }
-
-        const saved = g !== null && c !== null ? [Number(g), Number(c)] : null
-        const exists = saved && classes.value.some(([sg, sc]) => sg === saved[0] && sc === saved[1])
-
-        if (exists) {
-            grade.value = saved[0]
-            classNo.value = saved[1]
-        } else if (classes.value.length) {
-            ;[grade.value, classNo.value] = classes.value[0]
-        } else {
-            grade.value = null
-            classNo.value = null
-        }
-    }
-
-    async function setContext(nextGrade, nextClassNo, nextYearId = yearId.value) {
-        yearId.value = nextYearId
-        grade.value = nextGrade
-        classNo.value = nextClassNo
-        await Promise.all([
-            invoke('set_config', {key: K_YEAR, value: String(nextYearId)}),
-            invoke('set_config', {key: `${K_GRADE}.${nextYearId}`, value: String(nextGrade)}),
-            invoke('set_config', {key: `${K_CLASS}.${nextYearId}`, value: String(nextClassNo)}),
-        ])
-        classes.value = await invoke('get_classes', {yearId: nextYearId})
-    }
-
-    async function backupTo(dest) {
-        return await invoke('export_backup', {dest})
-    }
-
-    return {
-        status, years, yearId, grade, classNo, classes, loading, error,
-        ready, currentYear,
-        init, fetchYears, restoreContext, setContext, backupTo,
-    }
-})
+function toNumber(v) {
+    const n = Number(v)
+    return Number.isFinite(n) && v !== undefined && v !== null && v !== '' ? n : null
+}

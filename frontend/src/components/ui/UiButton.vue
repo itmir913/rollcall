@@ -1,74 +1,47 @@
 <script setup>
 /**
- * 버튼 하나. 앱의 모든 버튼이 이걸 쓴다.
+ * 버튼 하나. 색과 모서리는 style.css의 `.btn--*`가 정하고, 여기서는 조합만 한다.
  *
- * 색과 여백을 컴포넌트마다 적으면 나중에 디자인을 바꿀 때 전 파일을 뒤져야 한다.
- * 시각 디자인은 아직 정하지 않았으므로, 바꿀 자리를 한 곳으로 모아 두는 것이 목적이다.
+ * `download`와 `upload`는 프로젝트 전체에서 같은 모양이어야 한다 —
+ * 파일이 컴퓨터에 떨어지거나 들어오는 동작이라 다른 버튼과 섞이면 안 된다.
+ * 그래서 화살표를 이 컴포넌트가 직접 들고 있다.
  */
-defineProps({
-    variant: {type: String, default: 'default'}, // default | primary | ghost | danger
+import {computed} from 'vue'
+
+const props = defineProps({
+    variant: {type: String, default: 'default'}, // default | primary | ghost | danger | download | upload
+    size: {type: String, default: 'default'}, // default | tight | wide
+    fill: {type: Boolean, default: false}, // danger를 채운다(지우기 확인)
+    icon: {type: Boolean, default: false}, // 아이콘만 있는 버튼
     disabled: {type: Boolean, default: false},
     type: {type: String, default: 'button'},
 })
+
+const classes = computed(() => [
+    'btn',
+    props.variant !== 'default' ? `btn--${props.variant}` : '',
+    props.size !== 'default' ? `btn--${props.size}` : '',
+    props.fill ? 'btn--fill' : '',
+    props.icon ? 'btn--icon' : '',
+])
 </script>
 
 <template>
-    <button :class="['ui-btn', `is-${variant}`]" :disabled="disabled" :type="type">
+    <button :class="classes" :disabled="disabled" :type="type">
+        <svg v-if="variant === 'download'" aria-hidden="true" class="icon" fill="none"
+             stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+             stroke-width="1.9" viewBox="0 0 24 24">
+            <path d="M12 4v11"/>
+            <path d="M7 11l5 5 5-5"/>
+            <path d="M5 20h14"/>
+        </svg>
+        <svg v-else-if="variant === 'upload'" aria-hidden="true" class="icon" fill="none"
+             stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
+             stroke-width="1.9" viewBox="0 0 24 24">
+            <path d="M12 20V9"/>
+            <path d="M7 13l5-5 5 5"/>
+            <path d="M5 4h14"/>
+        </svg>
         <slot/>
     </button>
 </template>
-
-<style scoped>
-.ui-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 40px;
-    padding: 0 16px;
-    border-radius: 8px;
-    border: 1px solid var(--c-line);
-    background: var(--c-raised);
-    color: var(--c-ink-2);
-    cursor: pointer;
-    transition: border-color 120ms ease, color 120ms ease, background 120ms ease;
-}
-
-.ui-btn:hover:not(:disabled) {
-    border-color: var(--c-accent);
-    color: var(--c-ink);
-}
-
-.ui-btn:focus-visible {
-    outline: 2px solid var(--c-accent);
-    outline-offset: 2px;
-}
-
-.ui-btn:disabled {
-    opacity: 0.45;
-    cursor: default;
-}
-
-.ui-btn.is-primary {
-    background: var(--c-accent);
-    border-color: var(--c-accent);
-    color: #fff;
-}
-
-.ui-btn.is-primary:hover:not(:disabled) {
-    color: #fff;
-    filter: brightness(1.08);
-}
-
-.ui-btn.is-ghost {
-    background: transparent;
-    border-color: transparent;
-    color: var(--c-ink-3);
-}
-
-.ui-btn.is-danger {
-    border-color: var(--c-danger);
-    color: var(--c-danger);
-    background: transparent;
-}
-</style>

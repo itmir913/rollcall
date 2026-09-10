@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest'
-import {academicYearOf} from '../stores/app.js'
+import {academicYearOf} from './academicYear'
 
 describe('academicYearOf', () => {
     it('3월부터 그 해가 학년도다', () => {

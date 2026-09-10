@@ -8,40 +8,70 @@
  * 그 결과를 data-theme에 찍는다. 즉 이 파일은 미디어 쿼리를 쓰지 않는다.
  * 상태가 한 곳(data-theme 속성)에만 있어야 토글과 시스템 설정이 서로 어긋나지 않는다.
  *
- * 색은 반드시 토큰으로 쓴다. 컴포넌트에 색을 직접 적으면 한쪽 테마에서만 읽힌다.
+ * **색은 이 파일에만 있다.** 컴포넌트에 색을 직접 적으면 라이트에서 멀쩡해 보여
+ * 리뷰를 통과하고 다크에서만 깨진다. frontend/src/style.test.js가 이것을 강제한다.
+ *
+ * 글자 크기도 토큰이다. 최소는 --t-base(16px)이고 그보다 작은 값은 이 파일에 없다.
+ * 밀도는 글자를 줄여서가 아니라 행 높이와 여백으로 만든다.
  */
 :root {
-    --c-base: #f6f7fb;
+    --c-base: #f4f6fa;
     --c-surface: #ffffff;
-    --c-raised: #eef1f7;
-    --c-line: #d6dce8;
-    --c-ink: #1b2434;
-    --c-ink-2: #3d4a60;
-    --c-ink-3: #6b7891;
-    --c-accent: #3550d8;
-    --c-warn: #b26a00;
-    --c-danger: #c62828;
-    --c-ok: #1b7a4b;
-    --c-danger-bg: #fdeaea;
-    --c-danger-ink: #a01b1b;
-    --c-shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+    --c-raised: #eceff7;
+    --c-line: #dbe0ec;
+    --c-line-soft: #e8ecf4;
+    --c-ink: #151b29;
+    --c-ink-2: #4a5570;
+    --c-ink-3: #6d7b96;
+    --c-accent: #2e3f9e;
+    --c-accent-soft: #e7eaf8;
+    --c-accent-ink: #ffffff;
+    --c-warn: #9a5a06;
+    --c-warn-bg: #fbf0e0;
+    --c-danger: #b32c2c;
+    --c-danger-bg: #fbe9e9;
+    /* 채워진 삭제 버튼 전용. --c-danger는 글자·띠에 쓰는 색이라 다크에서 밝아진다. */
+    --c-danger-solid: #b02a2a;
+    --c-danger-solid-ink: #ffffff;
+    --c-ok: #17724a;
+    --c-ok-bg: #e3f2ea;
+    --c-shadow: 0 1px 2px rgba(21, 27, 41, .06), 0 8px 22px rgba(21, 27, 41, .05);
+    --c-scrim: rgba(21, 27, 41, .38);
+
+    --t-base: 1rem; /* 16px — 최소 크기. 이보다 작은 값 금지 */
+    --t-md: 1.0625rem;
+    --t-lg: 1.125rem;
+    --t-xl: 1.375rem;
+    --t-2xl: 1.75rem;
+    --t-3xl: 2.5rem;
 }
 
 html[data-theme="dark"] {
-    --c-base: #0b0f18;
+    --c-base: #0a0e17;
     --c-surface: #121826;
-    --c-raised: #182135;
-    --c-line: #263250;
-    --c-ink: #e5ecf5;
-    --c-ink-2: #b9c8de;
-    --c-ink-3: #8398b8;
-    --c-accent: #4c6ef5;
-    --c-warn: #f0a020;
-    --c-danger: #e5484d;
-    --c-ok: #30a46c;
-    --c-danger-bg: #3a1315;
-    --c-danger-ink: #ffb4b4;
+    --c-raised: #1a2234;
+    --c-line: #26314b;
+    --c-line-soft: #1e2739;
+    --c-ink: #e6ecf6;
+    --c-ink-2: #b6c4dc;
+    --c-ink-3: #8496b1;
+    --c-accent: #5c76f0;
+    --c-accent-soft: #1c2645;
+    --c-accent-ink: #0a0e17;
+    --c-warn: #e2a343;
+    --c-warn-bg: #33260f;
+    --c-danger: #f0666a;
+    --c-danger-bg: #3a171a;
+    --c-danger-solid: #c0392f;
+    --c-danger-solid-ink: #ffffff;
+    --c-ok: #43b384;
+    --c-ok-bg: #102c22;
     --c-shadow: none;
+    --c-scrim: rgba(3, 6, 12, .62);
+}
+
+* {
+    box-sizing: border-box;
 }
 
 html {
@@ -54,11 +84,18 @@ body {
     background: var(--c-base);
     color: var(--c-ink);
     font-family: "Pretendard Variable", Pretendard, -apple-system, sans-serif;
+    line-height: 1.55;
+
+    /* 한국어는 어절 단위로 끊는다. 기본값(normal)은 한글을 글자 단위로 끊어서
+     * "종례까|지" 같은 줄바꿈이 나온다. keep-all이 그것을 막고, break-word가
+     * 칸보다 긴 낱말 하나만 예외로 끊게 한다. 둘은 짝이라 한쪽만 두면 안 된다. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
 }
 
-/* 기본 글자 크기는 text-base다. 표 셀 미리보기·배지·캡션만 예외로 줄인다. */
+/* 기본 글자 크기는 text-base다. 이보다 작은 값은 쓰지 않는다. */
 #app {
-    font-size: 16px;
+    font-size: var(--t-base);
 }
 
 input, select, textarea, button {
@@ -67,13 +104,263 @@ input, select, textarea, button {
     color: inherit;
 }
 
-.card {
-    background: var(--c-surface);
-    border: 1px solid var(--c-line);
-    border-radius: 10px;
-    box-shadow: var(--c-shadow);
+/* 번호 · 날짜 · 교시 · 건수는 자릿수가 흔들리면 표가 덜컹거린다.
+ * 서체를 하나 더 들이지 않고 Pretendard의 tabular-nums를 쓴다. */
+.num {
+    font-variant-numeric: tabular-nums;
 }
 
+.muted {
+    color: var(--c-ink-3);
+}
+
+[hidden] {
+    display: none !important;
+}
+
+/* ── 앱 뼈대 ─────────────────────────────────────────────── */
+.shell {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    min-height: 100vh;
+    background: var(--c-base);
+}
+
+.shell.is-collapsed {
+    grid-template-columns: 64px 1fr;
+}
+
+.bare {
+    min-height: 100vh;
+    background: var(--c-base);
+}
+
+/* ── 사이드바 ────────────────────────────────────────────── */
+.rail {
+    display: flex;
+    flex-direction: column;
+    padding: 16px 12px 14px;
+    background: var(--c-surface);
+    border-right: 1px solid var(--c-line);
+}
+
+.rail__brand {
+    padding: 4px 10px 16px;
+    font-size: var(--t-lg);
+    font-weight: 700;
+    letter-spacing: -.015em;
+}
+
+.rail__brand em {
+    font-style: normal;
+    color: var(--c-accent);
+}
+
+.rail__group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.rail__link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 11px;
+    border-radius: 7px;
+    color: var(--c-ink-2);
+    text-decoration: none;
+}
+
+.rail__link::before {
+    content: "";
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: transparent;
+}
+
+.rail__link:hover {
+    background: var(--c-raised);
+}
+
+.rail__link.is-active {
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-weight: 700;
+}
+
+.rail__link.is-active::before {
+    background: var(--c-accent);
+}
+
+/* 배지는 안 받은 것을 전부 센다. 색은 중립이다 — 늘 붉은 숫자가 달려 있으면
+ * 정작 급한 것이 눈에 안 들어온다. */
+.rail__badge {
+    margin-left: auto;
+    border-radius: 999px;
+    padding: 0 9px;
+    background: var(--c-raised);
+    color: var(--c-ink-2);
+    font-weight: 700;
+}
+
+/* 줄 하나로 세 덩어리를 가른다: 매일 하는 일 · 가끔 하는 일 · 업무가 아닌 것. */
+.rail__rule {
+    height: 1px;
+    margin: 9px 8px;
+    background: var(--c-line);
+}
+
+.rail__spacer {
+    flex: 1;
+    min-height: 26px;
+}
+
+.rail__foot {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 10px;
+    border-top: 1px solid var(--c-line-soft);
+}
+
+.rail__where {
+    padding: 10px 11px 2px;
+    margin: 0;
+    color: var(--c-ink-3);
+    line-height: 1.4;
+}
+
+/* ── 본문 ────────────────────────────────────────────────── */
+.main {
+    padding: 22px 26px 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
+}
+
+.main__head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+    flex-wrap: wrap;
+}
+
+.main__head h3 {
+    margin: 0;
+    font-size: var(--t-xl);
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.main__sub {
+    margin: 3px 0 0;
+    color: var(--c-ink-3);
+}
+
+.main__acts {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+/* ── 버튼 ────────────────────────────────────────────────── */
+.btn {
+    border: 1px solid var(--c-line);
+    background: var(--c-surface);
+    color: var(--c-ink-2);
+    border-radius: 8px;
+    padding: 8px 15px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+    border-color: var(--c-accent);
+    color: var(--c-ink);
+}
+
+.btn:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+}
+
+.btn:disabled {
+    opacity: .45;
+    cursor: default;
+}
+
+.btn--primary {
+    background: var(--c-accent);
+    border-color: var(--c-accent);
+    color: var(--c-accent-ink);
+    font-weight: 700;
+}
+
+.btn--primary:hover:not(:disabled) {
+    color: var(--c-accent-ink);
+}
+
+.btn--ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--c-ink-3);
+}
+
+.btn--tight {
+    padding: 5px 11px;
+}
+
+.btn--wide {
+    padding: 10px 22px;
+}
+
+/* 내려받기는 프로젝트 전체에서 같은 모양이다 — 강조색 채움 + 아래 화살표.
+ * 녹색은 쓰지 않는다. 이미 "일치 · 완료 · 제출"의 의미색이라 뜻이 섞인다. */
+.btn--download,
+.btn--upload {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+
+.btn--download {
+    background: var(--c-accent);
+    border-color: var(--c-accent);
+    color: var(--c-accent-ink);
+    font-weight: 700;
+}
+
+/* 지우기는 되돌리기 어렵다. 글자 대신 휴지통 모양으로, 색으로 무게를 준다. */
+.btn--danger {
+    border-color: var(--c-danger);
+    color: var(--c-danger);
+}
+
+.btn--danger.btn--fill {
+    background: var(--c-danger-solid);
+    border-color: var(--c-danger-solid);
+    color: var(--c-danger-solid-ink);
+    font-weight: 700;
+}
+
+.btn--icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+}
+
+.icon {
+    display: block;
+    width: 18px;
+    height: 18px;
+}
+
+/* ── 입력칸 ──────────────────────────────────────────────── */
 .field {
     background: var(--c-surface);
     border: 1px solid var(--c-line);
@@ -91,36 +378,1066 @@ html[data-theme="dark"] .field {
     border-color: var(--c-accent);
 }
 
-.btn {
-    background: var(--c-raised);
+/* ── 숫자 띠 ─────────────────────────────────────────────── */
+.strip {
+    display: flex;
     border: 1px solid var(--c-line);
-    border-radius: 8px;
-    padding: 8px 14px;
-    color: var(--c-ink-2);
-    cursor: pointer;
+    border-radius: 10px;
+    background: var(--c-surface);
+    overflow: hidden;
 }
 
-.btn:hover:not(:disabled) {
-    border-color: var(--c-accent);
+.strip__cell {
+    flex: 1;
+    padding: 11px 16px;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    color: inherit;
+    text-decoration: none;
+}
+
+.strip__cell + .strip__cell {
+    border-left: 1px solid var(--c-line-soft);
+}
+
+a.strip__cell:hover {
+    background: var(--c-raised);
+}
+
+.strip__cell b {
+    font-size: var(--t-xl);
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.strip__cell span {
+    color: var(--c-ink-3);
+}
+
+.strip__cell.is-warn b {
+    color: var(--c-warn);
+}
+
+.strip__cell.is-bad b {
+    color: var(--c-danger);
+}
+
+.strip__cell.is-ok b {
+    color: var(--c-ok);
+}
+
+/* ── 장부(행 목록) ───────────────────────────────────────── */
+.ledger {
+    border: 1px solid var(--c-line);
+    border-radius: 10px;
+    background: var(--c-surface);
+    overflow: hidden;
+}
+
+.ledger__head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--c-line);
+    flex-wrap: wrap;
+}
+
+.ledger__head h4 {
+    margin: 0;
+    font-size: var(--t-md);
+    font-weight: 700;
+}
+
+.ledger__head .hint {
+    color: var(--c-ink-3);
+}
+
+.ledger__head .spacer {
+    flex: 1;
+}
+
+.ledger__foot {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    border-top: 1px solid var(--c-line-soft);
+    color: var(--c-ink-3);
+}
+
+.ledger__empty {
+    padding: 18px 16px;
+    color: var(--c-ink-3);
+}
+
+/* 행 하나. 상태는 왼쪽 3px 띠와 오른쪽 글자가 같이 진다 — 색 하나로만 말하면
+ * 다크에서 흐려지고 색각 이상에서 사라진다. */
+.row {
+    display: grid;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 16px 9px 13px;
+    border-left: 3px solid transparent;
+}
+
+.row + .row {
+    border-top: 1px solid var(--c-line-soft);
+}
+
+/* 스무 줄이 넘는 목록에서 지금 보는 줄을 눈이 놓치지 않게 한다. */
+.ledger .row:hover {
+    background: var(--c-raised);
+}
+
+.row.is-bad {
+    border-left-color: var(--c-danger);
+}
+
+.row.is-warn {
+    border-left-color: var(--c-warn);
+}
+
+.row.is-calm {
+    border-left-color: var(--c-line);
+}
+
+.row.is-ok {
+    border-left-color: var(--c-ok);
+}
+
+/* 위계는 세 단계뿐이다. 어느 목록이든 같은 열은 같은 단계다.
+ *   1차(--c-ink)   이름 · 구분과 종류 — 누가 무슨 일인가
+ *   2차(--c-ink-2) 기간 · 날짜        — 언제인가
+ *   3차(--c-ink-3) 번호 · 마감 · 사유 — 참고
+ * 의미색은 오른쪽 끝 상태 칸에만 쓴다. */
+.row__no {
+    color: var(--c-ink-3);
+}
+
+.row__name {
     color: var(--c-ink);
 }
 
-.btn:disabled {
-    opacity: 0.45;
+.row__name b {
+    font-weight: 700;
+}
+
+.row__what {
+    color: var(--c-ink);
+}
+
+.row__when {
+    color: var(--c-ink-2);
+}
+
+.row__date {
+    color: var(--c-ink-2);
+}
+
+.row__due {
+    color: var(--c-ink-3);
+}
+
+.row__memo {
+    color: var(--c-ink-3);
+}
+
+.row__flag {
+    justify-self: end;
+    font-weight: 700;
+}
+
+.row.is-bad .row__flag {
+    color: var(--c-danger);
+}
+
+.row.is-warn .row__flag {
+    color: var(--c-warn);
+}
+
+.row.is-calm .row__flag {
+    color: var(--c-ink-3);
+    font-weight: 400;
+}
+
+.row.is-ok .row__flag {
+    color: var(--c-ok);
+}
+
+.row__acts {
+    justify-self: end;
+    display: flex;
+    gap: 6px;
+}
+
+.row__mark {
+    justify-self: end;
+}
+
+/* 겹치는 구간은 막지 않고 표시만 한다. 3교시 결과 + 3교시 조퇴 같은 실수를 알린다. */
+.row__clash {
+    margin-left: 8px;
+    color: var(--c-warn);
+    font-weight: 700;
+}
+
+/* 목록마다 뒤 칸이 다르다. 앞부분은 언제나 같은 순서로 읽힌다:
+ * 번호 → 이름 → 구분·종류 → 기간 → 사유 → (덧붙임) → 상태 */
+.list--today .row {
+    grid-template-columns: 48px 92px 132px 158px 1fr 46px;
+}
+
+.list--log .row {
+    grid-template-columns: 48px 92px 132px 158px 1fr 116px 116px 46px;
+}
+
+.list--docs .row {
+    grid-template-columns: 48px 92px 132px 150px 1fr 118px 116px 116px;
+}
+
+.list--neis .row {
+    grid-template-columns: 48px 92px 132px 158px 1fr 116px 46px;
+}
+
+.list--plain .row {
+    grid-template-columns: 48px 92px 132px 158px 1fr;
+}
+
+/* ── 날짜 묶음 (출결 기록 · NEIS 미등재) ─────────────────── */
+.daygroup {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* ── 축 카드 ─────────────────────────────────────────────
+ * 카드는 움직이지 않는다. 구분을 바꿔도 버튼은 그 자리에 그대로 있고
+ * 활성 여부만 바뀐다. 줄이 생겼다 사라지면 다음에 누를 버튼의 위치가 매번 달라진다. */
+.axis {
+    border: 1px solid var(--c-line);
+    border-radius: 10px;
+    background: var(--c-surface);
+    padding: 13px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.axis__line {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.axis__step {
+    width: 62px;
+    flex: none;
+    color: var(--c-ink-3);
+}
+
+.axis__sep {
+    width: 1px;
+    align-self: stretch;
+    margin: 0 5px;
+    background: var(--c-line);
+}
+
+.stamp {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding-top: 10px;
+    border-top: 1px solid var(--c-line-soft);
+    color: var(--c-ink-3);
+}
+
+.stamp b {
+    color: var(--c-ink);
+    font-weight: 700;
+}
+
+/* 후보가 정해져 있고 늘어나도 십여 개인 값은 버튼으로 펼친다.
+ * 드롭다운은 열기 전까지 후보가 보이지 않아 클릭이 한 번 더 든다. */
+.pick {
+    border: 1px solid var(--c-line);
+    background: var(--c-surface);
+    color: var(--c-ink-2);
+    border-radius: 7px;
+    padding: 6px 15px;
+    cursor: pointer;
+}
+
+.pick:hover:not(:disabled) {
+    border-color: var(--c-accent);
+}
+
+.pick:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+}
+
+.pick.is-on {
+    background: var(--c-accent);
+    border-color: var(--c-accent);
+    color: var(--c-accent-ink);
+    font-weight: 700;
+}
+
+.pick:disabled {
+    opacity: .38;
     cursor: default;
 }
 
-.btn-primary {
+.pick--slot {
+    min-width: 46px;
+    padding: 6px 11px;
+    text-align: center;
+}
+
+/* ── 번호 격자 ───────────────────────────────────────────── */
+.seats {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
+}
+
+.seat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    padding: 7px 4px;
+    border: 1px solid var(--c-line);
+    border-radius: 8px;
+    background: var(--c-surface);
+    color: var(--c-ink);
+    cursor: pointer;
+}
+
+.seat:hover {
+    border-color: var(--c-accent);
+}
+
+.seat:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+}
+
+.seat__no {
+    color: var(--c-ink-3);
+}
+
+.seat__name {
+    font-weight: 500;
+    letter-spacing: -.03em;
+}
+
+.seat.is-marked {
+    background: var(--c-ok-bg);
+    border-color: var(--c-ok);
+}
+
+.seat.is-late {
+    background: var(--c-danger-bg);
+    border-color: var(--c-danger);
+}
+
+.seat.is-undecided {
+    background: var(--c-warn-bg);
+    border-color: var(--c-warn);
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    color: var(--c-ink-3);
+}
+
+.legend i {
+    display: inline-block;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+    margin-right: 7px;
+}
+
+.legend .sw-ok {
+    background: var(--c-ok);
+}
+
+.legend .sw-bad {
+    background: var(--c-danger);
+}
+
+.legend .sw-warn {
+    background: var(--c-warn);
+}
+
+.legend .sw-line {
+    background: var(--c-line);
+}
+
+/* ── 줄 안에서 바로 고치기 ───────────────────────────────
+ * 사유와 태그는 접혀 있다가 누르면 그 줄이 커지면서 열린다. 칩을 스무 개
+ * 늘어놓으면 번호 · 이름 · 출결이 오른쪽으로 밀리는데, 훑을 때 보는 것은 그 셋이다. */
+.cellbtn {
+    width: 100%;
+    text-align: left;
+    border: 1px dashed var(--c-line);
+    background: transparent;
+    color: var(--c-ink-3);
+    border-radius: 7px;
+    padding: 5px 11px;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cellbtn:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+}
+
+.cellbtn:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+}
+
+.cellbtn.has-value {
+    border-style: solid;
+    color: var(--c-ink-2);
+}
+
+/* 이미 값이 있는 칸이라 테두리를 두르지 않는다. 누를 수 있다는 것은 hover가 알려준다. */
+.cellbtn--plain {
+    border-color: transparent;
+    color: inherit;
+    padding: 5px 8px;
+    margin-left: -8px;
+}
+
+.cellbtn--plain:hover {
+    border-color: var(--c-accent);
+}
+
+/* 태그는 붙어 있을 때만 사유 앞에 배지로 보인다. */
+.tagmark {
+    display: inline-block;
+    margin-right: 8px;
+    padding: 1px 9px;
+    border-radius: 999px;
+    background: var(--c-accent);
+    color: var(--c-accent-ink);
+    font-weight: 700;
+}
+
+.edit {
+    padding: 13px 16px 15px;
+    border-top: 1px dashed var(--c-line);
+    background: var(--c-raised);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.edit__area {
+    width: 100%;
+    min-height: 66px;
+    resize: vertical;
+    line-height: 1.5;
+    border: 1px solid var(--c-line);
+    border-radius: 8px;
+    padding: 9px 12px;
+    background: var(--c-surface);
+    color: var(--c-ink);
+}
+
+.edit__area:focus {
+    outline: none;
+    border-color: var(--c-accent);
+}
+
+.edit__row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.edit__label {
+    width: 52px;
+    flex: none;
+    color: var(--c-ink-3);
+}
+
+.edit__done {
+    margin-left: auto;
+}
+
+/* 사유 후보 칩. 태그는 세는 대상이라 자유 메모와 눈으로 구분되어야 한다. */
+.chip {
+    border: 1px dashed var(--c-line);
+    background: transparent;
+    color: var(--c-ink-3);
+    border-radius: 999px;
+    padding: 4px 12px;
+    cursor: pointer;
+}
+
+.chip:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+}
+
+.chip:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+}
+
+.chip.is-on {
+    border-style: solid;
+    border-color: var(--c-accent);
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+}
+
+.chip--tag {
+    border-style: solid;
+}
+
+.chip--tag.is-on {
     background: var(--c-accent);
     border-color: var(--c-accent);
-    color: #fff;
+    color: var(--c-accent-ink);
+    font-weight: 700;
 }
 
-.btn-primary:hover:not(:disabled) {
-    color: #fff;
+/* ── 표시 토글 ───────────────────────────────────────────
+ * 체크박스를 쓰지 않는다. 클릭 표적이 작고, 켜짐/꺼짐이 색과 글자로 같이 보여야
+ * 스무 줄짜리 목록을 훑을 때 한눈에 들어온다. */
+.mark {
+    border: 1px solid var(--c-line);
+    border-radius: 999px;
+    padding: 5px 13px;
+    background: transparent;
+    color: var(--c-ink-3);
+    cursor: pointer;
+    white-space: nowrap;
 }
 
-.banner-error {
+.mark:hover {
+    border-color: var(--c-ink-3);
+}
+
+.mark:focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 1px;
+}
+
+.mark.is-on {
+    border-color: var(--c-ok);
+    background: var(--c-ok-bg);
+    color: var(--c-ok);
+    font-weight: 700;
+}
+
+/* 메모를 누르면 그대로 복사된다. 나이스 사유 칸에 붙여 넣는 용도다. */
+.copy {
+    border: 1px dashed var(--c-line);
+    background: transparent;
+    color: var(--c-ink-2);
+    border-radius: 7px;
+    padding: 4px 11px;
+    cursor: pointer;
+    min-width: 108px;
+    text-align: left;
+}
+
+.copy:hover {
+    border-color: var(--c-accent);
+    color: var(--c-accent);
+}
+
+.copy.is-copied {
+    border-style: solid;
+    border-color: var(--c-ok);
+    color: var(--c-ok);
+    font-weight: 700;
+}
+
+/* ── 필터 줄 ─────────────────────────────────────────────── */
+.filters {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.filters__label {
+    color: var(--c-ink-3);
+    margin-right: 3px;
+}
+
+.filters__gap {
+    width: 14px;
+}
+
+/* ── 대화상자 ────────────────────────────────────────────
+ * 저장에는 쓰지 않는다. 되돌리기 어려운 삭제와, 저장·취소를 반드시 골라야 하는
+ * 집중 등재에만 쓴다. */
+.modal {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--c-scrim);
+    padding: 24px;
+    z-index: 50;
+}
+
+.modal__box {
+    width: min(560px, 100%);
+    max-height: 85%;
+    overflow: auto;
+    border: 1px solid var(--c-line);
+    border-radius: 14px;
+    background: var(--c-surface);
+    box-shadow: var(--c-shadow);
+}
+
+.modal__box--wide {
+    width: min(760px, 100%);
+}
+
+.modal__box--focus {
+    width: min(880px, 100%);
+    max-height: 94%;
+}
+
+.modal__head {
+    padding: 20px 22px 14px;
+}
+
+.modal__head h5 {
+    margin: 0;
+    font-size: var(--t-xl);
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.modal__who {
+    margin: 5px 0 0;
+    color: var(--c-ink-3);
+}
+
+.modal__body {
+    padding: 0 22px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.modal__what {
+    display: grid;
+    grid-template-columns: 76px 1fr;
+    gap: 10px 16px;
+    margin: 0;
+    padding: 14px 16px;
+    border: 1px solid var(--c-line);
+    border-left: 3px solid var(--c-danger);
+    border-radius: 10px;
+}
+
+.modal__key {
+    color: var(--c-ink-3);
+}
+
+.modal__val {
+    color: var(--c-ink);
+}
+
+.modal__val b {
+    font-weight: 700;
+}
+
+.modal__note {
+    margin: 0;
+    color: var(--c-ink-2);
+}
+
+.modal__foot {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    padding: 0 22px 20px;
+}
+
+.modal__foot .btn {
+    background: var(--c-raised);
+}
+
+.modal__foot .btn--primary {
+    background: var(--c-accent);
+}
+
+.modal__foot .btn--fill {
+    background: var(--c-danger-solid);
+}
+
+/* 집중 등재 — 나이스 화면과 나란히 놓고 한 명씩 옮겨 적는 모드. */
+.focus__who {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+}
+
+.focus__name {
+    font-size: var(--t-2xl);
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.focus__dots {
+    display: flex;
+    gap: 5px;
+    justify-content: center;
+    flex-wrap: wrap;
+}
+
+.focus__dot {
+    width: 26px;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--c-line);
+}
+
+.focus__dot.is-done {
+    background: var(--c-ok);
+}
+
+.focus__dot.is-now {
+    background: var(--c-accent);
+}
+
+.focus__note {
+    margin-right: auto;
+    color: var(--c-ink-3);
+}
+
+/* ── 설정 화면 ───────────────────────────────────────────── */
+.set__row {
+    display: grid;
+    grid-template-columns: 168px 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 12px 16px;
+}
+
+.set__row + .set__row {
+    border-top: 1px solid var(--c-line-soft);
+}
+
+.set__label {
+    color: var(--c-ink-2);
+    font-weight: 700;
+}
+
+.set__value {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+.set__hint {
+    color: var(--c-ink-3);
+}
+
+/* ── 한도 표 ─────────────────────────────────────────────
+ * 손으로 적던 20칸짜리 표를 그대로 옮긴다. 칸 하나가 하루이고, 채워진 칸이 쓴 날이다.
+ * 숫자만 적으면 "몇 개 남았나"를 매번 빼야 하지만, 칸은 남은 자리가 눈에 바로 보인다. */
+.dots {
+    display: flex;
+    gap: 3px;
+    flex-wrap: wrap;
+}
+
+.dot {
+    width: 14px;
+    height: 18px;
+    border-radius: 3px;
+    border: 1px solid var(--c-line);
+}
+
+.dot.is-used {
+    background: var(--c-accent);
+    border-color: var(--c-accent);
+}
+
+.row.is-bad .dot.is-used {
+    background: var(--c-danger);
+    border-color: var(--c-danger);
+}
+
+.row.is-warn .dot.is-used {
+    background: var(--c-warn);
+    border-color: var(--c-warn);
+}
+
+.row__count {
+    color: var(--c-ink-2);
+    justify-self: end;
+}
+
+.months {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 4px;
+}
+
+.mcell {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 32px;
+    border: 1px solid var(--c-line);
+    border-radius: 6px;
+    color: var(--c-ink-3);
+}
+
+.mcell i {
+    font-style: normal;
+}
+
+.mcell b {
+    font-weight: 700;
+}
+
+.mcell.is-future {
+    opacity: .45;
+}
+
+.mcell.is-used {
+    border-color: var(--c-ok);
+    background: var(--c-ok-bg);
+    color: var(--c-ok);
+}
+
+.mcell.is-over {
+    border-color: var(--c-danger);
     background: var(--c-danger-bg);
-    color: var(--c-danger-ink);
+    color: var(--c-danger);
+}
+
+.list--quota .row {
+    grid-template-columns: 48px 92px 1fr 108px 96px 108px;
+}
+
+.list--month .row {
+    grid-template-columns: 48px 92px 1fr 130px;
+}
+
+.list--gap .row {
+    grid-template-columns: 48px 92px 132px 158px 1fr auto;
+}
+
+/* ── 불러오기 마법사 (NEIS 검증) ─────────────────────────
+ * 단계를 보여 주는 이유는, 파일을 잘못 골랐을 때 어디로 돌아가야 하는지가
+ * 눈에 보여야 하기 때문이다. */
+.steps {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    color: var(--c-ink-3);
+}
+
+.step__no {
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 1px solid var(--c-line);
+}
+
+.step.is-now {
+    color: var(--c-ink);
+    font-weight: 700;
+}
+
+.step.is-now .step__no {
+    background: var(--c-accent);
+    border-color: var(--c-accent);
+    color: var(--c-accent-ink);
+}
+
+.step.is-done {
+    color: var(--c-ok);
+}
+
+.step.is-done .step__no {
+    border-color: var(--c-ok);
+}
+
+.drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 13px;
+    padding: 46px 24px;
+    text-align: center;
+    border: 2px dashed var(--c-line);
+    border-radius: 14px;
+    background: var(--c-surface);
+}
+
+.drop.is-over {
+    border-color: var(--c-accent);
+    background: var(--c-accent-soft);
+}
+
+.drop__title {
+    font-size: var(--t-xl);
+    font-weight: 700;
+    letter-spacing: -.02em;
+}
+
+.drop__hint {
+    color: var(--c-ink-3);
+}
+
+/* ── 2열 대조 (NEIS 검증) ────────────────────────────────
+ * 왼쪽이 내 기록, 오른쪽이 나이스다. 한쪽에만 있으면 반대쪽은 빈 상자로 남긴다 —
+ * 칸을 없애면 어느 쪽이 비었는지 매번 읽어야 한다. */
+.cmp__head {
+    display: grid;
+    grid-template-columns: 1fr 1fr 116px;
+    gap: 12px;
+    padding: 9px 16px 9px 13px;
+    background: var(--c-raised);
+    color: var(--c-ink-3);
+    border-bottom: 1px solid var(--c-line);
+}
+
+.cmp {
+    display: grid;
+    grid-template-columns: 1fr 1fr 116px;
+    gap: 12px;
+    align-items: stretch;
+    padding: 11px 16px 11px 13px;
+    border-left: 3px solid transparent;
+}
+
+.cmp + .cmp {
+    border-top: 1px solid var(--c-line-soft);
+}
+
+.cmp:hover {
+    background: var(--c-raised);
+}
+
+.cmp.is-diff {
+    border-left-color: var(--c-danger);
+}
+
+.cmp.is-only {
+    border-left-color: var(--c-warn);
+}
+
+.side {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 13px;
+    border: 1px solid var(--c-line);
+    border-radius: 9px;
+    background: var(--c-surface);
+}
+
+.side__who {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+}
+
+.side__who b {
+    font-weight: 700;
+}
+
+.side__who .num {
+    color: var(--c-ink-3);
+}
+
+.side__what {
+    color: var(--c-ink-2);
+}
+
+.side__hl {
+    color: var(--c-danger);
+    font-weight: 700;
+}
+
+.side--empty {
+    align-items: center;
+    justify-content: center;
+    border-style: dashed;
+    background: var(--c-raised);
+    color: var(--c-ink-3);
+}
+
+.cmp__verdict {
+    align-self: center;
+    justify-self: end;
+    font-weight: 700;
+}
+
+.cmp.is-diff .cmp__verdict {
+    color: var(--c-danger);
+}
+
+.cmp.is-only .cmp__verdict {
+    color: var(--c-warn);
+}
+
+/* ── 알림 ────────────────────────────────────────────────── */
+.notice {
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--c-line);
+}
+
+.notice--error {
+    background: var(--c-danger-bg);
+    color: var(--c-danger);
+    border-color: var(--c-danger);
+}
+
+.notice--warn {
+    background: var(--c-warn-bg);
+    color: var(--c-warn);
+    border-color: var(--c-warn);
+}
+
+.notice--ok {
+    background: var(--c-ok-bg);
+    color: var(--c-ok);
+    border-color: var(--c-ok);
 }
