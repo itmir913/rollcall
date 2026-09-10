@@ -19,6 +19,8 @@ import SeatGrid from '../components/SeatGrid.vue'
 import SpanRow from '../components/SpanRow.vue'
 import SpanDeleteModal from '../components/SpanDeleteModal.vue'
 import SpanEditModal from '../components/SpanEditModal.vue'
+import BulkStampModal from '../components/BulkStampModal.vue'
+import {stampPhrase} from '../services/phrase'
 import {UiButton, UiLedger, UiNotice, UiPage} from '../components/ui'
 
 const app = useAppStore()
@@ -29,6 +31,25 @@ const school = useSchoolStore()
 const expanded = ref(null)
 const fixing = ref(null)
 const dropping = ref(null)
+const bulkFor = ref(null)
+
+/**
+ * 여러 날 모드. 켜면 격자를 누를 때 찍는 대신 기간 창이 열린다.
+ *
+ * 번호를 두 벌 늘어놓지 않으려는 것이다 — 격자가 곧 우리 반이고, 학생을 고르는
+ * 방법이 화면마다 달라지면 그때마다 다시 배워야 한다.
+ */
+const bulkMode = ref(false)
+
+/** 여러 날 창의 머리에 적을 한 줄. 지금 고른 조합을 그대로 보여준다. */
+const draftPhrase = computed(() =>
+    stampPhrase({
+        reasonLabel: axis.reasons.find((r) => r.id === day.draft.reasonId)?.label,
+        typeLabel: axis.types.find((t) => t.id === day.draft.typeId)?.label,
+        slotPrompt: axis.slotPromptOf(day.draft.typeId),
+        slots: day.draft.slots,
+    }),
+)
 
 const draft = computed({
     get: () => day.draft,
@@ -40,6 +61,10 @@ const draft = computed({
 const spans = computed(() => day.spans)
 
 async function stamp(studentId) {
+    if (bulkMode.value) {
+        bulkFor.value = day.rows.find((r) => r.studentId === studentId) ?? null
+        return
+    }
     await day.stamp(studentId).catch(() => {
     })
 }
@@ -48,6 +73,16 @@ async function saveFix(patch) {
     const target = fixing.value
     fixing.value = null
     if (target) await day.editSpan(target.id, patch).catch(() => {
+    })
+}
+
+/** 여러 날 찍기. 교사가 미리보기에서 뺀 날은 넘기지 않는다. */
+async function applyBulk({from, to}) {
+    const student = bulkFor.value
+    bulkFor.value = null
+    bulkMode.value = false
+    if (!student) return
+    await day.applyBulk(student.studentId, from, to).catch(() => {
     })
 }
 
@@ -82,10 +117,18 @@ onMounted(async () => {
             <input :value="day.date" class="field num" type="date"
                    @change="day.setDate($event.target.value); day.fetchGrid()"/>
             <UiButton @click="day.move(1)">내일 ▶</UiButton>
+            <UiButton :variant="bulkMode ? 'primary' : 'default'" @click="bulkMode = !bulkMode">
+                여러 날
+            </UiButton>
         </template>
 
         <AxisCard v-model="draft" :max-slot="app.maxSlot" :reasons="axis.reasons"
                   :types="axis.types"/>
+
+        <p v-if="bulkMode" class="notice notice--warn">
+            여러 날 모드입니다. 학생을 누르면 기간을 고르는 창이 열립니다 —
+            기간은 화면이 아니라 입력의 한 축이라 탭으로 만들지 않았습니다.
+        </p>
 
         <SeatGrid :busy="day.busy" :rows="day.rows" @stamp="stamp"/>
 
@@ -132,5 +175,9 @@ onMounted(async () => {
                        @close="fixing = null" @save="saveFix"/>
         <SpanDeleteModal :open="Boolean(dropping)" :span="dropping"
                          @close="dropping = null" @confirm="confirmDrop"/>
+        <BulkStampModal :open="Boolean(bulkFor)" :phrase="draftPhrase"
+                        :preview="(from, to) => day.previewBulk(from, to)"
+                        :student="bulkFor"
+                        @apply="applyBulk" @close="bulkFor = null"/>
     </UiPage>
 </template>
