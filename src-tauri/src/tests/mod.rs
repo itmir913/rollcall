@@ -8,6 +8,7 @@ pub mod export_tests;
 pub mod flow_tests;
 pub mod home_tests;
 pub mod mark_tests;
+pub mod neis_tests;
 pub mod phrase_tests;
 pub mod schema_lock_tests;
 pub mod school_tests;

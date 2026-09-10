@@ -402,3 +402,83 @@ pub struct BulkApplyResult {
     pub group_id: String,
     pub days: i64,
 }
+
+// ── 나이스 가져오기 ───────────────────────────────────────────
+//
+// 파일 서식은 프런트(`services/neisFile.js`)가 맡는다. 여기부터가 업무 규칙이다 —
+// 명렬표 가져오기와 같은 경계다. 그래서 이 구조체들은 파일이 아니라 **읽어 낸 줄**을 받는다.
+
+/// 나이스 파일에서 읽은 출결 한 건.
+///
+/// 구분 · 종류는 이미 갈라져 온다. 못 가른 경우 `code_label`만 채워져 오고,
+/// Rust가 `code_alias`로 한 번 더 찾아본다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeisRowInput {
+    pub number: i64,
+    pub date: String,
+    pub code_label: Option<String>,
+    pub reason_label: Option<String>,
+    pub type_label: Option<String>,
+    pub start_slot: Option<String>,
+    pub end_slot: Option<String>,
+    pub detail: Option<String>,
+}
+
+/// 차분 한 건. **무엇을 할지는 교사가 고른다.**
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeisDiffItem {
+    /// 미리보기와 적용을 잇는 자리표. 파일에서 읽은 줄의 순번이다.
+    pub key: usize,
+    /// same · add · differ · unreadable
+    pub verdict: String,
+    pub number: i64,
+    pub name: String,
+    pub date: String,
+    pub date_label: String,
+    /// 나이스 쪽
+    pub their_axis: String,
+    pub their_span: String,
+    pub detail: Option<String>,
+    /// 앱 쪽. 짝이 없으면 비어 있다.
+    pub span_id: Option<i64>,
+    pub my_axis: Option<String>,
+    pub my_span: Option<String>,
+    /// 이미 나이스 등재로 표시해 둔 건인지. same일 때만 뜻이 있다.
+    pub neis_done: bool,
+    /// 읽지 못한 이유. verdict가 unreadable일 때만 채워진다.
+    pub why: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeisImportPreview {
+    pub items: Vec<NeisDiffItem>,
+    pub same: i64,
+    pub add: i64,
+    pub differ: i64,
+    pub unreadable: i64,
+    /// 파일의 기간 안에 있는데 나이스에는 없는 내 기록. **지우지 않는다** — 세어서 알린다.
+    pub only_mine: i64,
+    pub from: String,
+    pub to: String,
+}
+
+/// 교사가 고른 것. 여기 없는 것은 손대지 않는다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeisImportChoice {
+    pub add: Vec<usize>,
+    pub replace: Vec<usize>,
+    /// 나이스에 있는 것으로 확인된 건을 NEIS 등재로 표시할지.
+    pub mark_neis: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NeisImportResult {
+    pub added: i64,
+    pub replaced: i64,
+    pub marked: i64,
+}

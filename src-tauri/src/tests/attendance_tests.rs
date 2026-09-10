@@ -774,6 +774,10 @@ fn 구간_문구는_종류가_묻는_쪽을_따른다() {
     assert_eq!(span_text(Some("end"), Some("조회"), Some("2")), "조회부터 2교시까지");
     assert_eq!(span_text(Some("start"), Some("5"), Some("종례")), "5교시부터 종례까지");
     assert_eq!(span_text(Some("multi"), Some("3"), Some("3")), "3교시");
+    // 나이스 실파일에 결시교시가 `조회,` 하나뿐인 지각이 있었다. 두 끝이 같으면
+    // 종류와 무관하게 슬롯 하나로 적는다 — "조회부터 조회까지"는 말이 되지 않는다.
+    assert_eq!(span_text(Some("end"), Some("조회"), Some("조회")), "조회");
+    assert_eq!(span_text(Some("start"), Some("종례"), Some("종례")), "종례");
     assert_eq!(span_text(Some("multi"), Some("1"), Some("3")), "1교시부터 3교시까지");
 }
 

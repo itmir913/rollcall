@@ -1,0 +1,159 @@
+/**
+ * 나이스 가져오기 스토어.
+ *
+ * 지키려는 것은 셋이다.
+ *   · **일 · 월을 묻지 않는다** — 기간은 파일 안에 있으므로 넘기지 않는다.
+ *   · 처음에 켜 두는 것은 **추가뿐**이다. 덮어쓰기는 교사가 스스로 고른다.
+ *   · 못 읽으면 던진다. 조용히 빈 결과를 내면 "결석 없는 달"과 구별되지 않는다.
+ *
+ * 학생 이름은 전부 가짜다.
+ */
+import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {createPinia, setActivePinia} from 'pinia'
+import {invoke} from '@tauri-apps/api/core'
+import {useNeisImportStore} from './neisImport'
+import {useAppStore} from './app'
+import {useAxisStore} from './axis'
+import {readNeisFile} from '../services/neisFile'
+
+vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn()}))
+vi.mock('../services/neisFile', async (original) => ({
+    ...(await original()),
+    readNeisFile: vi.fn(),
+}))
+
+const ROWS = [
+    {number: 5, name: '학생5', date: '2026-09-01', reasonLabel: '질병', typeLabel: '결석'},
+    {number: 6, name: '학생6', date: '2026-09-01', reasonLabel: '질병', typeLabel: '조퇴'},
+]
+const META = {parser: 'exceljs', from: '2026-09-01', to: '2026-09-01', skipped: [], unknownCodes: [], merged: 0}
+const PREVIEW = {
+    items: [
+        {key: 0, verdict: 'add', number: 5},
+        {key: 1, verdict: 'differ', number: 6, spanId: 11},
+    ],
+    same: 0, add: 1, differ: 1, unreadable: 0, onlyMine: 0,
+    from: '2026-09-01', to: '2026-09-01',
+}
+
+function ready() {
+    const app = useAppStore()
+    app.schoolId = 1
+    app.yearId = 2
+    app.grade = 3
+    app.classNo = 6
+    app.today = '2026-09-11'
+    const axis = useAxisStore()
+    axis.reasons = [{id: 1, label: '질병'}]
+    axis.types = [{id: 1, label: '결석', slotPrompt: 'none'}]
+}
+
+beforeEach(() => {
+    setActivePinia(createPinia())
+    invoke.mockReset()
+    readNeisFile.mockReset()
+    readNeisFile.mockResolvedValue({rows: ROWS, meta: META})
+    invoke.mockResolvedValue(PREVIEW)
+})
+
+describe('파일 읽기', () => {
+    it('구분 · 종류를 파서에 넘긴다 — 후보는 DB에서 온다', async () => {
+        ready()
+        await useNeisImportStore().load(new Uint8Array([1]))
+
+        expect(readNeisFile).toHaveBeenCalledWith(expect.anything(), {
+            reasons: [{id: 1, label: '질병'}],
+            types: [{id: 1, label: '결석', slotPrompt: 'none'}],
+        })
+    })
+
+    it('일 · 월을 묻지 않는다. 기간은 파일 안에 있다', async () => {
+        ready()
+        await useNeisImportStore().load(new Uint8Array([1]))
+
+        expect(invoke).toHaveBeenCalledWith('preview_neis_import', {
+            schoolId: 1, yearId: 2, grade: 3, classNo: 6,
+            rows: ROWS, today: '2026-09-11',
+        })
+    })
+
+    it('추가만 미리 골라 둔다. 덮어쓰기는 교사가 고른다', async () => {
+        ready()
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+
+        expect([...store.picked.add]).toEqual([0])
+        expect([...store.picked.replace]).toEqual([])
+    })
+
+    it('못 읽으면 던지고 이유를 남긴다', async () => {
+        ready()
+        readNeisFile.mockRejectedValue(new Error('아직 분석하지 않은 서식입니다'))
+        const store = useNeisImportStore()
+
+        await expect(store.load(new Uint8Array([1]))).rejects.toThrow()
+        expect(store.error).toContain('아직 분석하지 않은 서식')
+        expect(store.preview).toBeNull()
+    })
+})
+
+describe('고르기', () => {
+    it('한 번 더 누르면 뺀다', async () => {
+        ready()
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+
+        store.toggle('add', 0)
+        expect(store.picked.add.has(0)).toBe(false)
+        store.toggle('add', 0)
+        expect(store.picked.add.has(0)).toBe(true)
+    })
+
+    it('아무것도 안 골랐고 등재 표시도 껐으면 할 일이 없다', async () => {
+        ready()
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+
+        store.pickAll('add', [])
+        store.markNeis = false
+        expect(store.hasWork).toBe(false)
+    })
+
+    it('같은 것이 있으면 등재 표시만으로도 할 일이 된다', async () => {
+        ready()
+        invoke.mockResolvedValue({...PREVIEW, items: [], add: 0, differ: 0, same: 3})
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+
+        expect(store.hasWork).toBe(true)
+    })
+})
+
+describe('적용', () => {
+    it('고른 것과 파일의 줄을 그대로 넘긴다', async () => {
+        ready()
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+        store.toggle('replace', 1)
+
+        invoke.mockResolvedValue({added: 1, replaced: 1, marked: 0})
+        await store.apply()
+
+        expect(invoke).toHaveBeenLastCalledWith('apply_neis_import', {
+            schoolId: 1, yearId: 2, grade: 3, classNo: 6,
+            rows: ROWS,
+            choice: {add: [0], replace: [1], markNeis: true},
+            today: '2026-09-11',
+        })
+    })
+
+    it('실패를 삼키지 않는다', async () => {
+        ready()
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+
+        invoke.mockRejectedValue('명렬표를 먼저 맞춰주세요')
+        await expect(store.apply()).rejects.toBeTruthy()
+        expect(store.error).toContain('명렬표')
+    })
+})

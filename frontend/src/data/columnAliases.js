@@ -44,3 +44,35 @@ export function matchColumn(header) {
     }
     return null
 }
+
+/**
+ * 나이스 출결 파일의 열 별칭. 명렬표와 같은 이유로 **이름으로 찾는다.**
+ *
+ * 2026-09-11에 실제로 내려받은 두 파일에서 확인한 머리글이 기준이다.
+ *   · 일일출석부   `번호 · 성명 · 마감 · 조회 · 1교시 … · 종례 · 비고`
+ *   · 월별 출결 현황 `일자 · 번호 · 성명 · 출결구분 · 결시교시 · 사유`
+ *
+ * `마감`이 출결 코드 열인 것은 오타가 아니다 — 일일출석부는 **마감된 출결**을
+ * 그 열에 적는다. 뜻을 짐작해 고치면 실제 파일이 읽히지 않는다.
+ *
+ * 교시 열(`조회` · `3교시` · `종례`)은 여기 두지 않는다. 학교 설정에 따라 개수가
+ * 달라지므로 별칭표가 아니라 `slotTokenOf`가 모양으로 알아본다.
+ */
+export const NEIS_COL_ALIASES = {
+    date: ['일자', '날짜', '출결일자', '결석일'],
+    number: ['번호', '학번', '출석번호'],
+    name: ['성명', '이름', '학생명'],
+    code: ['출결구분', '출결내용', '출결상황', '출결', '마감'],
+    slots: ['결시교시', '결과교시', '해당교시'],
+    detail: ['사유', '비고', '내용', '특기사항'],
+}
+
+/** 다듬은 헤더 → 나이스 열 이름. 모르는 열이면 null. */
+export function matchNeisColumn(header) {
+    const key = normalizeHeader(header)
+    if (!key) return null
+    for (const [col, aliases] of Object.entries(NEIS_COL_ALIASES)) {
+        if (aliases.some((a) => normalizeHeader(a) === key)) return col
+    }
+    return null
+}

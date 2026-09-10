@@ -20,8 +20,10 @@ import {MONTHS} from '../services/academicYear'
 import {usePendingStore} from '../stores/pending'
 import {useSchoolStore} from '../stores/school'
 import SpanRow from '../components/SpanRow.vue'
+import NeisImportModal from '../components/NeisImportModal.vue'
 import SpanDeleteModal from '../components/SpanDeleteModal.vue'
 import SpanEditModal from '../components/SpanEditModal.vue'
+import {useNeisImportStore} from '../stores/neisImport'
 import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
 import {exportCsv} from '../services/download'
 
@@ -31,11 +33,15 @@ const day = useDayStore()
 const log = useLogStore()
 const pending = usePendingStore()
 const school = useSchoolStore()
+const neis = useNeisImportStore()
 
+const importing = ref(false)
+const fileInput = ref(null)
 const expanded = ref(null)
 const fixing = ref(null)
 const dropping = ref(null)
 const message = ref('')
+const messageKind = ref('warn')
 
 const counts = computed(() => log.counts)
 
@@ -87,10 +93,47 @@ async function toggleNeis(span, value) {
     span.neisDone = value
 }
 
-/** 나이스 파일 서식은 아직 분석하지 않았다. 정직하게 알린다. */
+/**
+ * 나이스 가져오기.
+ *
+ * **일 · 월을 묻지 않는다** — 기간은 파일 안에 있다. 그래서 단추가 하나뿐이고,
+ * 고르는 것은 파일뿐이다. fs 플러그인을 통째로 열지 않고 `<input type="file">`을
+ * 쓰는 이유는, 앱이 실제로 필요한 권한이 "교사가 고른 파일 하나 읽기"뿐이기 때문이다.
+ */
 function importNeis() {
-    message.value =
-        '나이스 파일 서식은 아직 분석하지 않았습니다. 파일을 주시면 그 서식에 맞춰 붙이겠습니다.'
+    message.value = ''
+    messageKind.value = 'warn'
+    fileInput.value?.click()
+}
+
+async function onPick(event) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    message.value = ''
+    try {
+        await neis.load(new Uint8Array(await file.arrayBuffer()))
+        importing.value = true
+    } catch {
+        // 못 읽었다는 사실을 조용히 넘기지 않는다.
+        messageKind.value = 'error'
+        message.value = neis.error
+    }
+}
+
+async function applyImport() {
+    try {
+        const out = await neis.apply()
+        importing.value = false
+        neis.reset()
+        await log.fetchMonth()
+        messageKind.value = 'ok'
+        message.value =
+            `가져왔습니다 — 넣기 ${out.added}건 · 고치기 ${out.replaced}건 · 등재 표시 ${out.marked}건`
+    } catch {
+        messageKind.value = 'error'
+        message.value = neis.error
+    }
 }
 
 onMounted(async () => {
@@ -115,6 +158,7 @@ onMounted(async () => {
             title="출결 기록">
         <template #actions>
             <UiButton variant="upload" @click="importNeis">NEIS 가져오기</UiButton>
+            <input ref="fileInput" accept=".xlsx" hidden type="file" @change="onPick"/>
             <UiButton variant="download"
                       @click="exportCsv('spans', {...app.scope, from: `${log.year}-${String(log.month).padStart(2,'0')}-01`, to: `${log.year}-${String(log.month).padStart(2,'0')}-31`}, `출결_${log.year}-${log.month}.csv`)">
                 {{ log.month }}월 CSV
@@ -138,7 +182,7 @@ onMounted(async () => {
             <div class="strip__cell is-warn"><b class="num">{{ counts['미정'] ?? 0 }}</b><span>미정</span></div>
         </div>
 
-        <UiNotice :text="message" kind="warn"/>
+        <UiNotice :kind="messageKind" :text="message"/>
 
         <p v-if="log.days.length === 0" class="ledger__empty">그 달에 기록된 출결이 없습니다.</p>
 
@@ -190,5 +234,7 @@ onMounted(async () => {
                        @close="fixing = null" @save="saveFix"/>
         <SpanDeleteModal :open="Boolean(dropping)" :span="dropping"
                          @close="dropping = null" @confirm="confirmDrop"/>
+        <NeisImportModal :open="importing"
+                         @apply="applyImport" @close="importing = false; neis.reset()"/>
     </UiPage>
 </template>

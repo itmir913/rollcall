@@ -144,6 +144,13 @@ pub(crate) fn span_text(
         return "기간 미정".to_string();
     }
     let disp = |v: &str| slots::display(v);
+    // 두 끝이 같으면 슬롯 하나다. "조회부터 조회까지"로 적지 않는다 —
+    // 나이스 실파일에 결시교시가 `조회,` 하나뿐인 지각이 있었다.
+    if let (Some(a), Some(b)) = (start, end) {
+        if a == b {
+            return disp(a);
+        }
+    }
     match slot_prompt {
         // 지각 — 온 때 하나를 묻는다. 시작은 조회다.
         Some("end") => format!(
@@ -157,14 +164,11 @@ pub(crate) fn span_text(
             disp(start.unwrap_or(UNKNOWN)),
             disp(end.unwrap_or(CLOSING))
         ),
-        _ => match (start, end) {
-            (Some(a), Some(b)) if a == b => disp(a),
-            _ => format!(
-                "{}부터 {}까지",
-                disp(start.unwrap_or(UNKNOWN)),
-                disp(end.unwrap_or(UNKNOWN))
-            ),
-        },
+        _ => format!(
+            "{}부터 {}까지",
+            disp(start.unwrap_or(UNKNOWN)),
+            disp(end.unwrap_or(UNKNOWN))
+        ),
     }
 }
 

@@ -87,6 +87,9 @@ fn main() {
             mark_day_neis,
             get_doc_pending,
             get_neis_pending,
+            // 나이스 가져오기 — 교체가 아니라 차분이다
+            preview_neis_import,
+            apply_neis_import,
             // 개요 · 통계
             get_home_summary,
             get_quota_reports,

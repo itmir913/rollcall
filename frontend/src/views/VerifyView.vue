@@ -12,11 +12,13 @@
  */
 import {computed, ref} from 'vue'
 import {useAppStore} from '../stores/app'
+import {useAxisStore} from '../stores/axis'
 import {useLogStore} from '../stores/log'
 import {UiButton, UiLedger, UiNotice, UiPage} from '../components/ui'
 import {compareRecords, readNeisFile, sortPairs} from '../services/neisFile'
 
 const app = useAppStore()
+const axis = useAxisStore()
 const log = useLogStore()
 
 const step = ref(1)
@@ -62,7 +64,9 @@ async function onDrop(event) {
 async function load(bytes) {
     error.value = ''
     try {
-        const read = await readNeisFile(bytes)
+        // 구분 · 종류는 DB에서 온다. 파일의 `질병조퇴`를 두 축으로 가르는 후보다.
+        if (axis.types.length === 0) await axis.fetchAll()
+        const read = await readNeisFile(bytes, {reasons: axis.reasons, types: axis.types})
         meta.value = read.meta
         step.value = 2
         await log.fetchMonth().catch(() => {
@@ -105,7 +109,7 @@ function mark(mine, theirs, field) {
              @drop.prevent="onDrop">
             <span class="drop__title">나이스 출결 파일을 여기에 끌어다 놓으세요</span>
             <span class="drop__hint">
-                나이스 › 학급담임 › 출결관리에서 내려받은 <span class="num">.xlsx</span>
+                일일출석부(XLS data) 또는 월별 출결 현황 <span class="num">.xlsx</span>
             </span>
             <UiButton size="wide" variant="upload" @click="pickFile">파일 고르기</UiButton>
             <input ref="fileInput" accept=".xlsx" hidden type="file" @change="onPick"/>
@@ -120,8 +124,17 @@ function mark(mine, theirs, field) {
                 </span>
             </div>
 
-            <UiNotice v-if="meta.skipped.length"
-                      :text="`읽지 못한 줄이 있습니다 — ${meta.skipped.map((s) => `${s.line}번째 줄`).join(', ')}`"
+            <UiNotice :text="meta.skipped.length
+                          ? `읽지 못한 줄이 있습니다 — ${meta.skipped.map((s) => `${s.line}번째 줄`).join(', ')}`
+                          : ''"
+                      kind="warn"/>
+            <UiNotice :text="meta.unknownCodes.length
+                          ? `모르는 출결 표기입니다 — ${meta.unknownCodes.join(', ')}`
+                          : ''"
+                      kind="warn"/>
+            <UiNotice :text="meta.merged
+                          ? `나이스가 하루 두 구간을 한 줄로 합쳐 내보낸 것이 ${meta.merged}건 있습니다. 나누어 두었으니 구분이 맞는지 확인해주세요.`
+                          : ''"
                       kind="warn"/>
 
             <div class="strip">
@@ -166,7 +179,9 @@ function mark(mine, theirs, field) {
                             <b :class="mark(pair.mine, pair.theirs, 'typeLabel') ? 'side__hl' : ''">
                                 {{ pair.mine.typeLabel || '미정' }}
                             </b>
-                            · <span class="num">{{ pair.mine.spanText }}</span>
+                            · <span :class="['num', mark(pair.mine, pair.theirs, 'spanText') ? 'side__hl' : '']">
+                                {{ pair.mine.spanText }}
+                            </span>
                         </span>
                     </span>
                     <span v-else class="side side--empty">기록 없음</span>
@@ -183,7 +198,10 @@ function mark(mine, theirs, field) {
                             <b :class="mark(pair.mine, pair.theirs, 'typeLabel') ? 'side__hl' : ''">
                                 {{ pair.theirs.typeLabel || '미정' }}
                             </b>
-                            <span v-if="pair.theirs.detail" class="num"> · {{ pair.theirs.detail }}</span>
+                            · <span :class="['num', mark(pair.mine, pair.theirs, 'spanText') ? 'side__hl' : '']">
+                                {{ pair.theirs.spanText }}
+                            </span>
+                            <span v-if="pair.theirs.detail"> · {{ pair.theirs.detail }}</span>
                         </span>
                     </span>
                     <span v-else class="side side--empty">기록 없음</span>
