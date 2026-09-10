@@ -11,7 +11,7 @@ import {computed, onMounted, ref} from 'vue'
 import {useAppStore} from '../stores/app'
 import {useAxisStore} from '../stores/axis'
 import {useSchoolStore} from '../stores/school'
-import RosterImport from '../components/RosterImport.vue'
+import RosterPanel from '../components/RosterPanel.vue'
 import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
 import {useTheme} from '../composables/useTheme'
 
@@ -251,7 +251,7 @@ onMounted(async () => {
             <div class="set__row">
                 <span class="set__label">명렬표</span>
                 <span class="set__value">
-                    <RosterImport/>
+                    <RosterPanel/>
                 </span>
             </div>
         </UiLedger>

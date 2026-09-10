@@ -9,7 +9,7 @@ import {computed, onMounted, ref} from 'vue'
 import {useRouter} from 'vue-router'
 import {useAppStore} from '../stores/app'
 import {useSchoolStore} from '../stores/school'
-import RosterImport from '../components/RosterImport.vue'
+import RosterPanel from '../components/RosterPanel.vue'
 import {UiButton, UiLedger, UiNotice} from '../components/ui'
 
 const app = useAppStore()
@@ -89,7 +89,7 @@ onMounted(async () => {
         <UiLedger hint="번호와 이름만 있으면 됩니다" title="명렬표">
             <div class="set__row">
                 <span class="set__label">파일에서 가져오기</span>
-                <span class="set__value"><RosterImport/></span>
+                <span class="set__value"><RosterPanel/></span>
             </div>
         </UiLedger>
 

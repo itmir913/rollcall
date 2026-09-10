@@ -5,6 +5,7 @@ pub mod axis_tests;
 pub mod db_tests;
 pub mod due_tests;
 pub mod export_tests;
+pub mod flow_tests;
 pub mod home_tests;
 pub mod mark_tests;
 pub mod phrase_tests;
