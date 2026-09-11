@@ -14,8 +14,9 @@ use rusqlite::{params, Connection};
 struct Fixture {
     conn: Connection,
     school: i64,
-    year: i64,
-    /// 3학년 6반 1 · 2 · 3번
+    /// 담임 학급 하나. 화면의 범위가 이것이다.
+    class: i64,
+    /// 그 명단의 1 · 2 · 3번
     students: Vec<i64>,
 }
 
@@ -23,21 +24,30 @@ fn fixture() -> Fixture {
     let conn = setup_test_db();
     let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
+    let class = homeroom(&conn, year);
     let students = vec![
-        insert_student(&conn, year, 1, "김하나"),
-        insert_student(&conn, year, 2, "이두리"),
-        insert_student(&conn, year, 3, "박세찬"),
+        enroll(&conn, class, year, 1, "김하나"),
+        enroll(&conn, class, year, 2, "이두리"),
+        enroll(&conn, class, year, 3, "박세찬"),
     ];
     Fixture {
         conn,
         school,
-        year,
+        class,
         students,
     }
 }
 
-fn stamp(student_id: i64, date: &str, reason_id: Option<i64>, type_id: Option<i64>, slots: &[&str]) -> StampInput {
+fn stamp(
+    class_id: i64,
+    student_id: i64,
+    date: &str,
+    reason_id: Option<i64>,
+    type_id: Option<i64>,
+    slots: &[&str],
+) -> StampInput {
     StampInput {
+        class_id,
         student_id,
         date: date.to_string(),
         reason_id,
@@ -89,7 +99,7 @@ fn doc_due_of(conn: &Connection, span_id: i64) -> Option<String> {
 fn 같은_조합을_두_번_찍으면_취소된다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    let input = stamp(f.students[0], "2026-09-10", reason, kind, &[]);
+    let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]);
 
     let first = stamp_span_impl(&f.conn, &input).unwrap();
     assert_eq!(first.action, "added");
@@ -113,8 +123,8 @@ fn 조합이_하나라도_다르면_쌓인다() {
     let (reason, late) = axes(&f.conn, "질병", "지각");
     let (_, early) = axes(&f.conn, "질병", "조퇴");
 
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, late, &["1"])).unwrap();
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, early, &["5"])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, late, &["1"])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, early, &["5"])).unwrap();
 
     // 하루 2구간은 정상이다.
     let rows = spans_of(&f, f.students[0]);
@@ -131,9 +141,9 @@ fn 구분만_달라도_다른_건이다() {
     let (sick, kind) = axes(&f.conn, "질병", "결석");
     let (unapproved, _) = axes(&f.conn, "미인정", "결석");
 
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", sick, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", sick, kind, &[])).unwrap();
     let other =
-        stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", unapproved, kind, &[])).unwrap();
+        stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", unapproved, kind, &[])).unwrap();
 
     assert_eq!(other.action, "added");
     assert_eq!(span_count(&f.conn), 2);
@@ -148,7 +158,7 @@ fn 이어지지_않은_교시는_구간이_나뉜다() {
 
     let out = stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", reason, kind, &["1", "3", "5"]),
+        &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1", "3", "5"]),
     )
     .unwrap();
     assert_eq!(out.span_ids.len(), 3);
@@ -180,7 +190,7 @@ fn 이어진_교시는_한_구간이다() {
 
     let out = stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", reason, kind, &["3", "1", "2"]),
+        &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["3", "1", "2"]),
     )
     .unwrap();
     assert_eq!(out.span_ids.len(), 1);
@@ -195,7 +205,7 @@ fn 이어진_교시는_한_구간이다() {
 fn 결석은_교시를_묻지_않고_하루_전체다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
 
     let rows = spans_of(&f, f.students[0]);
     assert_eq!(rows[0].start_slot.as_deref(), Some("조회"));
@@ -209,8 +219,8 @@ fn 지각은_조회부터_조퇴는_종례까지다() {
     let (reason, late) = axes(&f.conn, "질병", "지각");
     let (_, early) = axes(&f.conn, "질병", "조퇴");
 
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, late, &["2"])).unwrap();
-    stamp_span_impl(&f.conn, &stamp(f.students[1], "2026-09-10", reason, early, &["5"])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, late, &["2"])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[1], "2026-09-10", reason, early, &["5"])).unwrap();
 
     let late_row = &spans_of(&f, f.students[0])[0];
     assert_eq!(late_row.start_slot.as_deref(), Some("조회"));
@@ -227,7 +237,7 @@ fn 지각은_조회부터_조퇴는_종례까지다() {
 fn 축과_기간이_비어도_저장된다() {
     let f = fixture();
     // 안 왔는데 연락이 닿지 않는 상태. 프로그램은 이것을 거절하지 않는다.
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", None, None, &[])).unwrap();
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", None, None, &[])).unwrap();
     assert_eq!(out.action, "added");
 
     let rows = spans_of(&f, f.students[0]);
@@ -245,7 +255,7 @@ fn 최대_교시를_넘는_교시는_거절된다() {
     // 학교 설정의 최대 교시가 7이다. 표현할 수 없는 구간만 막는다.
     let err = stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", reason, kind, &["9"]),
+        &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["9"]),
     )
     .unwrap_err();
     assert!(err.contains("알 수 없는 교시"), "{err}");
@@ -262,12 +272,12 @@ fn 최대_교시는_학교에서_읽는다() {
 
     assert!(stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", reason, kind, &["6"])
+        &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["6"])
     )
     .is_err());
     assert!(stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", reason, kind, &["5"])
+        &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["5"])
     )
     .is_ok());
 }
@@ -280,8 +290,8 @@ fn 겹치는_구간도_저장되고_표시만_된다() {
     let (reason, missed) = axes(&f.conn, "질병", "결과");
     let (_, early) = axes(&f.conn, "질병", "조퇴");
 
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, missed, &["3"])).unwrap();
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, early, &["3"])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, missed, &["3"])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, early, &["3"])).unwrap();
     assert_eq!(span_count(&f.conn), 2);
 
     let rows = spans_of(&f, f.students[0]);
@@ -293,7 +303,7 @@ fn 겹치지_않는_구간은_표시되지_않는다() {
     let f = fixture();
     let (reason, missed) = axes(&f.conn, "질병", "결과");
 
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, missed, &["1", "5"]))
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, missed, &["1", "5"]))
         .unwrap();
     let rows = spans_of(&f, f.students[0]);
     assert!(rows.iter().all(|r| !r.overlapping));
@@ -306,7 +316,7 @@ fn 마감일은_주말을_건너뛴다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
     // 2026-09-10은 목요일이고 기본 제출 기한은 7일이다.
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
     assert_eq!(
         doc_due_of(&f.conn, out.span_ids[0]).as_deref(),
@@ -320,7 +330,7 @@ fn 마감일은_등록된_휴업일도_건너뛴다() {
     add_off_day(&f.conn, f.school, "2026-09-16");
     let (reason, kind) = axes(&f.conn, "질병", "결석");
 
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
     assert_eq!(
         doc_due_of(&f.conn, out.span_ids[0]).as_deref(),
@@ -339,7 +349,7 @@ fn 마감일을_세지_않기로_하면_날짜를_그대로_더한다() {
         .unwrap();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
 
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
     assert_eq!(
         doc_due_of(&f.conn, out.span_ids[0]).as_deref(),
@@ -351,7 +361,7 @@ fn 마감일을_세지_않기로_하면_날짜를_그대로_더한다() {
 fn 마감_경과일은_서류를_받으면_사라진다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
     let id = out.span_ids[0];
 
@@ -376,7 +386,7 @@ fn 마감_경과일은_서류를_받으면_사라진다() {
 fn 수정은_마감일을_다시_계산하지_않는다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
     let id = out.span_ids[0];
     let before = doc_due_of(&f.conn, id);
@@ -410,7 +420,7 @@ fn 수정은_마감일을_다시_계산하지_않는다() {
 fn 수정으로_축을_비울_수_있다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
 
     edit_span_impl(
@@ -434,7 +444,7 @@ fn 수정으로_축을_비울_수_있다() {
 fn 이어지지_않은_교시로는_한_구간을_고칠_수_없다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결과");
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &["1"]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1"]))
         .unwrap();
 
     let err = edit_span_impl(
@@ -472,17 +482,18 @@ fn 없는_기록을_고치거나_지우면_오류다() {
 }
 
 #[test]
-fn 없는_학생에게는_찍을_수_없다() {
+fn 명단에_없는_학생에게는_찍을_수_없다() {
     let f = fixture();
-    let err = stamp_span_impl(&f.conn, &stamp(9999, "2026-09-10", None, None, &[])).unwrap_err();
-    assert!(err.contains("학생을 찾을 수 없습니다"), "{err}");
+    let err =
+        stamp_span_impl(&f.conn, &stamp(f.class, 9999, "2026-09-10", None, None, &[])).unwrap_err();
+    assert!(err.contains("이 학급 명단에 없는 학생입니다"), "{err}");
 }
 
 #[test]
 fn 날짜_형식이_틀리면_거절한다() {
     let f = fixture();
     let err =
-        stamp_span_impl(&f.conn, &stamp(f.students[0], "2026/09/10", None, None, &[])).unwrap_err();
+        stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026/09/10", None, None, &[])).unwrap_err();
     assert!(err.contains("날짜 형식"), "{err}");
 }
 
@@ -490,7 +501,7 @@ fn 날짜_형식이_틀리면_거절한다() {
 fn 메모와_태그는_따로_고친다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "출석인정", "결석");
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
         .unwrap();
     let id = out.span_ids[0];
     let tag = tag_id(&f.conn, "체험학습");
@@ -512,7 +523,7 @@ fn 메모와_태그는_따로_고친다() {
 #[test]
 fn 없는_태그를_붙이면_오류다() {
     let f = fixture();
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", None, None, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", None, None, &[]))
         .unwrap();
     assert!(set_span_tag_impl(&f.conn, out.span_ids[0], Some(9999)).is_err());
 }
@@ -527,7 +538,7 @@ fn 실패한_저장은_되돌려지고_다음_저장을_막지_않는다() {
     // 없는 구분을 참조하면 저장이 실패한다.
     let err = stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", Some(9999), kind, &["1", "3"]),
+        &stamp(f.class, f.students[0], "2026-09-10", Some(9999), kind, &["1", "3"]),
     )
     .unwrap_err();
     assert!(!err.is_empty());
@@ -537,7 +548,7 @@ fn 실패한_저장은_되돌려지고_다음_저장을_막지_않는다() {
     let (reason, _) = axes(&f.conn, "질병", "결과");
     stamp_span_impl(
         &f.conn,
-        &stamp(f.students[0], "2026-09-10", reason, kind, &["1", "3"]),
+        &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1", "3"]),
     )
     .unwrap();
     assert_eq!(span_count(&f.conn), 2);
@@ -548,7 +559,7 @@ fn 실패한_저장은_되돌려지고_다음_저장을_막지_않는다() {
 #[test]
 fn 격자는_구간이_없어도_행을_낸다() {
     let f = fixture();
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, 3, 6, "2026-09-10").unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, "2026-09-10").unwrap();
 
     assert_eq!(grid.rows.len(), 3);
     assert!(grid.rows.iter().all(|r| r.spans.is_empty()));
@@ -567,12 +578,12 @@ fn 격자는_전출한_학생을_뺀다() {
         )
         .unwrap();
 
-    let after = get_day_grid_impl(&f.conn, f.school, f.year, 3, 6, "2026-09-10").unwrap();
+    let after = get_day_grid_impl(&f.conn, f.class, "2026-09-10").unwrap();
     assert_eq!(after.rows.len(), 2);
     assert!(after.rows.iter().all(|r| r.student_id != f.students[1]));
 
     // 전출 전날에는 아직 우리 반이다.
-    let before = get_day_grid_impl(&f.conn, f.school, f.year, 3, 6, "2026-08-31").unwrap();
+    let before = get_day_grid_impl(&f.conn, f.class, "2026-08-31").unwrap();
     assert_eq!(before.rows.len(), 3);
 }
 
@@ -580,12 +591,12 @@ fn 격자는_전출한_학생을_뺀다() {
 fn 격자는_그날_구간을_평평하게_담는다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
-    stamp_span_impl(&f.conn, &stamp(f.students[2], "2026-09-10", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[2], "2026-09-10", reason, kind, &[])).unwrap();
     // 다른 날은 섞이지 않는다.
-    stamp_span_impl(&f.conn, &stamp(f.students[1], "2026-09-11", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[1], "2026-09-11", reason, kind, &[])).unwrap();
 
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, 3, 6, "2026-09-10").unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, "2026-09-10").unwrap();
     assert_eq!(grid.spans.len(), 2);
     assert_eq!(grid.rows[0].spans.len(), 1);
     assert!(grid.rows[1].spans.is_empty());
@@ -598,7 +609,7 @@ fn 격자는_그날_구간을_평평하게_담는다() {
 fn 코드는_두_축이_다_있을_때만_붙는다() {
     let f = fixture();
     let (reason, _) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, None, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, None, &[])).unwrap();
 
     let rows = spans_of(&f, f.students[0]);
     assert_eq!(rows[0].reason_label.as_deref(), Some("질병"));
@@ -613,13 +624,13 @@ fn 코드는_두_축이_다_있을_때만_붙는다() {
 fn 월별_기록은_날짜별로_묶이고_최신이_먼저다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-06-01", reason, kind, &[])).unwrap();
-    stamp_span_impl(&f.conn, &stamp(f.students[1], "2026-06-15", reason, kind, &[])).unwrap();
-    stamp_span_impl(&f.conn, &stamp(f.students[2], "2026-06-15", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-06-01", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[1], "2026-06-15", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[2], "2026-06-15", reason, kind, &[])).unwrap();
     // 다른 달은 섞이지 않는다.
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-07-01", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-07-01", reason, kind, &[])).unwrap();
 
-    let log = get_month_log_impl(&f.conn, f.school, f.year, 3, 6, 2026, 6).unwrap();
+    let log = get_month_log_impl(&f.conn, f.class, 2026, 6).unwrap();
     assert_eq!(log.len(), 2);
     assert_eq!(log[0].date, "2026-06-15");
     assert_eq!(log[0].spans.len(), 2);
@@ -633,7 +644,7 @@ fn 월별_기록은_날짜별로_묶이고_최신이_먼저다() {
 fn 월별_기록의_재학_인원은_그날_기준이다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-06-15", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-06-15", reason, kind, &[])).unwrap();
     f.conn
         .execute(
             "UPDATE student SET enrolled_to = '2026-06-10' WHERE id = ?1",
@@ -641,14 +652,14 @@ fn 월별_기록의_재학_인원은_그날_기준이다() {
         )
         .unwrap();
 
-    let log = get_month_log_impl(&f.conn, f.school, f.year, 3, 6, 2026, 6).unwrap();
+    let log = get_month_log_impl(&f.conn, f.class, 2026, 6).unwrap();
     assert_eq!(log[0].enrolled, 2);
 }
 
 #[test]
 fn 없는_달은_거절한다() {
     let f = fixture();
-    let err = get_month_log_impl(&f.conn, f.school, f.year, 3, 6, 2026, 13).unwrap_err();
+    let err = get_month_log_impl(&f.conn, f.class, 2026, 13).unwrap_err();
     assert!(err.contains("연월이 올바르지 않습니다"), "{err}");
 }
 
@@ -658,14 +669,14 @@ fn 없는_달은_거절한다() {
 fn 미리보기는_주말과_휴업일을_뺀다() {
     let f = fixture();
     // 2026-06-01은 월요일이다.
-    let days = preview_bulk_impl(&f.conn, f.school, None, "2026-06-01", "2026-06-07").unwrap();
+    let days = preview_bulk_impl(&f.conn, f.class, None, "2026-06-01", "2026-06-07").unwrap();
     assert_eq!(days.len(), 5);
     assert_eq!(days[0].date, "2026-06-01");
     assert_eq!(days[0].label, "2026.06.01.(월)");
     assert_eq!(days[4].date, "2026-06-05");
 
     add_off_day(&f.conn, f.school, "2026-06-03");
-    let days = preview_bulk_impl(&f.conn, f.school, None, "2026-06-01", "2026-06-07").unwrap();
+    let days = preview_bulk_impl(&f.conn, f.class, None, "2026-06-01", "2026-06-07").unwrap();
     assert_eq!(days.len(), 4);
     assert!(days.iter().all(|d| d.date != "2026-06-03"));
 }
@@ -674,9 +685,9 @@ fn 미리보기는_주말과_휴업일을_뺀다() {
 fn 미리보기는_이미_기록이_있는_날을_알린다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-06-02", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-06-02", reason, kind, &[])).unwrap();
 
-    let days = preview_bulk_impl(&f.conn, f.school, None, "2026-06-01", "2026-06-05").unwrap();
+    let days = preview_bulk_impl(&f.conn, f.class, None, "2026-06-01", "2026-06-05").unwrap();
     assert!(!days[0].has_existing);
     assert!(days[1].has_existing);
 }
@@ -685,33 +696,33 @@ fn 미리보기는_이미_기록이_있는_날을_알린다() {
 fn 미리보기는_그_학생의_기록만_알린다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-06-02", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-06-02", reason, kind, &[])).unwrap();
 
     // 찍은 학생에게는 표시가 붙는다.
     let mine =
-        preview_bulk_impl(&f.conn, f.school, Some(f.students[0]), "2026-06-01", "2026-06-05")
+        preview_bulk_impl(&f.conn, f.class, Some(f.students[0]), "2026-06-01", "2026-06-05")
             .unwrap();
     assert!(mine[1].has_existing);
 
     // 다른 학생에게는 붙지 않는다. 학급 누구든 하나 걸리면 되는 조건으로 세면
     // 학기 중 거의 모든 날에 표시가 붙어 정작 겹치는 날이 눈에 들어오지 않는다.
     let other =
-        preview_bulk_impl(&f.conn, f.school, Some(f.students[1]), "2026-06-01", "2026-06-05")
+        preview_bulk_impl(&f.conn, f.class, Some(f.students[1]), "2026-06-01", "2026-06-05")
             .unwrap();
     assert!(other.iter().all(|d| !d.has_existing));
 }
 
 #[test]
-fn 없는_학교로는_미리볼_수_없다() {
+fn 없는_학급으로는_미리볼_수_없다() {
     let f = fixture();
     let err = preview_bulk_impl(&f.conn, 9999, None, "2026-06-01", "2026-06-05").unwrap_err();
-    assert!(err.contains("학교를 찾을 수 없습니다"), "{err}");
+    assert!(err.contains("학급을 찾을 수 없습니다"), "{err}");
 }
 
 #[test]
 fn 끝_날짜가_앞서면_거절한다() {
     let f = fixture();
-    let err = preview_bulk_impl(&f.conn, f.school, None, "2026-06-05", "2026-06-01").unwrap_err();
+    let err = preview_bulk_impl(&f.conn, f.class, None, "2026-06-05", "2026-06-01").unwrap_err();
     assert!(err.contains("끝 날짜"), "{err}");
 }
 
@@ -719,7 +730,7 @@ fn 끝_날짜가_앞서면_거절한다() {
 fn 일괄_입력은_묶음을_결정적으로_묶는다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "출석인정", "결석");
-    let input = stamp(f.students[0], "2026-06-01", reason, kind, &[]);
+    let input = stamp(f.class, f.students[0], "2026-06-01", reason, kind, &[]);
 
     let first = apply_bulk_impl(&f.conn, &input, "2026-06-01", "2026-06-05").unwrap();
     assert_eq!(first.days, 5);
@@ -741,7 +752,7 @@ fn 일괄_입력도_주말과_휴업일을_건너뛴다() {
     let f = fixture();
     add_off_day(&f.conn, f.school, "2026-06-03");
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    let input = stamp(f.students[0], "2026-06-01", reason, kind, &[]);
+    let input = stamp(f.class, f.students[0], "2026-06-01", reason, kind, &[]);
 
     let out = apply_bulk_impl(&f.conn, &input, "2026-06-01", "2026-06-07").unwrap();
     assert_eq!(out.days, 4);
@@ -758,7 +769,7 @@ fn 일괄_입력도_주말과_휴업일을_건너뛴다() {
 fn 일괄_입력도_기간_규칙을_그대로_따른다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결과");
-    let input = stamp(f.students[0], "2026-06-01", reason, kind, &["1", "3"]);
+    let input = stamp(f.class, f.students[0], "2026-06-01", reason, kind, &["1", "3"]);
 
     let out = apply_bulk_impl(&f.conn, &input, "2026-06-01", "2026-06-02").unwrap();
     assert_eq!(out.days, 2);
@@ -839,7 +850,7 @@ fn 구간_묶기는_이어진_것끼리만_묶는다() {
 fn 저장되는_날짜는_자리를_채운_ISO다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    let out = stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-9-10", reason, kind, &[]))
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-9-10", reason, kind, &[]))
         .unwrap();
 
     let stored: String = f
@@ -853,10 +864,10 @@ fn 저장되는_날짜는_자리를_채운_ISO다() {
     assert_eq!(stored, "2026-09-10");
 
     // 자리를 채운 날짜로 찾는 화면에 그대로 나온다.
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, 3, 6, "2026-09-10").unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, "2026-09-10").unwrap();
     assert_eq!(grid.spans.len(), 1);
     // 월별 기록의 기간 조건에도 걸린다.
-    let log = get_month_log_impl(&f.conn, f.school, f.year, 3, 6, 2026, 9).unwrap();
+    let log = get_month_log_impl(&f.conn, f.class, 2026, 9).unwrap();
     assert_eq!(log.len(), 1);
 }
 
@@ -865,10 +876,10 @@ fn 무르기는_날짜_표기에_흔들리지_않는다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
 
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
     // 같은 날을 다른 표기로 다시 찍어도 같은 건이므로 취소다.
     let again =
-        stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-9-10", reason, kind, &[])).unwrap();
+        stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-9-10", reason, kind, &[])).unwrap();
     assert_eq!(again.action, "cancelled");
     assert_eq!(span_count(&f.conn), 0);
 }
@@ -877,9 +888,9 @@ fn 무르기는_날짜_표기에_흔들리지_않는다() {
 fn 격자는_자리를_채우지_않은_날짜도_같은_날로_본다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
-    stamp_span_impl(&f.conn, &stamp(f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
+    stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
 
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, 3, 6, "2026-9-10").unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, "2026-9-10").unwrap();
     assert_eq!(grid.date, "2026-09-10");
     assert_eq!(grid.spans.len(), 1);
     assert_eq!(grid.rows.len(), 3);
@@ -889,7 +900,7 @@ fn 격자는_자리를_채우지_않은_날짜도_같은_날로_본다() {
 fn 묶음_이름은_날짜_표기에_흔들리지_않는다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "출석인정", "결석");
-    let input = stamp(f.students[0], "2026-06-01", reason, kind, &[]);
+    let input = stamp(f.class, f.students[0], "2026-06-01", reason, kind, &[]);
 
     let first = apply_bulk_impl(&f.conn, &input, "2026-6-1", "2026-6-5").unwrap();
     assert_eq!(first.days, 5);

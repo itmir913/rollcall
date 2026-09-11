@@ -12,6 +12,7 @@
 //! 때문이다. 줄 순번(`key`)만 오가고 판단은 적용 시점의 DB로 다시 한다.
 
 use super::attendance::{due_for, load_spans, school_settings, span_text};
+use crate::commands::class::{homeroom_scope, member_by_number_on};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::due::{format_date, format_korean, parse_date};
@@ -25,19 +26,11 @@ use std::collections::{HashMap, HashSet};
 use tauri::State;
 
 /// 학급과 기간으로 내 기록을 불러오는 조건. 별칭은 `load_spans`가 정한다.
-const IMPORT_WHERE: &str = "WHERE st.school_id = ?1 AND st.year_id = ?2
-                              AND st.grade = ?3 AND st.class_no = ?4
-                              AND s.date >= ?5 AND s.date <= ?6
+///
+/// **구간이 가리키는 학급으로 거른다.** 학적(학년 · 반)으로 거르면 반이 다른 전학생의
+/// 기록이 빠지고, 같은 학생이 내 교과 강좌에도 있을 때 그쪽 기록이 섞인다.
+const IMPORT_WHERE: &str = "WHERE s.class_id = ?1 AND s.date >= ?2 AND s.date <= ?3
                             ORDER BY s.date, st.number, s.id";
-
-/// 어느 학급의 기록과 맞출 것인가.
-#[derive(Debug, Clone, Copy)]
-pub struct Scope {
-    pub school_id: i64,
-    pub year_id: i64,
-    pub grade: i64,
-    pub class_no: i64,
-}
 
 /// 파일 한 줄을 DB의 식별자로 옮긴 것.
 struct Resolved {
@@ -140,36 +133,6 @@ fn axis_text(reason: Option<&str>, kind: Option<&str>) -> String {
 
 // ── 차분 ──────────────────────────────────────────────────────
 
-/// 학생 번호 → 학생. 그날 재학 중인 학생만 본다(전출한 번호를 되살리지 않는다).
-fn student_on(
-    conn: &Connection,
-    scope: Scope,
-    number: i64,
-    date: &str,
-) -> Result<Option<(i64, String)>, String> {
-    conn.query_row(
-        "SELECT id, name FROM student
-          WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-            AND number = ?5 AND enrolled_from <= ?6
-            AND (enrolled_to IS NULL OR ?6 < enrolled_to)
-          ORDER BY id LIMIT 1",
-        params![
-            scope.school_id,
-            scope.year_id,
-            scope.grade,
-            scope.class_no,
-            number,
-            date
-        ],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-    .map(Some)
-    .or_else(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => Ok(None),
-        other => Err(other.to_string()),
-    })
-}
-
 fn unreadable(key: usize, row: &NeisRowInput, why: &str) -> NeisDiffItem {
     NeisDiffItem {
         key,
@@ -209,9 +172,10 @@ fn day_slots<'a>(
 /// 파일의 줄을 DB 식별자로 옮긴다. 못 옮긴 줄은 **조용히 넘기지 않고** 그대로 돌려준다.
 fn resolve(
     conn: &Connection,
-    scope: Scope,
+    class_id: i64,
     rows: &[NeisRowInput],
 ) -> Result<(Vec<Resolved>, Vec<NeisDiffItem>), String> {
+    let scope = homeroom_scope(conn, class_id)?;
     let max_slot = school_settings(conn, scope.school_id)?.max_slot as usize;
     let mut ok = Vec::new();
     let mut bad = Vec::new();
@@ -224,7 +188,10 @@ fn resolve(
                 continue;
             }
         };
-        let Some((student_id, name)) = student_on(conn, scope, row.number, &date)? else {
+        // 번호는 **내 명단에서** 찾는다. 학적(학년 · 반)으로 찾으면 반이 다른 전학생이
+        // 그날 이 반에 없는 번호로 잡힌다.
+        let Some((student_id, name)) = member_by_number_on(conn, scope.id, row.number, &date)?
+        else {
             bad.push(unreadable(
                 key,
                 row,
@@ -364,11 +331,11 @@ type Diff = (NeisImportPreview, HashMap<usize, Resolved>);
 
 fn diff(
     conn: &Connection,
-    scope: Scope,
+    class_id: i64,
     rows: &[NeisRowInput],
     today: &str,
 ) -> Result<Diff, String> {
-    let (resolved, mut items) = resolve(conn, scope, rows)?;
+    let (resolved, mut items) = resolve(conn, class_id, rows)?;
 
     // **자리를 채운 ISO로 잰다.** 파일이 `2026-9-1`로 주면 원본 문자열 비교에서
     // `'2026-09-01' >= '2026-9-1'`이 거짓이라 내 기록을 하나도 못 불러오고,
@@ -386,14 +353,7 @@ fn diff(
         load_spans(
             conn,
             IMPORT_WHERE,
-            &[
-                &scope.school_id as &dyn ToSql,
-                &scope.year_id,
-                &scope.grade,
-                &scope.class_no,
-                &from,
-                &to,
-            ],
+            &[&class_id as &dyn ToSql, &from, &to],
             today,
         )?
     };
@@ -500,12 +460,13 @@ fn paired_span(item: &NeisDiffItem) -> Result<i64, String> {
 /// 다시 가져올 때마다 손으로 적은 말이 사라진다.
 pub fn apply_neis_import_impl(
     conn: &Connection,
-    scope: Scope,
+    class_id: i64,
     rows: &[NeisRowInput],
     choice: &NeisImportChoice,
     today: &str,
 ) -> Result<NeisImportResult, String> {
-    let (preview, resolved) = diff(conn, scope, rows, today)?;
+    let scope = homeroom_scope(conn, class_id)?;
+    let (preview, resolved) = diff(conn, scope.id, rows, today)?;
     let settings = school_settings(conn, scope.school_id)?;
     let off_days = super::attendance::off_days_of(conn, scope.school_id)?;
     let picked_add: HashSet<usize> = choice.add.iter().copied().collect();
@@ -532,10 +493,11 @@ pub fn apply_neis_import_impl(
                     let due = due_for(parse_date(&hit.date)?, &settings, &off_days);
                     conn.execute(
                         "INSERT INTO absence_span
-                           (student_id, date, reason_id, type_id, start_slot, end_slot,
+                           (class_id, student_id, date, reason_id, type_id, start_slot, end_slot,
                             memo, doc_due, neis_done, neis_done_on)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)",
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1, ?10)",
                         params![
+                            scope.id,
                             hit.student_id,
                             hit.date,
                             hit.reason_id,
@@ -615,56 +577,36 @@ pub fn apply_neis_import_impl(
 
 pub fn preview_neis_import_impl(
     conn: &Connection,
-    scope: Scope,
+    class_id: i64,
     rows: &[NeisRowInput],
     today: &str,
 ) -> Result<NeisImportPreview, String> {
-    Ok(diff(conn, scope, rows, today)?.0)
+    Ok(diff(conn, class_id, rows, today)?.0)
 }
 
 // ── 커맨드 ────────────────────────────────────────────────────
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn preview_neis_import(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     rows: Vec<NeisRowInput>,
     today: String,
 ) -> Result<NeisImportPreview, String> {
-    let scope = Scope {
-        school_id,
-        year_id,
-        grade,
-        class_no,
-    };
     with_conn(&db, |conn| {
-        preview_neis_import_impl(conn, scope, &rows, &today)
+        preview_neis_import_impl(conn, class_id, &rows, &today)
     })
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn apply_neis_import(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     rows: Vec<NeisRowInput>,
     choice: NeisImportChoice,
     today: String,
 ) -> Result<NeisImportResult, String> {
-    let scope = Scope {
-        school_id,
-        year_id,
-        grade,
-        class_no,
-    };
     with_conn(&db, |conn| {
-        apply_neis_import_impl(conn, scope, &rows, &choice, &today)
+        apply_neis_import_impl(conn, class_id, &rows, &choice, &today)
     })
 }

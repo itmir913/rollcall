@@ -244,27 +244,24 @@ onMounted(async () => {
             </div>
         </UiLedger>
 
-        <UiLedger hint="담임을 맡은 학급 하나" title="학급">
+        <UiLedger hint="맡은 학급을 고른다. 학년도는 학급이 들고 있으므로 따로 고르지 않는다" title="학급">
             <div class="set__row">
-                <span class="set__label">학년도</span>
+                <span class="set__label">지금 보는 학급</span>
                 <span class="set__value">
-                    <button v-for="year in app.years" :key="year.id"
-                            :class="['pick', 'num', app.yearId === year.id ? 'is-on' : '']"
-                            type="button"
-                            @click="app.selectClass({yearId: year.id, grade: app.grade, classNo: app.classNo})">
-                        {{ year.year }}
+                    <!-- 담임 학급만 올린다. 교과 강좌로 넘어가는 길은 아직 없어서,
+                         여기서 고를 수 있게 두면 담임 화면이 교과 강좌를 가리킨 채로 돈다. -->
+                    <button v-for="cls in app.homeroomClasses" :key="cls.id"
+                            :class="['pick', app.classId === cls.id ? 'is-on' : '']"
+                            type="button" @click="app.selectClass(cls.id)">
+                        {{ cls.name }}
                     </button>
-                </span>
-            </div>
-            <div class="set__row">
-                <span class="set__label">학급</span>
-                <span class="set__value">
-                    <input :value="app.grade" class="field num" min="1" type="number"
-                           @change="app.selectClass({yearId: app.yearId, grade: Number($event.target.value), classNo: app.classNo})"/>
-                    <span class="set__hint">학년</span>
-                    <input :value="app.classNo" class="field num" min="1" type="number"
-                           @change="app.selectClass({yearId: app.yearId, grade: app.grade, classNo: Number($event.target.value)})"/>
-                    <span class="set__hint">반</span>
+                    <span class="set__hint">
+                        {{
+                            app.homeroomClasses.length
+                                ? '학급마다 명단도 출결도 따로 쌓인다'
+                                : '아직 맡은 학급이 없습니다 — 첫 화면에서 학급을 먼저 만듭니다'
+                        }}
+                    </span>
                 </span>
             </div>
             <div class="set__row">

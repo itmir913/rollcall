@@ -80,13 +80,17 @@ beforeEach(() => {
 
     const app = useAppStore()
     app.booted = true
-    app.schoolId = 1
     app.yearId = 2
-    app.grade = 3
-    app.classNo = 6
     app.today = '2026-09-10'
     app.years = [{id: 2, year: 2026}]
-    app.school = {id: 1, name: '한빛고등학교', maxSlot: 7, dueDays: 7, dueSkipOffdays: true}
+    app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7, dueDays: 7, dueSkipOffdays: true}]
+    // 범위는 classId 하나다. 학년 · 반은 그 학급이 들고 있는 값이라
+    // 화면이 네 값을 조합해 "우리 반"을 다시 만들지 않는다.
+    app.classes = [{
+        id: 10, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+        grade: 3, classNo: 6, validTo: null,
+    }]
+    app.classId = 10
 
     const axis = useAxisStore()
     axis.reasons = [{id: 1, label: '질병'}, {id: 4, label: '출석인정'}]
@@ -149,7 +153,7 @@ describe('개요', () => {
     })
 
     it('명단이 없으면 무엇을 해야 하는지 알린다 — 빈 화면으로 두지 않는다', () => {
-        useAppStore().grade = null
+        useAppStore().classId = null
         expect(render(OverviewView).text()).toContain('명단이 없습니다')
     })
 })
@@ -240,6 +244,12 @@ describe('출결 기록 · 서류 · NEIS', () => {
         expect(cards[0].text()).toContain('2026.09.10.(목)')
         expect(cards[1].text()).toContain('2026.09.09.(수)')
         expect(cards.map((card) => card.findAll('.row').length)).toEqual([1, 1])
+    })
+
+    it('머리말은 학급 이름 그대로다 — 화면이 학년 · 반을 다시 조합하지 않는다', () => {
+        useLogStore().days = []
+        expect(render(LogView).text()).toContain('3학년 6반')
+        expect(render(StatsView).text()).toContain('3학년 6반')
     })
 
     it('서류 화면은 모은 명단을 그대로 보여준다 — 받은 줄도 자리에 남는다', () => {

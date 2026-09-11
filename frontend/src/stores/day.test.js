@@ -15,12 +15,16 @@ import {useAppStore} from './app'
 
 vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn()}))
 
+/** 담임 학급 하나를 고른 상태. **범위는 그 학급 하나다.** */
 function readyApp() {
     const app = useAppStore()
-    app.schoolId = 1
+    app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7}]
     app.yearId = 2
-    app.grade = 3
-    app.classNo = 6
+    app.classes = [{
+        id: 9, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+        grade: 3, classNo: 6, validTo: null,
+    }]
+    app.classId = 9
     app.today = '2026-09-10'
     return app
 }
@@ -32,14 +36,28 @@ beforeEach(() => {
 })
 
 describe('오늘의 출결', () => {
-    it('학급과 날짜를 함께 넘겨 격자를 받는다', async () => {
+    it('학급과 날짜를 함께 넘겨 격자를 받는다 — 학급은 번호 하나다', async () => {
         readyApp()
         const day = useDayStore()
         day.setDate('2026-09-10')
         await day.fetchGrid()
 
-        expect(invoke).toHaveBeenCalledWith('get_day_grid', {
-            schoolId: 1, yearId: 2, grade: 3, classNo: 6, date: '2026-09-10',
+        expect(invoke).toHaveBeenCalledWith('get_day_grid', {classId: 9, date: '2026-09-10'})
+    })
+
+    /**
+     * 같은 학생이 내 담임 반에도 내 교과 강좌에도 있을 수 있다. 학생으로 거르면
+     * 교과 화면에 담임 출결이 새므로, 범위는 언제나 학급이다.
+     */
+    it('여러 날 미리보기도 학급으로 묻는다 — 휴업일은 학급이 아는 학교에 있다', async () => {
+        readyApp()
+        const day = useDayStore()
+        invoke.mockResolvedValue({dates: [], skipped: []})
+
+        await day.previewBulk('2026-09-10', '2026-09-12')
+
+        expect(invoke).toHaveBeenCalledWith('preview_bulk', {
+            classId: 9, from: '2026-09-10', to: '2026-09-12',
         })
     })
 
@@ -58,8 +76,14 @@ describe('오늘의 출결', () => {
 
         await day.stamp(77)
 
+        // **classId가 빠지면 Rust가 통째로 거절한다**(`StampInput.class_id`는 필수다).
+        // 이 단언이 전에는 classId 없는 모양을 고정하고 있어, 찍기가 죽은 채로
+        // 테스트가 초록이었다. 인자를 통째로 비교해 다시 그렇게 되지 않게 한다.
         expect(invoke).toHaveBeenCalledWith('stamp_span', {
-            input: {studentId: 77, date: '2026-09-10', reasonId: 10, typeId: 1, slots: ['2']},
+            input: {
+                classId: 9, studentId: 77, date: '2026-09-10',
+                reasonId: 10, typeId: 1, slots: ['2'],
+            },
         })
     })
 

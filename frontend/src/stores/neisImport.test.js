@@ -39,10 +39,13 @@ const PREVIEW = {
 
 function ready() {
     const app = useAppStore()
-    app.schoolId = 1
+    app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7}]
     app.yearId = 2
-    app.grade = 3
-    app.classNo = 6
+    app.classes = [{
+        id: 9, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+        grade: 3, classNo: 6, validTo: null,
+    }]
+    app.classId = 9
     app.today = '2026-09-11'
     const axis = useAxisStore()
     axis.reasons = [{id: 1, label: '질병'}]
@@ -73,8 +76,7 @@ describe('파일 읽기', () => {
         await useNeisImportStore().load(new Uint8Array([1]))
 
         expect(invoke).toHaveBeenCalledWith('preview_neis_import', {
-            schoolId: 1, yearId: 2, grade: 3, classNo: 6,
-            rows: ROWS, today: '2026-09-11',
+            classId: 9, rows: ROWS, today: '2026-09-11',
         })
     })
 
@@ -141,7 +143,7 @@ describe('적용', () => {
         await store.apply()
 
         expect(invoke).toHaveBeenLastCalledWith('apply_neis_import', {
-            schoolId: 1, yearId: 2, grade: 3, classNo: 6,
+            classId: 9,
             rows: ROWS,
             choice: {add: [0], replace: [1], markNeis: true},
             today: '2026-09-11',

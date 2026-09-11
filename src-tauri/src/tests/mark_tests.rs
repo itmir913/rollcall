@@ -8,48 +8,49 @@ use crate::tests::*;
 use rusqlite::Connection;
 
 const TODAY: &str = "2026-09-11";
-const GRADE: i64 = 3;
-const CLASS: i64 = 6;
 
 /// 구간 하나. 두 축은 비워 둔다 — 미완성 기록이 정상 상태다.
-fn add_span(conn: &Connection, student_id: i64, date: &str, doc_due: Option<&str>) -> i64 {
+/// 구간은 **학급에 매단다.** 담임 기록이 가리키는 것이 학급이다.
+fn add_span(
+    conn: &Connection,
+    class_id: i64,
+    student_id: i64,
+    date: &str,
+    doc_due: Option<&str>,
+) -> i64 {
     conn.execute(
-        "INSERT INTO absence_span (student_id, date, doc_due) VALUES (?1, ?2, ?3)",
-        rusqlite::params![student_id, date, doc_due],
+        "INSERT INTO absence_span (class_id, student_id, date, doc_due) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![class_id, student_id, date, doc_due],
     )
     .unwrap();
     conn.last_insert_rowid()
 }
 
 /// 두 축이 채워진 구간.
-fn add_full_span(conn: &Connection, student_id: i64, date: &str, doc_due: Option<&str>) -> i64 {
+fn add_full_span(
+    conn: &Connection,
+    class_id: i64,
+    student_id: i64,
+    date: &str,
+    doc_due: Option<&str>,
+) -> i64 {
     let (reason, r#type) = axes(conn, "질병", "결석");
     conn.execute(
-        "INSERT INTO absence_span (student_id, date, reason_id, type_id, doc_due)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![student_id, date, reason, r#type, doc_due],
+        "INSERT INTO absence_span (class_id, student_id, date, reason_id, type_id, doc_due)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![class_id, student_id, date, reason, r#type, doc_due],
     )
     .unwrap();
     conn.last_insert_rowid()
 }
 
-/// 다른 반 학생. `insert_student`는 3학년 6반에 고정돼 있다.
-fn add_student_in(
-    conn: &Connection,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    number: i64,
-    name: &str,
-) -> i64 {
-    let school = school_id(conn);
-    conn.execute(
-        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-03-02')",
-        rusqlite::params![school, year_id, grade, class_no, number, name],
-    )
-    .unwrap();
-    conn.last_insert_rowid()
+/// 옆 반과 그 명단의 학생 하나. 내가 맡은 또 하나의 담임 학급이다 —
+/// 범위가 학급이므로 섞이지 않아야 한다.
+fn next_door(conn: &Connection, year_id: i64, name: &str) -> (i64, i64) {
+    let class = insert_class(conn, year_id, "homeroom", "3학년 7반", Some(3), Some(7));
+    let student = insert_student_at(conn, year_id, 3, 7, 1, name);
+    join_class(conn, class, student);
+    (class, student)
 }
 
 fn doc_flags(conn: &Connection, span_id: i64) -> (i64, Option<String>) {
@@ -80,8 +81,9 @@ fn ids(spans: &[crate::types::SpanItem]) -> Vec<i64> {
 fn doc_done_toggles_both_ways() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-07", Some("2026-09-14"));
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-07", Some("2026-09-14"));
 
     set_doc_done_impl(&conn, span, true, TODAY).unwrap();
     assert_eq!(doc_flags(&conn, span), (1, Some(TODAY.to_string())));
@@ -95,8 +97,9 @@ fn doc_done_toggles_both_ways() {
 fn neis_done_toggles_both_ways() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-07", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-07", None);
 
     set_neis_done_impl(&conn, span, true, TODAY).unwrap();
     assert_eq!(neis_flags(&conn, span), (1, Some(TODAY.to_string())));
@@ -120,8 +123,9 @@ fn marking_unknown_span_reports_the_id() {
 fn marking_rejects_a_malformed_today() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-07", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-07", None);
 
     assert!(set_doc_done_impl(&conn, span, true, "2026.09.11").is_err());
     assert!(set_neis_done_impl(&conn, span, true, "9월 11일").is_err());
@@ -136,8 +140,9 @@ fn marking_rejects_a_malformed_today() {
 fn marking_stores_the_date_in_iso() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-07", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-07", None);
 
     set_doc_done_impl(&conn, span, true, "2026-9-11").unwrap();
     assert_eq!(doc_flags(&conn, span), (1, Some("2026-09-11".to_string())));
@@ -148,17 +153,17 @@ fn marking_stores_the_date_in_iso() {
 #[test]
 fn mark_day_neis_counts_only_the_unmarked() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    let b = insert_student(&conn, year, 2, "이나래");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    let b = enroll(&conn, class, year, 2, "이나래");
 
-    let first = add_span(&conn, a, "2026-09-10", None);
-    let second = add_span(&conn, b, "2026-09-10", None);
-    let already = add_span(&conn, b, "2026-09-10", None);
+    let first = add_span(&conn, class, a, "2026-09-10", None);
+    let second = add_span(&conn, class, b, "2026-09-10", None);
+    let already = add_span(&conn, class, b, "2026-09-10", None);
     set_neis_done_impl(&conn, already, true, "2026-09-10").unwrap();
 
-    let n = mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "2026-09-10", TODAY).unwrap();
+    let n = mark_day_neis_impl(&conn, class, "2026-09-10", TODAY).unwrap();
     assert_eq!(n, 2);
 
     assert_eq!(neis_flags(&conn, first), (1, Some(TODAY.to_string())));
@@ -173,16 +178,16 @@ fn mark_day_neis_counts_only_the_unmarked() {
 #[test]
 fn mark_day_neis_leaves_other_days_and_classes_alone() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let mine = insert_student(&conn, year, 1, "김가온");
-    let other_class = add_student_in(&conn, year, GRADE, CLASS + 1, 1, "박다솜");
+    let class = homeroom(&conn, year);
+    let mine = enroll(&conn, class, year, 1, "김가온");
+    let (theirs, other_class) = next_door(&conn, year, "박다솜");
 
-    let today_span = add_span(&conn, mine, "2026-09-10", None);
-    let other_day = add_span(&conn, mine, "2026-09-09", None);
-    let other_class_span = add_span(&conn, other_class, "2026-09-10", None);
+    let today_span = add_span(&conn, class, mine, "2026-09-10", None);
+    let other_day = add_span(&conn, class, mine, "2026-09-09", None);
+    let other_class_span = add_span(&conn, theirs, other_class, "2026-09-10", None);
 
-    let n = mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "2026-09-10", TODAY).unwrap();
+    let n = mark_day_neis_impl(&conn, class, "2026-09-10", TODAY).unwrap();
     assert_eq!(n, 1);
 
     assert_eq!(neis_flags(&conn, today_span).0, 1);
@@ -193,35 +198,35 @@ fn mark_day_neis_leaves_other_days_and_classes_alone() {
 #[test]
 fn mark_day_neis_returns_zero_when_nothing_is_left() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    enroll(&conn, class, year, 1, "김가온");
 
-    let n = mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "2026-09-10", TODAY).unwrap();
+    let n = mark_day_neis_impl(&conn, class, "2026-09-10", TODAY).unwrap();
     assert_eq!(n, 0);
 }
 
 #[test]
 fn mark_day_neis_rejects_a_malformed_date() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-10", None);
 
-    assert!(mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "9월 10일", TODAY).is_err());
+    assert!(mark_day_neis_impl(&conn, class, "9월 10일", TODAY).is_err());
     assert_eq!(neis_flags(&conn, span).0, 0);
 }
 
 #[test]
 fn mark_day_neis_matches_the_date_in_iso() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-10", None);
 
-    let n = mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "2026-9-10", TODAY).unwrap();
+    let n = mark_day_neis_impl(&conn, class, "2026-9-10", TODAY).unwrap();
     assert_eq!(n, 1);
     assert_eq!(neis_flags(&conn, span).0, 1);
 }
@@ -231,12 +236,12 @@ fn mark_day_neis_matches_the_date_in_iso() {
 #[test]
 fn mark_day_neis_leaves_no_open_transaction() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    add_span(&conn, class, student, "2026-09-10", None);
 
-    mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "2026-09-10", TODAY).unwrap();
+    mark_day_neis_impl(&conn, class, "2026-09-10", TODAY).unwrap();
 
     conn.execute_batch("BEGIN")
         .expect("트랜잭션이 열린 채 남았다");
@@ -309,8 +314,9 @@ fn save_one(conn: &Connection, entry: crate::types::FocusEntry) -> Result<(), St
 fn save_focus_entries_applies_every_field_at_once() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-10", None);
     let (reason, r#type) = axes(&conn, "질병", "지각");
     let tag = tag_id(&conn, "체험학습");
 
@@ -342,8 +348,9 @@ fn save_focus_entries_applies_every_field_at_once() {
 fn save_focus_entries_clears_what_the_teacher_emptied() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-10", None);
     let tag = tag_id(&conn, "생리통");
     save_one(&conn, focus_entry(span, None, None, &[], "복통", Some(tag))).unwrap();
 
@@ -360,8 +367,9 @@ fn save_focus_entries_clears_what_the_teacher_emptied() {
 fn save_focus_entries_rolls_back_when_one_item_fails() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let first = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let first = add_span(&conn, class, student, "2026-09-10", None);
     let (reason, r#type) = axes(&conn, "질병", "지각");
 
     let err = save_focus_entries_impl(
@@ -394,8 +402,9 @@ fn save_focus_entries_rolls_back_when_one_item_fails() {
 fn save_focus_entries_leaves_no_open_transaction() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-10", None);
 
     save_one(&conn, focus_entry(span, None, None, &[], "", None)).unwrap();
     // 실패한 뒤에도 열린 채 남으면 안 된다 — 커넥션이 하나뿐이라 세션 내내 이어진다.
@@ -411,8 +420,9 @@ fn save_focus_entries_leaves_no_open_transaction() {
 fn save_focus_entries_rejects_a_malformed_today() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let student = insert_student(&conn, year, 1, "김가온");
-    let span = add_span(&conn, student, "2026-09-10", None);
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 1, "김가온");
+    let span = add_span(&conn, class, student, "2026-09-10", None);
 
     assert!(save_focus_entries_impl(
         &conn,
@@ -429,68 +439,68 @@ fn save_focus_entries_rejects_a_malformed_today() {
 #[test]
 fn doc_pending_sorts_the_most_overdue_first() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    let b = insert_student(&conn, year, 2, "이나래");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    let b = enroll(&conn, class, year, 2, "이나래");
 
-    let soon = add_span(&conn, a, "2026-09-10", Some("2026-09-17")); // 아직 남았다
-    let overdue = add_span(&conn, b, "2026-09-01", Some("2026-09-04")); // 일주일 지났다
-    let today_due = add_span(&conn, a, "2026-09-04", Some(TODAY)); // 오늘이 마감
+    let soon = add_span(&conn, class, a, "2026-09-10", Some("2026-09-17")); // 아직 남았다
+    let overdue = add_span(&conn, class, b, "2026-09-01", Some("2026-09-04")); // 일주일 지났다
+    let today_due = add_span(&conn, class, a, "2026-09-04", Some(TODAY)); // 오늘이 마감
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, false, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, false, TODAY).unwrap();
     assert_eq!(ids(&rows), vec![overdue, today_due, soon]);
 }
 
 #[test]
 fn doc_pending_orders_the_same_due_by_student_number() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    let b = insert_student(&conn, year, 2, "이나래");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    let b = enroll(&conn, class, year, 2, "이나래");
 
-    let later_number = add_span(&conn, b, "2026-09-01", Some("2026-09-04"));
-    let first_number = add_span(&conn, a, "2026-09-01", Some("2026-09-04"));
+    let later_number = add_span(&conn, class, b, "2026-09-01", Some("2026-09-04"));
+    let first_number = add_span(&conn, class, a, "2026-09-01", Some("2026-09-04"));
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, false, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, false, TODAY).unwrap();
     assert_eq!(ids(&rows), vec![first_number, later_number]);
 }
 
 #[test]
 fn doc_pending_puts_spans_without_a_due_last() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
 
-    let no_due = add_span(&conn, a, "2026-09-01", None);
-    let has_due = add_span(&conn, a, "2026-09-10", Some("2026-09-17"));
+    let no_due = add_span(&conn, class, a, "2026-09-01", None);
+    let has_due = add_span(&conn, class, a, "2026-09-10", Some("2026-09-17"));
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, false, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, false, TODAY).unwrap();
     assert_eq!(ids(&rows), vec![has_due, no_due]);
 }
 
 #[test]
 fn doc_pending_hides_received_documents_unless_asked() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
 
-    let received = add_span(&conn, a, "2026-09-01", Some("2026-09-04"));
-    let pending = add_span(&conn, a, "2026-09-02", Some("2026-09-05"));
+    let received = add_span(&conn, class, a, "2026-09-01", Some("2026-09-04"));
+    let pending = add_span(&conn, class, a, "2026-09-02", Some("2026-09-05"));
     set_doc_done_impl(&conn, received, true, TODAY).unwrap();
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, false, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, false, TODAY).unwrap();
     assert_eq!(ids(&rows), vec![pending]);
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, true, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, true, TODAY).unwrap();
     assert_eq!(rows.len(), 2);
     assert!(rows.iter().any(|s| s.id == received && s.doc_done));
 }
@@ -500,42 +510,39 @@ fn doc_pending_hides_received_documents_unless_asked() {
 #[test]
 fn doc_pending_keeps_a_checked_row_in_place() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    let b = insert_student(&conn, year, 2, "이나래");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    let b = enroll(&conn, class, year, 2, "이나래");
 
-    let oldest = add_span(&conn, a, "2026-09-01", Some("2026-09-02"));
-    let middle = add_span(&conn, b, "2026-09-03", Some("2026-09-05"));
-    let newest = add_span(&conn, b, "2026-09-08", Some("2026-09-15"));
+    let oldest = add_span(&conn, class, a, "2026-09-01", Some("2026-09-02"));
+    let middle = add_span(&conn, class, b, "2026-09-03", Some("2026-09-05"));
+    let newest = add_span(&conn, class, b, "2026-09-08", Some("2026-09-15"));
 
     let before =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, true, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, true, TODAY).unwrap();
     assert_eq!(ids(&before), vec![oldest, middle, newest]);
 
     set_doc_done_impl(&conn, oldest, true, TODAY).unwrap();
     let after =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, true, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, true, TODAY).unwrap();
     assert_eq!(ids(&after), vec![oldest, middle, newest]);
 }
 
 #[test]
 fn doc_pending_filters_by_month_and_by_year() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
 
-    let june = add_span(&conn, a, "2026-06-15", Some("2026-06-22"));
-    let september = add_span(&conn, a, "2026-09-01", Some("2026-09-08"));
-    let january = add_span(&conn, a, "2027-01-12", Some("2027-01-19"));
+    let june = add_span(&conn, class, a, "2026-06-15", Some("2026-06-22"));
+    let september = add_span(&conn, class, a, "2026-09-01", Some("2026-09-08"));
+    let january = add_span(&conn, class, a, "2027-01-12", Some("2027-01-19"));
 
     let rows = get_doc_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         Some(2026),
         Some(6),
         false,
@@ -546,10 +553,7 @@ fn doc_pending_filters_by_month_and_by_year() {
 
     let rows = get_doc_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         Some(2026),
         None,
         false,
@@ -564,15 +568,12 @@ fn doc_pending_filters_by_month_and_by_year() {
 #[test]
 fn doc_pending_rejects_a_month_without_a_year() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
+    let class = homeroom(&conn, year);
 
     let err = get_doc_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         None,
         Some(9),
         false,
@@ -583,10 +584,7 @@ fn doc_pending_rejects_a_month_without_a_year() {
 
     let err = get_doc_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         Some(2026),
         Some(13),
         false,
@@ -599,16 +597,16 @@ fn doc_pending_rejects_a_month_without_a_year() {
 #[test]
 fn doc_pending_covers_only_the_asked_class() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let mine = insert_student(&conn, year, 1, "김가온");
-    let other = add_student_in(&conn, year, GRADE, CLASS + 1, 1, "박다솜");
+    let class = homeroom(&conn, year);
+    let mine = enroll(&conn, class, year, 1, "김가온");
+    let (theirs, other) = next_door(&conn, year, "박다솜");
 
-    let ours = add_span(&conn, mine, "2026-09-01", Some("2026-09-08"));
-    add_span(&conn, other, "2026-09-01", Some("2026-09-08"));
+    let ours = add_span(&conn, class, mine, "2026-09-01", Some("2026-09-08"));
+    add_span(&conn, theirs, other, "2026-09-01", Some("2026-09-08"));
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, false, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, false, TODAY).unwrap();
     assert_eq!(ids(&rows), vec![ours]);
 }
 
@@ -616,15 +614,15 @@ fn doc_pending_covers_only_the_asked_class() {
 #[test]
 fn doc_pending_lists_incomplete_records_too() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
 
-    let bare = add_span(&conn, a, "2026-09-01", Some("2026-09-08"));
-    let full = add_full_span(&conn, a, "2026-09-02", Some("2026-09-09"));
+    let bare = add_span(&conn, class, a, "2026-09-01", Some("2026-09-08"));
+    let full = add_full_span(&conn, class, a, "2026-09-02", Some("2026-09-09"));
 
     let rows =
-        get_doc_pending_impl(&conn, school, year, GRADE, CLASS, None, None, false, TODAY).unwrap();
+        get_doc_pending_impl(&conn, class, None, None, false, TODAY).unwrap();
     let found = ids(&rows);
     assert!(found.contains(&bare) && found.contains(&full));
 }
@@ -634,17 +632,17 @@ fn doc_pending_lists_incomplete_records_too() {
 #[test]
 fn neis_pending_groups_by_date_from_the_oldest() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    let b = insert_student(&conn, year, 2, "이나래");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    let b = enroll(&conn, class, year, 2, "이나래");
 
-    add_span(&conn, a, "2026-09-08", None);
-    let later_number = add_span(&conn, b, "2026-09-02", None);
-    let first_number = add_span(&conn, a, "2026-09-02", None);
+    add_span(&conn, class, a, "2026-09-08", None);
+    let later_number = add_span(&conn, class, b, "2026-09-02", None);
+    let first_number = add_span(&conn, class, a, "2026-09-02", None);
 
     let groups =
-        get_neis_pending_impl(&conn, school, year, GRADE, CLASS, None, None, TODAY).unwrap();
+        get_neis_pending_impl(&conn, class, None, None, TODAY).unwrap();
     let dates: Vec<&str> = groups.iter().map(|g| g.date.as_str()).collect();
     assert_eq!(dates, vec!["2026-09-02", "2026-09-08"]);
     assert_eq!(groups[0].date_label, "2026.09.02.(수)");
@@ -655,17 +653,17 @@ fn neis_pending_groups_by_date_from_the_oldest() {
 #[test]
 fn neis_pending_drops_a_day_once_it_is_marked() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
 
-    add_span(&conn, a, "2026-09-02", None);
-    add_span(&conn, a, "2026-09-08", None);
+    add_span(&conn, class, a, "2026-09-02", None);
+    add_span(&conn, class, a, "2026-09-08", None);
 
-    mark_day_neis_impl(&conn, school, year, GRADE, CLASS, "2026-09-02", TODAY).unwrap();
+    mark_day_neis_impl(&conn, class, "2026-09-02", TODAY).unwrap();
 
     let groups =
-        get_neis_pending_impl(&conn, school, year, GRADE, CLASS, None, None, TODAY).unwrap();
+        get_neis_pending_impl(&conn, class, None, None, TODAY).unwrap();
     let dates: Vec<&str> = groups.iter().map(|g| g.date.as_str()).collect();
     assert_eq!(dates, vec!["2026-09-08"]);
 }
@@ -674,21 +672,21 @@ fn neis_pending_drops_a_day_once_it_is_marked() {
 #[test]
 fn neis_pending_counts_students_enrolled_on_that_date() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let stays = insert_student(&conn, year, 1, "김가온");
-    let leaves = insert_student(&conn, year, 2, "이나래");
+    let class = homeroom(&conn, year);
+    let stays = enroll(&conn, class, year, 1, "김가온");
+    let leaves = enroll(&conn, class, year, 2, "이나래");
     conn.execute(
         "UPDATE student SET enrolled_to = '2026-09-05' WHERE id = ?1",
         rusqlite::params![leaves],
     )
     .unwrap();
 
-    let before = add_span(&conn, leaves, "2026-09-02", None);
-    add_span(&conn, stays, "2026-09-08", None);
+    let before = add_span(&conn, class, leaves, "2026-09-02", None);
+    add_span(&conn, class, stays, "2026-09-08", None);
 
     let groups =
-        get_neis_pending_impl(&conn, school, year, GRADE, CLASS, None, None, TODAY).unwrap();
+        get_neis_pending_impl(&conn, class, None, None, TODAY).unwrap();
     assert_eq!(groups[0].date, "2026-09-02");
     assert_eq!(groups[0].enrolled, 2);
     assert_eq!(ids(&groups[0].spans), vec![before]);
@@ -699,19 +697,16 @@ fn neis_pending_counts_students_enrolled_on_that_date() {
 #[test]
 fn neis_pending_filters_by_month() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
 
-    add_span(&conn, a, "2026-06-15", None);
-    add_span(&conn, a, "2026-09-01", None);
+    add_span(&conn, class, a, "2026-06-15", None);
+    add_span(&conn, class, a, "2026-09-01", None);
 
     let groups = get_neis_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         Some(2026),
         Some(9),
         TODAY,
@@ -726,17 +721,14 @@ fn neis_pending_filters_by_month() {
 #[test]
 fn pending_lists_reject_a_malformed_today() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    add_span(&conn, a, "2026-09-01", Some("2026-09-08"));
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    add_span(&conn, class, a, "2026-09-01", Some("2026-09-08"));
 
     assert!(get_doc_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         None,
         None,
         false,
@@ -744,7 +736,7 @@ fn pending_lists_reject_a_malformed_today() {
     )
     .is_err());
     assert!(
-        get_neis_pending_impl(&conn, school, year, GRADE, CLASS, None, None, "2026.09.11").is_err()
+        get_neis_pending_impl(&conn, class, None, None, "2026.09.11").is_err()
     );
 }
 
@@ -753,19 +745,16 @@ fn pending_lists_reject_a_malformed_today() {
 #[test]
 fn neis_pending_rejects_a_month_it_cannot_place() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
+    let class = homeroom(&conn, year);
 
     let err =
-        get_neis_pending_impl(&conn, school, year, GRADE, CLASS, None, Some(9), TODAY).unwrap_err();
+        get_neis_pending_impl(&conn, class, None, Some(9), TODAY).unwrap_err();
     assert!(err.contains("연도"), "{err}");
 
     let err = get_neis_pending_impl(
         &conn,
-        school,
-        year,
-        GRADE,
-        CLASS,
+        class,
         Some(2026),
         Some(0),
         TODAY,
@@ -775,17 +764,17 @@ fn neis_pending_rejects_a_month_it_cannot_place() {
 }
 
 #[test]
-fn neis_pending_is_empty_for_an_unknown_class() {
+fn 없는_학급은_이유를_말하고_거절한다() {
+    // 빈 목록으로 돌려주면 교사는 "밀린 일이 없다"로 읽는다.
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let a = insert_student(&conn, year, 1, "김가온");
-    add_span(&conn, a, "2026-09-01", None);
+    let class = homeroom(&conn, year);
+    let a = enroll(&conn, class, year, 1, "김가온");
+    add_span(&conn, class, a, "2026-09-01", None);
 
-    let groups = get_neis_pending_impl(&conn, school, year, GRADE, 99, None, None, TODAY).unwrap();
-    assert!(groups.is_empty());
+    let err = get_neis_pending_impl(&conn, 9999, None, None, TODAY).unwrap_err();
+    assert!(err.contains("학급을 찾을 수 없습니다"), "{err}");
 
-    let rows =
-        get_doc_pending_impl(&conn, school, 999, GRADE, CLASS, None, None, false, TODAY).unwrap();
-    assert!(rows.is_empty());
+    let err = get_doc_pending_impl(&conn, 9999, None, None, false, TODAY).unwrap_err();
+    assert!(err.contains("학급을 찾을 수 없습니다"), "{err}");
 }

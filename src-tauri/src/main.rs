@@ -49,10 +49,12 @@ fn main() {
             create_quota_rule,
             revise_quota_rule,
             retire_quota_rule,
+            // 내가 맡은 것 — 담임 학급 · 교과 강좌. 화면의 범위가 이 행의 id다
+            get_teaching_classes,
+            create_teaching_class,
             // 학생 · 연락처
             detect_roster_class,
             get_students,
-            get_classes,
             preview_roster,
             apply_roster,
             update_student,

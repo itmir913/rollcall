@@ -75,7 +75,7 @@ onMounted(async () => {
                 </RouterLink>
                 <p v-if="app.ready" class="rail__where">
                     {{ app.currentYear?.year }}학년도<br/>
-                    {{ app.grade }}학년 {{ app.classNo }}반
+                    {{ app.currentClass?.name }}
                 </p>
             </div>
         </nav>

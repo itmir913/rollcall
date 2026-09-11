@@ -8,6 +8,7 @@
 //! **수정은 마감 후 추가다.** UPDATE로 고치면 그 축을 참조하는 과거 기록의 의미가
 //! 소급 변경된다. `valid_to`를 찍고 새 행을 만든다.
 
+use super::class::homeroom_scope;
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::slots::is_slot_prompt;
@@ -331,35 +332,31 @@ pub fn revise_code_impl(
 /// `복통`과 `복통 `이 똑같이 생긴 버튼 두 개로 나와 자리만 차지한다.
 pub fn get_memo_suggestions_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     limit: i64,
 ) -> Result<Vec<String>, String> {
+    // **읽기도 범위를 확인한다.** 교과 classId가 오면 빈 목록이 아니라 거절이다 —
+    // 빈 목록은 "그 반에 메모가 없다"와 구별되지 않아, 화면을 잘못 연 것인지
+    // 기록이 없는 것인지 알 방법이 사라진다.
+    let scope = homeroom_scope(conn, class_id)?;
     if limit < 1 {
         return Ok(Vec::new());
     }
     let mut stmt = conn
         .prepare(
-            "SELECT TRIM(s.memo) AS m, COUNT(*) AS n
-             FROM absence_span s
-                      JOIN student st ON st.id = s.student_id
-             WHERE st.school_id = ?1
-               AND st.year_id = ?2
-               AND st.grade = ?3
-               AND st.class_no = ?4
-               AND TRIM(s.memo) <> ''
+            "SELECT TRIM(memo) AS m, COUNT(*) AS n
+             FROM absence_span
+             WHERE class_id = ?1
+               AND TRIM(memo) <> ''
              GROUP BY m
              ORDER BY n DESC, m
-             LIMIT ?5",
+             LIMIT ?2",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(
-            rusqlite::params![school_id, year_id, grade, class_no, limit],
-            |r| r.get::<_, String>(0),
-        )
+        .query_map(rusqlite::params![scope.id, limit], |r| {
+            r.get::<_, String>(0)
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -482,13 +479,10 @@ pub fn retire_code(db: State<DbState>, id: i64, valid_to: String) -> Result<(), 
 #[tauri::command]
 pub fn get_memo_suggestions(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     limit: Option<i64>,
 ) -> Result<Vec<String>, String> {
     with_conn(&db, |c| {
-        get_memo_suggestions_impl(c, school_id, year_id, grade, class_no, limit.unwrap_or(8))
+        get_memo_suggestions_impl(c, class_id, limit.unwrap_or(8))
     })
 }

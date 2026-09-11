@@ -1,0 +1,315 @@
+//! 내가 맡은 것 — 담임 학급과 교과 강좌, 그리고 그 명단.
+//!
+//! **범위는 `classId` 하나다.** 예전에는 학교 · 학년도 · 학년 · 반 네 값으로 "우리 반"을
+//! 걸러냈다. 그 방식으로는 두 화면을 구별할 수 없다 — 같은 학생이 내 담임 반에도
+//! 내 교과 강좌에도 있을 수 있어서, 학적으로 거르면 교과 화면에 담임 출결이 샌다.
+//! 그래서 맡은 것이 행(`teaching_class`)이 되고, 기록과 명단이 그 행을 가리킨다.
+//!
+//! 학교 단위 설정(최대 교시 · 제출 기한 · 휴업일)이 필요한 곳은 여기 있는
+//! `homeroom_scope`로 학교를 얻는다. **같은 질의를 커맨드마다 따로 두지 않으려는 것이다** —
+//! 나누어 두면 담임과 교과를 구별하는 조건이 파일마다 조금씩 달라진다.
+//!
+//! 명단도 여기가 답한다. 학년 · 반 · 번호는 그 학생의 **학적**이지 소속이 아니므로
+//! 반으로 거르지 않는다. 반으로 거르면 반이 다른 전학생이 내 명단에서 조용히 빠지고,
+//! 교과 강좌는 여러 반에서 모이므로 아예 담을 수 없다.
+
+use crate::commands::with_conn;
+use crate::state::{constraint_err, DbState};
+use crate::types::{StudentItem, TeachingClassItem};
+use rusqlite::Connection;
+use tauri::State;
+
+// ── 범위 ──────────────────────────────────────────────────────
+
+/// 학급 하나가 가리키는 자리. 학교 · 학년도 · 역할이 전부 여기서 나온다.
+pub(crate) struct ClassScope {
+    pub id: i64,
+    pub school_id: i64,
+    pub year_id: i64,
+    pub name: String,
+    pub grade: Option<i64>,
+    pub class_no: Option<i64>,
+}
+
+/// 담임 커맨드가 쓰는 범위. **교과 강좌가 오면 거절한다.**
+///
+/// 스키마의 `trg_span_homeroom_only`가 같은 것을 막지만, 트리거는 쓰기에만 걸린다.
+/// 읽기까지 막지 않으면 교과 `classId`로 담임 목록을 불러 빈 화면을 보여주게 되고,
+/// 교사는 기록이 사라진 것인지 화면을 잘못 연 것인지 알 방법이 없다.
+pub(crate) fn homeroom_scope(conn: &Connection, class_id: i64) -> Result<ClassScope, String> {
+    let (school_id, year_id, role, name, grade, class_no) = conn
+        .query_row(
+            "SELECT school_id, year_id, role, name, grade, class_no
+               FROM teaching_class WHERE id = ?1",
+            rusqlite::params![class_id],
+            |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, Option<i64>>(5)?,
+                ))
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("학급을 찾을 수 없습니다: {class_id}"),
+            other => other.to_string(),
+        })?;
+
+    if role != "homeroom" {
+        return Err(format!("담임 학급이 아닙니다: {name}"));
+    }
+    Ok(ClassScope {
+        id: class_id,
+        school_id,
+        year_id,
+        name,
+        grade,
+        class_no,
+    })
+}
+
+/// 담임 명렬표가 학생을 앉힐 학적 자리. 학년 · 반이 비어 있으면 앉힐 곳이 없다.
+///
+/// 교과 강좌는 반이 섞여 이 값이 비어 있는 것이 정상이고, 그쪽 명렬표는 파일이
+/// 학년 · 반을 줄마다 들고 온다. 담임 학급이 비어 있는 것은 만들 때 빠뜨린 것이다.
+pub(crate) fn homeroom_seat(scope: &ClassScope) -> Result<(i64, i64), String> {
+    match (scope.grade, scope.class_no) {
+        (Some(grade), Some(class_no)) => Ok((grade, class_no)),
+        _ => Err(format!(
+            "{}의 학년 · 반이 정해져 있지 않습니다. 설정에서 먼저 채워주세요.",
+            scope.name
+        )),
+    }
+}
+
+// ── 명단 ──────────────────────────────────────────────────────
+
+/// 그날 명단에 있던 학생. **두 기간을 함께 본다.**
+///
+/// 소속 기간(`class_member`)은 내 명단에 들어오고 나간 때이고, 재학 기간(`student`)은
+/// 학교에 있고 없던 때다. 둘은 다른 사건이라 각각 닫힌다 — 내 반에서 빠졌다고
+/// 학교를 떠난 것이 아니고, 그 반대도 마찬가지다.
+///
+/// 경계일은 닫는다(`?2 < left_on`). 같은 날 번호를 물려받는 경우 그 번호가 하루 동안
+/// 두 학생으로 보이지 않게 하려는 것이고, 이 저장소의 `valid_to`와 같은 규칙이다.
+const MEMBER_ON: &str = "FROM class_member m
+                                  JOIN student st ON st.id = m.student_id
+                         WHERE m.class_id = ?1
+                           AND m.joined_on <= ?2 AND (m.left_on IS NULL OR ?2 < m.left_on)
+                           AND st.enrolled_from <= ?2
+                           AND (st.enrolled_to IS NULL OR ?2 < st.enrolled_to)";
+
+/// 그날 명단의 (학생 id, 번호, 이름). 하루 격자가 이 목록으로 그려진다.
+pub(crate) fn member_rows_on(
+    conn: &Connection,
+    class_id: i64,
+    date: &str,
+) -> Result<Vec<(i64, i64, String)>, String> {
+    let sql = format!("SELECT st.id, st.number, st.name {MEMBER_ON} ORDER BY st.number, st.id");
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![class_id, date], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+/// 그날 명단의 인원. 개요 · 기록 · 미등재 화면이 말하는 "서른 명 중"이 이 수다.
+///
+/// **격자에 뜨는 줄 수와 반드시 같아야 한다.** 다르면 교사는 둘 중 어느 쪽이 맞는지
+/// 알 방법이 없어, 조건을 위 상수 하나로 묶어 둔다.
+pub(crate) fn member_count_on(conn: &Connection, class_id: i64, date: &str) -> Result<i64, String> {
+    let sql = format!("SELECT COUNT(*) {MEMBER_ON}");
+    conn.query_row(&sql, rusqlite::params![class_id, date], |r| r.get(0))
+        .map_err(|e| e.to_string())
+}
+
+/// 그날 명단에서 번호로 학생을 찾는다. 나이스 가져오기가 파일의 번호를 옮길 때 쓴다.
+pub(crate) fn member_by_number_on(
+    conn: &Connection,
+    class_id: i64,
+    number: i64,
+    date: &str,
+) -> Result<Option<(i64, String)>, String> {
+    let sql = format!("SELECT st.id, st.name {MEMBER_ON} AND st.number = ?3 ORDER BY st.id LIMIT 1");
+    conn.query_row(&sql, rusqlite::params![class_id, date, number], |r| {
+        Ok((r.get(0)?, r.get(1)?))
+    })
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        other => Err(other.to_string()),
+    })
+}
+
+/// 지금 명단 전체. 날짜를 묻지 않는 화면(설정의 명단 편집)이 쓴다.
+pub(crate) fn members_of(conn: &Connection, class_id: i64) -> Result<Vec<StudentItem>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT st.id, st.school_id, st.year_id, st.grade, st.class_no,
+                    st.number, st.name, st.enrolled_from, st.enrolled_to
+               FROM class_member m
+                        JOIN student st ON st.id = m.student_id
+              WHERE m.class_id = ?1 AND m.left_on IS NULL AND st.enrolled_to IS NULL
+              ORDER BY st.number, st.id",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![class_id], |r| {
+            Ok(StudentItem {
+                id: r.get(0)?,
+                school_id: r.get(1)?,
+                year_id: r.get(2)?,
+                grade: r.get(3)?,
+                class_no: r.get(4)?,
+                number: r.get(5)?,
+                name: r.get(6)?,
+                enrolled_from: r.get(7)?,
+                enrolled_to: r.get(8)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+// ── 맡은 것 목록 ──────────────────────────────────────────────
+
+fn map_class(row: &rusqlite::Row) -> rusqlite::Result<TeachingClassItem> {
+    Ok(TeachingClassItem {
+        id: row.get(0)?,
+        school_id: row.get(1)?,
+        year_id: row.get(2)?,
+        role: row.get(3)?,
+        name: row.get(4)?,
+        grade: row.get(5)?,
+        class_no: row.get(6)?,
+        sort_order: row.get(7)?,
+        valid_from: row.get(8)?,
+        valid_to: row.get(9)?,
+    })
+}
+
+const CLASS_SELECT: &str = "SELECT id, school_id, year_id, role, name, grade, class_no,
+                                   sort_order, valid_from, valid_to
+                            FROM teaching_class";
+
+/// 그 학년도에 내가 맡은 것. `role`을 주면 담임만 · 교과만 골라 온다.
+///
+/// 마감된 줄(`valid_to`)은 빼고 돌려준다. 3월이 되면 지난해 줄을 마감하고 새로 넣으므로,
+/// 마감된 것까지 목록에 나오면 학급 고르개에 작년 반이 함께 뜬다.
+pub fn get_teaching_classes_impl(
+    conn: &Connection,
+    year_id: i64,
+    role: Option<&str>,
+) -> Result<Vec<TeachingClassItem>, String> {
+    let mut sql = format!("{CLASS_SELECT} WHERE year_id = ?1 AND valid_to IS NULL");
+    if role.is_some() {
+        sql.push_str(" AND role = ?2");
+    }
+    sql.push_str(" ORDER BY sort_order, id");
+
+    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
+    let rows = match role {
+        Some(role) => stmt.query_map(rusqlite::params![year_id, role], map_class),
+        None => stmt.query_map(rusqlite::params![year_id], map_class),
+    }
+    .map_err(|e| e.to_string())?
+    .collect::<Result<Vec<_>, _>>()
+    .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
+fn next_class_order(conn: &Connection, year_id: i64) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(sort_order), 0) + 10
+           FROM teaching_class WHERE year_id = ?1 AND valid_to IS NULL",
+        rusqlite::params![year_id],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 맡은 것 하나를 만든다.
+///
+/// 담임 학급은 학년 · 반을 함께 받는다. 그 둘이 명렬표가 학생을 앉힐 학적 자리이고,
+/// 나중에 채우게 두면 명렬표를 가져오는 자리에서야 빠진 것을 알게 된다.
+/// 교과 강좌는 반이 섞이므로 비워 둔다 — 채워 오면 거절한다.
+#[allow(clippy::too_many_arguments)]
+pub fn create_teaching_class_impl(
+    conn: &Connection,
+    school_id: i64,
+    year_id: i64,
+    role: &str,
+    name: &str,
+    grade: Option<i64>,
+    class_no: Option<i64>,
+    valid_from: &str,
+) -> Result<i64, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("학급 이름이 비어 있습니다.".to_string());
+    }
+    match role {
+        "homeroom" => {
+            if grade.is_none() || class_no.is_none() {
+                return Err("담임 학급은 학년과 반이 필요합니다.".to_string());
+            }
+        }
+        "subject" => {
+            if grade.is_some() || class_no.is_some() {
+                return Err("교과 강좌는 반이 섞이므로 학년 · 반을 두지 않습니다.".to_string());
+            }
+        }
+        other => return Err(format!("알 수 없는 역할입니다: {other}")),
+    }
+
+    let sort_order = next_class_order(conn, year_id)?;
+    conn.execute(
+        "INSERT INTO teaching_class
+           (school_id, year_id, role, name, grade, class_no, sort_order, valid_from)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        rusqlite::params![
+            school_id, year_id, role, name, grade, class_no, sort_order, valid_from
+        ],
+    )
+    .map_err(|e| constraint_err(&e, "이미 같은 학급이 있습니다."))?;
+    Ok(conn.last_insert_rowid())
+}
+
+// ── 커맨드 ────────────────────────────────────────────────────
+
+#[tauri::command]
+pub fn get_teaching_classes(
+    db: State<DbState>,
+    year_id: i64,
+    role: Option<String>,
+) -> Result<Vec<TeachingClassItem>, String> {
+    with_conn(&db, |c| get_teaching_classes_impl(c, year_id, role.as_deref()))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn create_teaching_class(
+    db: State<DbState>,
+    school_id: i64,
+    year_id: i64,
+    role: String,
+    name: String,
+    grade: Option<i64>,
+    class_no: Option<i64>,
+    valid_from: String,
+) -> Result<i64, String> {
+    with_conn(&db, |c| {
+        create_teaching_class_impl(
+            c, school_id, year_id, &role, &name, grade, class_no, &valid_from,
+        )
+    })
+}

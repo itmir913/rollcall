@@ -47,7 +47,7 @@ export const useDayStore = defineStore('day', {
             if (!app.ready || !this.date) return
             this.error = ''
             try {
-                this.grid = await invoke('get_day_grid', {...app.scope, date: this.date})
+                this.grid = await invoke('get_day_grid', {classId: app.classId, date: this.date})
             } catch (e) {
                 this.error = String(e)
                 throw e
@@ -64,6 +64,7 @@ export const useDayStore = defineStore('day', {
             try {
                 const result = await invoke('stamp_span', {
                     input: {
+                        classId: useAppStore().classId,
                         studentId,
                         date: this.date,
                         reasonId: this.draft.reasonId,
@@ -131,7 +132,9 @@ export const useDayStore = defineStore('day', {
             const app = useAppStore()
             this.error = ''
             try {
-                return await invoke('preview_bulk', {schoolId: app.schoolId, from, to})
+                // 휴업일은 학교가 들고 있지만 화면은 학급만 안다. 학급에서 학교를
+                // 얻는 것은 Rust가 한 곳에 모아 둔다.
+                return await invoke('preview_bulk', {classId: app.classId, from, to})
             } catch (e) {
                 this.error = String(e)
                 throw e
@@ -143,6 +146,7 @@ export const useDayStore = defineStore('day', {
             try {
                 const result = await invoke('apply_bulk', {
                     input: {
+                        classId: useAppStore().classId,
                         studentId,
                         date: from,
                         reasonId: this.draft.reasonId,

@@ -64,11 +64,10 @@ function saveCsv(kind, args, suggested) {
 <template>
     <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급과 명렬표를 넣어주세요."/>
 
-    <UiPage v-else :subtitle="`${app.currentYear?.year ?? ''}학년도 ${app.grade}학년 ${app.classNo}반`"
-            title="통계">
+    <UiPage v-else :subtitle="app.currentClass?.name ?? ''" title="통계">
         <template #actions>
             <UiButton v-if="stats.ruleId" variant="download"
-                      @click="saveCsv('quota', {...app.scope, ruleId: stats.ruleId}, '한도.csv')">
+                      @click="saveCsv('quota', {classId: app.classId, ruleId: stats.ruleId}, '한도.csv')">
                 이 표 CSV
             </UiButton>
         </template>

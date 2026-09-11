@@ -22,14 +22,25 @@ const error = ref('')
 
 const canFinish = computed(() => app.ready)
 
+/**
+ * 학교를 저장하고 담임 학급을 만든다.
+ *
+ * **학급은 이제 행이다.** 명렬표도 출결도 이 학급(`classId`)에 매달리므로 명렬표보다
+ * 먼저 있어야 한다. 같은 학년 · 반으로 다시 저장해도 학급이 늘지 않는 것은
+ * `app.createClass`가 맡는다 — 교사가 [저장]을 두 번 누르는 것은 흔한 일이고,
+ * 그때마다 학급이 늘면 명단이 어느 쪽에 붙었는지 알 수 없게 된다.
+ *
+ * 학급 이름은 화면에 적히는 값이라 여기서 짓는다(`3학년 6반`). 교과 강좌는 반이
+ * 섞여 이렇게 지을 수 없으므로, 이 규칙은 담임 학급에만 해당한다.
+ */
 async function saveSchool() {
     error.value = ''
+    const grade = Number(form.value.grade)
+    const classNo = Number(form.value.classNo)
     try {
         await school.saveSchool({name: form.value.name.trim() || '우리 학교', maxSlot: form.value.maxSlot})
-        await app.selectClass({
-            yearId: app.yearId ?? app.years[0]?.id,
-            grade: Number(form.value.grade),
-            classNo: Number(form.value.classNo),
+        await app.createClass({
+            role: 'homeroom', name: `${grade}학년 ${classNo}반`, grade, classNo,
         })
     } catch (e) {
         error.value = String(e)
@@ -91,7 +102,12 @@ onMounted(async () => {
         <UiLedger hint="번호와 이름만 있으면 됩니다" title="명렬표">
             <div class="set__row">
                 <span class="set__label">파일에서 가져오기</span>
-                <span class="set__value"><RosterPanel/></span>
+                <span class="set__value">
+                    <!-- 명단이 붙을 곳은 학급이다. 학급이 없는 동안 가져오기를 열어 두면
+                         파일을 읽고 [저장]까지 누른 뒤에야 갈 곳이 없다는 것을 안다. -->
+                    <RosterPanel v-if="app.ready"/>
+                    <span v-else class="set__hint">위에서 우리 반을 먼저 저장해주세요</span>
+                </span>
             </div>
         </UiLedger>
 

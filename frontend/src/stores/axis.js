@@ -55,7 +55,7 @@ export const useAxisStore = defineStore('axis', {
             const app = useAppStore()
             this.error = ''
             try {
-                this.memos = await invoke('get_memo_suggestions', {...app.scope, limit})
+                this.memos = await invoke('get_memo_suggestions', {classId: app.classId, limit})
             } catch (e) {
                 this.error = String(e)
                 throw e

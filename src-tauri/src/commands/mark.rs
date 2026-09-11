@@ -22,6 +22,7 @@
 use super::attendance::{
     load_spans, max_slot_of, ranges_for, set_span_memo_impl, set_span_tag_impl,
 };
+use crate::commands::class::{homeroom_scope, member_count_on};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::due::{days_overdue, format_date, format_korean, parse_date};
@@ -35,22 +36,18 @@ use tauri::State;
 // ── 조건 조각 ─────────────────────────────────────────────────
 //
 // 별칭은 `load_spans`의 질의가 정한다 — 구간이 `s`, 학생이 `st`다.
-// 매개변수 자리는 ?1 학교 · ?2 학년도 · ?3 학년 · ?4 반 · ?5 월 패턴으로 고정한다.
+// 매개변수 자리는 ?1 학급 · ?2 월 패턴으로 고정한다.
 
-/// 두 목록이 공통으로 쓰는 학급 조건.
-const CLASS_CLAUSES: [&str; 4] = [
-    "st.school_id = ?1",
-    "st.year_id = ?2",
-    "st.grade = ?3",
-    "st.class_no = ?4",
-];
+/// 두 목록이 공통으로 쓰는 학급 조건. **구간이 학급을 직접 가리킨다** —
+/// 학적(학년 · 반)으로 거르면 교과 강좌 화면에 담임 출결이 샌다.
+const CLASS_CLAUSE: &str = "s.class_id = ?1";
 
 /// 아직 받지 않은 서류 · 아직 등재하지 않은 구간.
 const DOC_UNDONE: &str = "s.doc_done = 0";
 const NEIS_UNDONE: &str = "s.neis_done = 0";
 
 /// 월 필터. 날짜가 ISO라 앞자리 비교로 그 달이 구분된다.
-const MONTH_LIKE: &str = "s.date LIKE ?5";
+const MONTH_LIKE: &str = "s.date LIKE ?2";
 
 /// 목록의 기본 순서. 서류는 이 뒤에 마감 순으로 다시 세운다.
 const SPAN_ORDER: &str = "ORDER BY s.date, st.number, s.id";
@@ -147,24 +144,19 @@ pub fn set_neis_done_impl(
 /// 하는지는 교사가 목록을 보고 개별로 해제한다.
 pub fn mark_day_neis_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     date: &str,
     today: &str,
 ) -> Result<i64, String> {
     let date = iso(date)?;
     let today = iso(today)?;
+    let scope = homeroom_scope(conn, class_id)?;
     with_transaction(conn, || {
         let changed = conn
             .execute(
                 "UPDATE absence_span SET neis_done = 1, neis_done_on = ?1
-                 WHERE neis_done = 0 AND date = ?2
-                   AND student_id IN (SELECT id FROM student
-                                       WHERE school_id = ?3 AND year_id = ?4
-                                         AND grade = ?5 AND class_no = ?6)",
-                rusqlite::params![today, date, school_id, year_id, grade, class_no],
+                 WHERE neis_done = 0 AND date = ?2 AND class_id = ?3",
+                rusqlite::params![today, date, scope.id],
             )
             .map_err(|e| e.to_string())?;
         Ok(changed as i64)
@@ -181,11 +173,9 @@ fn span_context(
     span_id: i64,
     type_id: Option<i64>,
 ) -> Result<(i64, Option<String>), String> {
-    let school_id = conn
+    let class_id = conn
         .query_row(
-            "SELECT st.school_id FROM absence_span s
-               JOIN student st ON st.id = s.student_id
-              WHERE s.id = ?1",
+            "SELECT class_id FROM absence_span WHERE id = ?1",
             rusqlite::params![span_id],
             |r| r.get(0),
         )
@@ -195,6 +185,7 @@ fn span_context(
             }
             other => other.to_string(),
         })?;
+    let school_id = homeroom_scope(conn, class_id)?.school_id;
     let Some(id) = type_id else {
         return Ok((school_id, None));
     };
@@ -288,13 +279,9 @@ pub fn save_focus_entries_impl(
 ///
 /// `include_done`이 true면 이미 받은 건도 함께 돌려준다. 화면에서 체크한 줄이
 /// 곧바로 사라지면 잘못 눌렀을 때 되돌릴 자리가 없기 때문이다.
-#[allow(clippy::too_many_arguments)]
 pub fn get_doc_pending_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     year: Option<i64>,
     month: Option<i64>,
     include_done: bool,
@@ -303,9 +290,10 @@ pub fn get_doc_pending_impl(
     let today_date = parse_date(today)?;
     let today = format_date(today_date);
     let like = period_like(year, month)?;
+    let scope = homeroom_scope(conn, class_id)?;
 
-    let mut clauses: Vec<&str> = CLASS_CLAUSES.to_vec();
-    let mut params: Vec<&dyn ToSql> = vec![&school_id, &year_id, &grade, &class_no];
+    let mut clauses: Vec<&str> = vec![CLASS_CLAUSE];
+    let mut params: Vec<&dyn ToSql> = vec![&scope.id];
     if !include_done {
         clauses.push(DOC_UNDONE);
     }
@@ -335,23 +323,19 @@ pub fn get_doc_pending_impl(
 /// 나이스는 하루씩 입력하므로 위에서 아래로 그대로 옮겨 적는 순서가 된다.
 /// 서류와 달리 `include_done`이 없다 — 등재는 하루 단위로 끝내는 일이라,
 /// 끝난 날은 목록에서 빠지는 편이 남은 날을 세기 쉽다.
-#[allow(clippy::too_many_arguments)]
 pub fn get_neis_pending_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     year: Option<i64>,
     month: Option<i64>,
     today: &str,
 ) -> Result<Vec<DayGroup>, String> {
     let today = iso(today)?;
     let like = period_like(year, month)?;
+    let scope = homeroom_scope(conn, class_id)?;
 
-    let mut clauses: Vec<&str> = CLASS_CLAUSES.to_vec();
-    clauses.push(NEIS_UNDONE);
-    let mut params: Vec<&dyn ToSql> = vec![&school_id, &year_id, &grade, &class_no];
+    let mut clauses: Vec<&str> = vec![CLASS_CLAUSE, NEIS_UNDONE];
+    let mut params: Vec<&dyn ToSql> = vec![&scope.id];
     if let Some(pattern) = &like {
         clauses.push(MONTH_LIKE);
         params.push(pattern);
@@ -370,34 +354,12 @@ pub fn get_neis_pending_impl(
     for (date, day_spans) in by_date {
         groups.push(DayGroup {
             date_label: format_korean(parse_date(&date)?),
-            enrolled: enrolled_on(conn, school_id, year_id, grade, class_no, &date)?,
+            enrolled: member_count_on(conn, scope.id, &date)?,
             date,
             spans: day_spans,
         });
     }
     Ok(groups)
-}
-
-/// 그날 재학 중이던 학생 수. 전출한 학생의 기록은 목록에 남지만 머릿수에서는 빠진다.
-///
-/// 조건은 `attendance.rs`의 `enrolled_count`와 같다. 그쪽이 비공개라 한 벌 더 두었다 —
-/// 재학 판정이 화면마다 갈라지면 같은 날 머릿수가 화면마다 달라진다.
-fn enrolled_on(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    date: &str,
-) -> Result<i64, String> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM student
-         WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-           AND enrolled_from <= ?5 AND (enrolled_to IS NULL OR enrolled_to > ?5)",
-        rusqlite::params![school_id, year_id, grade, class_no, date],
-        |r| r.get(0),
-    )
-    .map_err(|e| e.to_string())
 }
 
 // ── 커맨드 ────────────────────────────────────────────────────
@@ -425,16 +387,11 @@ pub fn set_neis_done(
 #[tauri::command]
 pub fn mark_day_neis(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     date: String,
     today: String,
 ) -> Result<i64, String> {
-    with_conn(&db, |c| {
-        mark_day_neis_impl(c, school_id, year_id, grade, class_no, &date, &today)
-    })
+    with_conn(&db, |c| mark_day_neis_impl(c, class_id, &date, &today))
 }
 
 #[tauri::command]
@@ -447,46 +404,28 @@ pub fn save_focus_entries(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn get_doc_pending(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     year: Option<i64>,
     month: Option<i64>,
     include_done: bool,
     today: String,
 ) -> Result<Vec<SpanItem>, String> {
     with_conn(&db, |c| {
-        get_doc_pending_impl(
-            c,
-            school_id,
-            year_id,
-            grade,
-            class_no,
-            year,
-            month,
-            include_done,
-            &today,
-        )
+        get_doc_pending_impl(c, class_id, year, month, include_done, &today)
     })
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn get_neis_pending(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     year: Option<i64>,
     month: Option<i64>,
     today: String,
 ) -> Result<Vec<DayGroup>, String> {
     with_conn(&db, |c| {
-        get_neis_pending_impl(c, school_id, year_id, grade, class_no, year, month, &today)
+        get_neis_pending_impl(c, class_id, year, month, &today)
     })
 }

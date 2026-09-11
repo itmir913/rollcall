@@ -15,10 +15,13 @@ vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn()}))
 
 function readyApp() {
     const app = useAppStore()
-    app.schoolId = 1
+    app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7}]
     app.yearId = 2
-    app.grade = 3
-    app.classNo = 6
+    app.classes = [{
+        id: 9, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+        grade: 3, classNo: 6, validTo: null,
+    }]
+    app.classId = 9
     app.today = '2026-09-10'
 }
 
@@ -35,8 +38,7 @@ describe('서류 미제출자', () => {
         await pending.fetchDocs()
 
         expect(invoke).toHaveBeenCalledWith('get_doc_pending', {
-            schoolId: 1, yearId: 2, grade: 3, classNo: 6,
-            year: null, month: null, includeDone: false, today: '2026-09-10',
+            classId: 9, year: null, month: null, includeDone: false, today: '2026-09-10',
         })
     })
 

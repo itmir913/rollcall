@@ -1,5 +1,6 @@
 pub mod attendance;
 pub mod axis;
+pub mod class;
 pub mod config;
 pub mod export;
 pub mod file;
@@ -14,6 +15,7 @@ pub mod year;
 
 pub use attendance::*;
 pub use axis::*;
+pub use class::*;
 pub use config::*;
 pub use export::*;
 pub use file::*;

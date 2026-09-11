@@ -11,10 +11,10 @@ use rusqlite::Connection;
 ///
 /// 커맨드를 부르지 않고 SQL로 넣는 이유는, 이 파일이 검사하는 것이 커맨드의
 /// 업무 규칙이 아니라 **DB 자체의 동작**이기 때문이다.
-fn insert_span(conn: &Connection, student_id: i64, date: &str) -> i64 {
+fn insert_span(conn: &Connection, class_id: i64, student_id: i64, date: &str) -> i64 {
     conn.execute(
-        "INSERT INTO absence_span (student_id, date, memo) VALUES (?1, ?2, '')",
-        rusqlite::params![student_id, date],
+        "INSERT INTO absence_span (class_id, student_id, date, memo) VALUES (?1, ?2, ?3, '')",
+        rusqlite::params![class_id, student_id, date],
     )
     .unwrap();
     conn.last_insert_rowid()
@@ -95,8 +95,9 @@ fn deleting_a_student_takes_its_records_with_it() {
     // 그래서 전출을 삭제로 처리하지 않는다.
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
-    insert_span(&conn, sid, "2026-08-26");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
+    insert_span(&conn, class, sid, "2026-08-26");
 
     conn.execute("DELETE FROM student WHERE id = ?1", rusqlite::params![sid])
         .unwrap();
@@ -113,8 +114,9 @@ fn a_span_can_be_saved_with_neither_axis_decided() {
     // 학생이 안 왔는데 연락이 닿지 않으면 두 축이 다 빈 채로 남는다.
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
-    let id = insert_span(&conn, sid, "2026-08-26");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
+    let id = insert_span(&conn, class, sid, "2026-08-26");
 
     let (reason, r#type): (Option<i64>, Option<i64>) = conn
         .query_row(

@@ -17,6 +17,7 @@
 //! 구현하면 두 화면의 첫 줄이 서로 다른 학생이 된다.
 
 use crate::commands::attendance::load_spans;
+use crate::commands::class::{homeroom_scope, member_count_on};
 use crate::commands::mark::{get_doc_pending_impl, get_neis_pending_impl};
 use crate::commands::with_conn;
 use crate::due::{format_date, format_korean, parse_date};
@@ -26,48 +27,16 @@ use rusqlite::{Connection, ToSql};
 use std::collections::HashSet;
 use tauri::State;
 
-/// 그날 재학 중이던 인원.
-///
-/// 전출은 삭제가 아니라 `enrolled_to`를 채우는 일이므로, 전출 전 날짜를 열면 그 학생은
-/// 다시 인원에 들어온다. 지난 달을 열었을 때 인원이 오늘 기준으로 나오면
-/// "그날 서른 명 중 몇 명"이라는 문장이 틀린다.
-///
-/// 조건은 `attendance`의 하루 격자와 **같아야 한다.** 개요가 말하는 인원과 격자에
-/// 뜨는 줄 수가 다르면 교사는 둘 중 어느 쪽이 맞는지 알 방법이 없다.
-pub fn enrolled_on_impl(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    date: &str,
-) -> Result<i64, String> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM student
-          WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-            AND enrolled_from <= ?5 AND (enrolled_to IS NULL OR enrolled_to > ?5)",
-        rusqlite::params![school_id, year_id, grade, class_no, date],
-        |r| r.get(0),
-    )
-    .map_err(|e| e.to_string())
-}
-
-/// 하루치 구간. 그날 재학 중인 학생의 것만 센다 — 인원과 같은 기준이어야
-/// "서른 명 중 네 명"이 성립한다.
+/// 하루치 구간. **학급으로 거른다** — 학생으로 거르면 그 학생이 내 교과 강좌에도
+/// 있을 때 두 화면이 서로의 기록을 보게 된다.
 ///
 /// 별칭은 `attendance::load_spans`가 정한 것을 그대로 쓴다. 구간이 `s`, 학생이 `st`다.
-const DAY_SPANS: &str = "WHERE s.date = ?1 AND st.school_id = ?2 AND st.year_id = ?3
-                           AND st.grade = ?4 AND st.class_no = ?5
-                           AND st.enrolled_from <= ?1
-                           AND (st.enrolled_to IS NULL OR st.enrolled_to > ?1)
+const DAY_SPANS: &str = "WHERE s.class_id = ?1 AND s.date = ?2
                          ORDER BY st.number, s.id";
 
 pub fn get_home_summary_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     date: &str,
     limit: i64,
 ) -> Result<HomeSummary, String> {
@@ -76,13 +45,18 @@ pub fn get_home_summary_impl(
     // 음수 limit은 거절하지 않고 0으로 본다. 몇 줄을 보여줄지는 화면의 취향이고,
     // 그것 때문에 개요 전체가 실패하면 밀린 일도 함께 안 보인다.
     let take = limit.max(0) as usize;
+    let scope = homeroom_scope(conn, class_id)?;
 
-    let enrolled = enrolled_on_impl(conn, school_id, year_id, grade, class_no, &date)?;
+    // 그날 명단 인원. 명단에서 빠지는 일과 전출은 각각 기간이 닫히므로, 지난 달을
+    // 열면 그날의 인원이 그대로 나온다. 오늘 기준으로 세면 "그날 서른 명 중 몇 명"이
+    // 틀린 문장이 된다. 세는 규칙은 하루 격자와 **같은 도우미**가 들고 있다 —
+    // 개요가 말하는 인원과 격자에 뜨는 줄 수가 다르면 어느 쪽이 맞는지 알 수 없다.
+    let enrolled = member_count_on(conn, scope.id, &date)?;
 
     // 오늘치 — 찍은 학생 수와 미완성 구간 수.
     // 기준일은 화면이 넘긴 날이다. 시스템 시계를 읽으면 지난 날짜를 열어 둔 채
     // 정리하는 동안 화면이 보는 날과 경과일의 기준이 어긋난다.
-    let params: [&dyn ToSql; 5] = [&date, &school_id, &year_id, &grade, &class_no];
+    let params: [&dyn ToSql; 2] = [&scope.id, &date];
     let today_spans = load_spans(conn, DAY_SPANS, &params, &date)?;
     let recorded = today_spans
         .iter()
@@ -92,9 +66,7 @@ pub fn get_home_summary_impl(
     let incomplete = today_spans.iter().filter(|s| !s.complete).count() as i64;
 
     // 밀린 일 — 날짜로 자르지 않는다. 지난 달 것이 남아 있는 것이 바로 밀린 일이다.
-    let mut doc_rows = get_doc_pending_impl(
-        conn, school_id, year_id, grade, class_no, None, None, false, &date,
-    )?;
+    let mut doc_rows = get_doc_pending_impl(conn, scope.id, None, None, false, &date)?;
     let doc_pending = doc_rows.len() as i64;
     // 경과일은 `mark`가 같은 기준일로 이미 세어 둔 값이다. 여기서 다시 세면 두 화면의
     // "며칠 지났다"가 갈라질 수 있다.
@@ -104,8 +76,7 @@ pub fn get_home_summary_impl(
         .count() as i64;
     doc_rows.truncate(take);
 
-    let neis_groups =
-        get_neis_pending_impl(conn, school_id, year_id, grade, class_no, None, None, &date)?;
+    let neis_groups = get_neis_pending_impl(conn, scope.id, None, None, &date)?;
     let mut neis_rows: Vec<SpanItem> = neis_groups.into_iter().flat_map(|g| g.spans).collect();
     let neis_pending = neis_rows.len() as i64;
     neis_rows.truncate(take);
@@ -129,14 +100,9 @@ pub fn get_home_summary_impl(
 #[tauri::command]
 pub fn get_home_summary(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     date: String,
     limit: i64,
 ) -> Result<HomeSummary, String> {
-    with_conn(&db, |c| {
-        get_home_summary_impl(c, school_id, year_id, grade, class_no, &date, limit)
-    })
+    with_conn(&db, |c| get_home_summary_impl(c, class_id, &date, limit))
 }

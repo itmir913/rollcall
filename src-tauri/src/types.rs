@@ -50,6 +50,28 @@ pub struct AcademicYearItem {
     pub ends_on: Option<String>,
 }
 
+// ── 내가 맡은 것 ──────────────────────────────────────────────
+
+/// 담임 학급 하나 또는 교과 강좌 하나. **화면의 범위가 이 행의 `id`다.**
+///
+/// `grade` · `class_no`는 담임일 때만 채워진다. 교과 강좌는 여러 반에서 모이므로
+/// 가리킬 반이 없다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeachingClassItem {
+    pub id: i64,
+    pub school_id: i64,
+    pub year_id: i64,
+    /// homeroom | subject — 기록하는 것이 달라 화면이 나뉜다.
+    pub role: String,
+    pub name: String,
+    pub grade: Option<i64>,
+    pub class_no: Option<i64>,
+    pub sort_order: i64,
+    pub valid_from: String,
+    pub valid_to: Option<String>,
+}
+
 // ── 학생 ──────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize)]
@@ -231,6 +253,10 @@ pub struct QuotaRuleItem {
 pub struct SpanItem {
     pub id: i64,
     pub student_id: i64,
+    /// 그 학생의 **학적**이다. 학급의 학년 · 반이 아니다 — 명단에 반이 다른 학생이
+    /// 들어올 수 있고, 문자 발송 시스템은 이 세 값으로 수신자를 찾는다.
+    pub grade: i64,
+    pub class_no: i64,
     pub number: i64,
     pub name: String,
     pub date: String,
@@ -267,6 +293,9 @@ pub struct SpanItem {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StampInput {
+    /// 어느 담임 학급의 기록인가. **학생이 아니라 학급이 범위다** —
+    /// 같은 학생이 내 교과 강좌에도 있을 수 있어, 학생만으로는 자리를 정할 수 없다.
+    pub class_id: i64,
     pub student_id: i64,
     pub date: String,
     #[serde(default)]
@@ -376,6 +405,9 @@ pub struct HomeSummary {
 #[serde(rename_all = "camelCase")]
 pub struct QuotaRow {
     pub student_id: i64,
+    /// 그 학생의 학적. 내보내기가 이 세 값으로 수신자를 찾게 한다.
+    pub grade: i64,
+    pub class_no: i64,
     pub number: i64,
     pub name: String,
     pub used: i64,

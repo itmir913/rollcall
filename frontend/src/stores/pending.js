@@ -32,7 +32,7 @@ export const usePendingStore = defineStore('pending', {
             this.error = ''
             try {
                 this.docRows = await invoke('get_doc_pending', {
-                    ...app.scope,
+                    classId: app.classId,
                     year: this.year,
                     month: this.month,
                     includeDone: this.includeDone,
@@ -50,7 +50,7 @@ export const usePendingStore = defineStore('pending', {
             this.error = ''
             try {
                 this.neisDays = await invoke('get_neis_pending', {
-                    ...app.scope,
+                    classId: app.classId,
                     year: this.year,
                     month: this.month,
                     today: app.today,
@@ -98,7 +98,11 @@ export const usePendingStore = defineStore('pending', {
             const app = useAppStore()
             this.error = ''
             try {
-                const count = await invoke('mark_day_neis', {...app.scope, date, today: app.today})
+                const count = await invoke('mark_day_neis', {
+                    classId: app.classId,
+                    date,
+                    today: app.today,
+                })
                 const day = this.neisDays.find((d) => d.date === date)
                 if (day) {
                     day.spans.forEach((s) => Object.assign(s, {neisDone: true, neisDoneOn: app.today}))

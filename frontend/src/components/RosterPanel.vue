@@ -8,6 +8,10 @@
  * **버린 줄은 조용히 넘기지 않는다.** 서른 명 중 스물아홉 명만 들어왔는데 아무 말이
  * 없으면 교사는 알 방법이 없다. 몇 번째 줄이 왜 빠졌는지 함께 보여준다.
  *
+ * **명단이 붙는 곳은 지금 고른 학급(`classId`)이다.** 파일이 말하는 학년 · 반은
+ * 그 학생의 학적이지 소속이 아니라, 어느 명단에 넣을지를 정하지 않는다. 다른 반을
+ * 가리키는 파일도 막지 않고 **알리기만 한다** — 막으면 현장의 예외를 담을 수 없다.
+ *
  * 설정과 첫 실행이 같은 것을 쓴다. 가져오기 규칙이 두 벌이 되면 한쪽에만 붙는다.
  */
 import {computed, onMounted, ref} from 'vue'
@@ -40,6 +44,18 @@ const counts = computed(() => {
     return out
 })
 
+/**
+ * 파일이 가리키는 학급이 지금 학급과 다른가. 막지 않고 알리기만 한다 —
+ * 다른 반 학생이 우리 반 명단에 실리는 일이 실제로 있고, 그 판단은 교사 몫이다.
+ */
+const mismatch = computed(() => {
+    const cls = app.currentClass
+    const {grade, classNo} = detected.value ?? {}
+    if (!cls || grade == null || classNo == null) return ''
+    if (grade === cls.grade && classNo === cls.classNo) return ''
+    return `파일은 ${grade}학년 ${classNo}반을 가리킵니다 — 「${cls.name}」 명단으로 들어갑니다.`
+})
+
 /** 파일을 읽은 뒤. 어느 파서가 읽었는지와 버린 줄을 그대로 보여준다. */
 async function onLoaded(result) {
     error.value = ''
@@ -48,9 +64,7 @@ async function onLoaded(result) {
     skipped.value = result.skipped ?? []
     try {
         detected.value = await roster.detectClass(result.entries)
-        const grade = detected.value?.grade ?? app.grade
-        const classNo = detected.value?.classNo ?? app.classNo
-        rows.value = await roster.preview(app.yearId, grade, classNo, result.entries)
+        rows.value = await roster.preview(app.classId, result.entries)
     } catch (e) {
         error.value = String(e)
     }
@@ -68,15 +82,10 @@ function toggleAction(row) {
 async function apply() {
     error.value = ''
     try {
-        const grade = detected.value?.grade ?? app.grade
-        const classNo = detected.value?.classNo ?? app.classNo
-        const result = await roster.apply(
-            app.yearId, grade, classNo, effectiveDate.value, rows.value,
-        )
+        const result = await roster.apply(app.classId, effectiveDate.value, rows.value)
         rows.value = []
         message.value =
             `새로 ${result.added}명, 이름 고침 ${result.renamed}명, 전출 ${result.withdrawn}명을 저장했습니다.`
-        if (!app.ready) await app.selectClass({yearId: app.yearId, grade, classNo})
     } catch (e) {
         error.value = String(e)
     }
@@ -84,7 +93,7 @@ async function apply() {
 
 onMounted(() => {
     if (app.ready) {
-        roster.fetchStudents(app.yearId, app.grade, app.classNo).catch(() => {
+        roster.fetchStudents(app.classId).catch(() => {
         })
     }
 })
@@ -100,6 +109,8 @@ onMounted(() => {
         <UiNotice v-if="skipped.length"
                   :text="`읽지 못한 줄이 있습니다 — ${skipped.map((s) => `${s.line}번째 줄(${s.why})`).join(', ')}`"
                   kind="warn"/>
+
+        <UiNotice :text="mismatch" kind="warn"/>
 
         <UiLedger v-if="rows.length"
                   :hint="parser ? `${parser}로 읽음` : ''"

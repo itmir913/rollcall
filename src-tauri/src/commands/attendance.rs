@@ -12,9 +12,14 @@
 //! 무르고 싶다"가 교사에게는 같은 동작이기 때문이다. 조합이 하나라도 다르면 쌓는다 —
 //! 한 학생이 `1교시 지각`과 `5~7교시 조퇴`를 함께 가지는 것이 정상이다.
 //!
+//! **범위는 담임 학급 하나(`classId`)다.** 구간이 그 학급을 직접 가리키므로 조건도
+//! `s.class_id`다. 학생으로 거르지 않는 이유는, 같은 학생이 내 담임 반에도 내 교과
+//! 강좌에도 있을 수 있어 학생으로 거르면 교과 화면에 담임 출결이 새기 때문이다.
+//!
 //! 트랜잭션 규칙: 여러 문장을 쓰는 경로는 `db::with_transaction`으로만 연다.
 //! 조기 반환은 클로저 **안에서** `?`로 한다(db.rs 참고).
 
+use crate::commands::class::{homeroom_scope, member_count_on, member_rows_on};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::due::{self, format_date, format_korean, parse_date};
@@ -72,21 +77,30 @@ pub(crate) fn off_days_of(conn: &Connection, school_id: i64) -> Result<HashSet<N
     Ok(rows.iter().filter_map(|s| parse_date(s).ok()).collect())
 }
 
-fn student_school(conn: &Connection, student_id: i64) -> Result<i64, String> {
-    conn.query_row(
-        "SELECT school_id FROM student WHERE id = ?1",
-        params![student_id],
-        |r| r.get(0),
-    )
-    .map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => format!("학생을 찾을 수 없습니다: {student_id}"),
-        other => other.to_string(),
-    })
+/// 그 학생이 이 학급 명단인지 확인한다. **날짜로 좁히지 않는다** — 지난 날짜를 열어
+/// 정리하는 동안 지금 명단에서 빠진 학생의 그날 기록을 고칠 수 있어야 한다.
+///
+/// 확인하는 이유는 판정이 아니라 메시지다. 그냥 넣으면 외래키 위반이 "참조하는 항목이
+/// 없습니다"로 올라와, 교사는 무엇이 잘못됐는지 알 수 없다.
+fn ensure_member(conn: &Connection, class_id: i64, student_id: i64) -> Result<(), String> {
+    let found: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM class_member WHERE class_id = ?1 AND student_id = ?2",
+            params![class_id, student_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if found == 0 {
+        return Err(format!("이 학급 명단에 없는 학생입니다: {student_id}"));
+    }
+    Ok(())
 }
 
-fn span_student(conn: &Connection, span_id: i64) -> Result<i64, String> {
+/// 그 구간이 어느 학급의 것인가. **학생이 아니라 학급에서 학교를 얻는다** —
+/// 같은 학생이 학교를 옮겨 다니지는 않지만, 범위를 말하는 것은 언제나 학급이다.
+fn span_class(conn: &Connection, span_id: i64) -> Result<i64, String> {
     conn.query_row(
-        "SELECT student_id FROM absence_span WHERE id = ?1",
+        "SELECT class_id FROM absence_span WHERE id = ?1",
         params![span_id],
         |r| r.get(0),
     )
@@ -257,7 +271,8 @@ const SPAN_SELECT: &str = "SELECT s.id, s.student_id, st.number, st.name, s.date
                                   s.tag_id, g.name, s.memo,
                                   s.doc_done, s.doc_due, s.doc_done_on,
                                   s.neis_done, s.neis_done_on, s.group_id,
-                                  sc.max_slot
+                                  sc.max_slot,
+                                  st.grade, st.class_no
                            FROM absence_span s
                            JOIN student st ON st.id = s.student_id
                            JOIN school sc ON sc.id = st.school_id
@@ -292,6 +307,10 @@ fn map_span(row: &rusqlite::Row, today: NaiveDate) -> rusqlite::Result<SpanItem>
     Ok(SpanItem {
         id: row.get(0)?,
         student_id: row.get(1)?,
+        // 학적은 **맨 뒤에 붙어 있다.** 가운데 끼우면 아래 스무 남짓한 자리가 전부
+        // 한 칸씩 밀리고, 그 밀림은 형이 같은 열끼리 조용히 어긋난다.
+        grade: row.get(23)?,
+        class_no: row.get(24)?,
         number: row.get(2)?,
         name: row.get(3)?,
         date,
@@ -406,9 +425,13 @@ pub(crate) fn load_spans_on(
 // ── 구간 쓰기 ─────────────────────────────────────────────────
 
 /// 구분 · 종류 · 기간이 **완전히 같은** 구간을 찾는다. NULL끼리도 같은 것으로 본다.
+///
+/// 학급까지 함께 본다. 무르기는 지금 보고 있는 학급 안에서의 일이라,
+/// 학생만으로 찾으면 다른 학급에 찍어 둔 같은 모양의 기록이 대신 지워진다.
 #[allow(clippy::too_many_arguments)]
 fn find_exact(
     conn: &Connection,
+    class_id: i64,
     student_id: i64,
     date: &str,
     reason_id: Option<i64>,
@@ -418,11 +441,13 @@ fn find_exact(
 ) -> Result<Option<i64>, String> {
     conn.query_row(
         "SELECT id FROM absence_span
-         WHERE student_id = ?1 AND date = ?2
-           AND reason_id IS ?3 AND type_id IS ?4
-           AND start_slot IS ?5 AND end_slot IS ?6
+         WHERE class_id = ?1 AND student_id = ?2 AND date = ?3
+           AND reason_id IS ?4 AND type_id IS ?5
+           AND start_slot IS ?6 AND end_slot IS ?7
          ORDER BY id LIMIT 1",
-        params![student_id, date, reason_id, type_id, start_slot, end_slot],
+        params![
+            class_id, student_id, date, reason_id, type_id, start_slot, end_slot
+        ],
         |r| r.get::<_, i64>(0),
     )
     .map(Some)
@@ -435,6 +460,7 @@ fn find_exact(
 #[allow(clippy::too_many_arguments)]
 fn insert_span(
     conn: &Connection,
+    class_id: i64,
     student_id: i64,
     date: &str,
     reason_id: Option<i64>,
@@ -446,10 +472,12 @@ fn insert_span(
 ) -> Result<i64, String> {
     conn.execute(
         "INSERT INTO absence_span
-           (student_id, date, reason_id, type_id, start_slot, end_slot, doc_due, group_id)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+           (class_id, student_id, date, reason_id, type_id, start_slot, end_slot,
+            doc_due, group_id)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
-            student_id, date, reason_id, type_id, start_slot, end_slot, doc_due, group_id
+            class_id, student_id, date, reason_id, type_id, start_slot, end_slot, doc_due,
+            group_id
         ],
     )
     .map_err(|e| constraint_err(&e, "이미 같은 구간이 있습니다."))?;
@@ -481,8 +509,9 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
     // 넣으면 날짜로 거르는 모든 화면에서 그 행이 사라진다 — 날짜 비교가 문자열 비교라
     // `2026-9-10`은 `2026-09-30`보다 뒤로 읽히고, `LIKE '2026-09%'`에도 걸리지 않는다.
     let date = format_date(base);
-    let school_id = student_school(conn, input.student_id)?;
-    let settings = school_settings(conn, school_id)?;
+    let scope = homeroom_scope(conn, input.class_id)?;
+    ensure_member(conn, scope.id, input.student_id)?;
+    let settings = school_settings(conn, scope.school_id)?;
     let prompt = slot_prompt_of(conn, input.type_id)?;
     let ranges = ranges_for(prompt.as_deref(), &input.slots, settings.max_slot as usize)?;
 
@@ -491,6 +520,7 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
         for (s, e) in &ranges {
             found.push(find_exact(
                 conn,
+                scope.id,
                 input.student_id,
                 &date,
                 input.reason_id,
@@ -513,7 +543,7 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
             });
         }
 
-        let off_days = off_days_of(conn, school_id)?;
+        let off_days = off_days_of(conn, scope.school_id)?;
         let doc_due = due_for(base, &settings, &off_days);
         let mut ids = Vec::new();
         for ((s, e), existing) in ranges.iter().zip(found) {
@@ -522,6 +552,7 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
             }
             ids.push(insert_span(
                 conn,
+                scope.id,
                 input.student_id,
                 &date,
                 input.reason_id,
@@ -544,9 +575,8 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
 /// **마감은 다시 계산하지 않는다.** 이미 교사가 학부모에게 말해 둔 날짜이고,
 /// 축을 고쳤다고 소급해 움직이면 그 약속이 조용히 달라진다.
 pub fn edit_span_impl(conn: &Connection, edit: &SpanEdit) -> Result<(), String> {
-    let student_id = span_student(conn, edit.span_id)?;
-    let school_id = student_school(conn, student_id)?;
-    let max_slot = max_slot_of(conn, school_id)?;
+    let scope = homeroom_scope(conn, span_class(conn, edit.span_id)?)?;
+    let max_slot = max_slot_of(conn, scope.school_id)?;
     let prompt = slot_prompt_of(conn, edit.type_id)?;
     let ranges = ranges_for(prompt.as_deref(), &edit.slots, max_slot as usize)?;
 
@@ -626,81 +656,38 @@ pub fn set_span_tag_impl(
 
 // ── 화면별 묶음 ───────────────────────────────────────────────
 
-fn enrolled_rows(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    date: &str,
-) -> Result<Vec<(i64, i64, String)>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, number, name FROM student
-             WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-               AND enrolled_from <= ?5 AND (enrolled_to IS NULL OR enrolled_to > ?5)
-             ORDER BY number",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(
-            params![school_id, year_id, grade, class_no, date],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(rows)
-}
-
-fn enrolled_count(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    date: &str,
-) -> Result<i64, String> {
-    conn.query_row(
-        "SELECT COUNT(*) FROM student
-         WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-           AND enrolled_from <= ?5 AND (enrolled_to IS NULL OR enrolled_to > ?5)",
-        params![school_id, year_id, grade, class_no, date],
-        |r| r.get(0),
-    )
-    .map_err(|e| e.to_string())
-}
-
-/// 하루치 격자. 그날 재학 중인 학생 전원이 행으로 나온다.
+/// 하루치 격자. 그날 명단에 있던 학생 전원이 행으로 나온다.
 ///
 /// 구간이 없어도 행은 나온다 — 빈 행이 곧 출석이고, 출석은 저장하지 않는다.
-/// 전출한 학생은 그날 재학이 아니므로 빠진다.
+/// 명단에서 빠졌거나 전출한 학생은 그날 명단이 아니므로 빠진다.
 pub fn get_day_grid_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     date: &str,
 ) -> Result<DayGrid, String> {
     let parsed = parse_date(date)?;
     // 저장된 날짜는 자리를 채운 ISO다. 화면이 `2026-9-10`을 넘겨도 같은 날을 찾도록 맞춘다.
     let date = format_date(parsed);
-    let max_slot = max_slot_of(conn, school_id)?;
-    let students = enrolled_rows(conn, school_id, year_id, grade, class_no, &date)?;
+    let scope = homeroom_scope(conn, class_id)?;
+    let max_slot = max_slot_of(conn, scope.school_id)?;
+    let students = member_rows_on(conn, scope.id, &date)?;
 
+    // 구간은 **학급으로 거른다.** 학생으로 거르면 그 학생이 내 교과 강좌에도 있을 때
+    // 두 화면이 서로의 기록을 보게 된다.
     // 격자의 기준일은 교사가 보고 있는 날이다. 지난 날짜를 열어 정리하는 경우가 있다.
     let spans = load_spans_on(
         conn,
-        "WHERE s.date = ?1 AND st.school_id = ?2 AND st.year_id = ?3
-           AND st.grade = ?4 AND st.class_no = ?5
-           AND st.enrolled_from <= ?1 AND (st.enrolled_to IS NULL OR st.enrolled_to > ?1)
+        "WHERE s.class_id = ?1 AND s.date = ?2
          ORDER BY st.number, s.id",
-        &[&date, &school_id, &year_id, &grade, &class_no],
+        &[&scope.id, &date],
         parsed,
     )?;
 
-    let rows = students
+    // 명단에 있는 학생이 격자의 줄이다. 다만 **그날 기록이 있는 학생은 명단에서
+    // 빠졌더라도 줄을 만든다.** 명렬표를 다시 가져와 번호가 빠지면 그 학생의 그날
+    // 구간은 학급에 그대로 남는데, 줄이 없으면 화면에서 손댈 수 없는 기록이 된다.
+    // 그날 그 학생은 이 반이었다 — 지우는 것은 교사가 보고 정할 일이다.
+    let mut rows: Vec<DayRow> = students
         .into_iter()
         .map(|(id, number, name)| DayRow {
             student_id: id,
@@ -709,6 +696,27 @@ pub fn get_day_grid_impl(
             spans: spans.iter().filter(|sp| sp.student_id == id).cloned().collect(),
         })
         .collect();
+
+    let listed: HashSet<i64> = rows.iter().map(|r| r.student_id).collect();
+    let mut extra: Vec<DayRow> = Vec::new();
+    for span in &spans {
+        if listed.contains(&span.student_id) || extra.iter().any(|r| r.student_id == span.student_id)
+        {
+            continue;
+        }
+        extra.push(DayRow {
+            student_id: span.student_id,
+            number: span.number,
+            name: span.name.clone(),
+            spans: spans
+                .iter()
+                .filter(|sp| sp.student_id == span.student_id)
+                .cloned()
+                .collect(),
+        });
+    }
+    rows.extend(extra);
+    rows.sort_by_key(|r| r.number);
 
     Ok(DayGrid {
         date,
@@ -724,13 +732,9 @@ pub fn get_day_grid_impl(
 /// NEIS 검증이 이것을 쓴다. 나이스 파일의 기간은 달에 맞춰 떨어지지 않고(월별 파일도
 /// 학기 중 임의 구간일 수 있다), 화면이 마지막에 보던 달로 대조하면 6월 파일을 9월
 /// 기록과 맞춰 보고는 "전부 앱에 없음"이라고 말한다.
-#[allow(clippy::too_many_arguments)]
 pub fn get_spans_between_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     from: &str,
     to: &str,
     today: &str,
@@ -742,30 +746,27 @@ pub fn get_spans_between_impl(
     if to < from {
         return Err("끝 날짜가 시작 날짜보다 앞입니다.".to_string());
     }
+    let scope = homeroom_scope(conn, class_id)?;
     load_spans(
         conn,
-        "WHERE s.date >= ?1 AND s.date <= ?2
-           AND st.school_id = ?3 AND st.year_id = ?4
-           AND st.grade = ?5 AND st.class_no = ?6
+        "WHERE s.class_id = ?1 AND s.date >= ?2 AND s.date <= ?3
          ORDER BY s.date, st.number, s.id",
-        &[&from, &to, &school_id, &year_id, &grade, &class_no],
+        &[&scope.id, &from, &to],
         today,
     )
 }
 
 /// 한 달치 기록을 날짜별로 묶는다. 최신 날짜가 먼저다.
 ///
-/// 전출한 학생의 지난 기록도 그대로 나온다 — 그날 그 학생은 이 반이었다.
-/// `enrolled`는 그날 재학 인원이므로 지금 인원과 다를 수 있다.
+/// 명단에서 빠진 학생의 지난 기록도 그대로 나온다 — 그 구간이 이 학급을 가리키고 있다.
+/// `enrolled`는 그날 명단 인원이므로 지금 인원과 다를 수 있다.
 pub fn get_month_log_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     year: i64,
     month: i64,
 ) -> Result<Vec<DayGroup>, String> {
+    let scope = homeroom_scope(conn, class_id)?;
     let first = NaiveDate::from_ymd_opt(year as i32, month as u32, 1)
         .ok_or_else(|| format!("연월이 올바르지 않습니다: {year}-{month}"))?;
     let next_month = if month == 12 {
@@ -784,19 +785,16 @@ pub fn get_month_log_impl(
     // 경과일을 쓰지 않는 표라 기준일은 그 달의 끝으로 넘긴다.
     let spans = load_spans_on(
         conn,
-        "WHERE s.date >= ?1 AND s.date <= ?2
-           AND st.school_id = ?3 AND st.year_id = ?4
-           AND st.grade = ?5 AND st.class_no = ?6
+        "WHERE s.class_id = ?1 AND s.date >= ?2 AND s.date <= ?3
          ORDER BY s.date DESC, st.number, s.id",
-        &[&from, &to, &school_id, &year_id, &grade, &class_no],
+        &[&scope.id, &from, &to],
         last,
     )?;
 
     let mut groups: Vec<DayGroup> = Vec::new();
     for span in spans {
         if groups.last().map(|g| g.date != span.date).unwrap_or(true) {
-            let enrolled =
-                enrolled_count(conn, school_id, year_id, grade, class_no, &span.date)?;
+            let enrolled = member_count_on(conn, scope.id, &span.date)?;
             groups.push(DayGroup {
                 date: span.date.clone(),
                 date_label: span.date_label.clone(),
@@ -817,10 +815,10 @@ pub fn get_month_log_impl(
 ///
 /// `hasExisting`은 **그 학생에게** 그날 기록이 있는지다. 학급 서른 명 중 누구든
 /// 하나 걸리면 되는 조건으로 세면 학기 중 거의 모든 날에 표시가 붙어, 정작 겹치는
-/// 날이 눈에 들어오지 않는다. 학생을 넘기지 않으면 그 학교 전체로 센다.
+/// 날이 눈에 들어오지 않는다. 학생을 넘기지 않으면 그 학급 전체로 센다.
 pub fn preview_bulk_impl(
     conn: &Connection,
-    school_id: i64,
+    class_id: i64,
     student_id: Option<i64>,
     from: &str,
     to: &str,
@@ -830,25 +828,24 @@ pub fn preview_bulk_impl(
     if to_d < from_d {
         return Err("끝 날짜가 시작 날짜보다 앞입니다.".to_string());
     }
-    // 없는 학교면 휴업일 목록이 빈 채로 넘어와 주말만 뺀 날짜가 나온다.
+    // 없는 학급이면 휴업일 목록이 빈 채로 넘어와 주말만 뺀 날짜가 나온다.
     // 조용히 틀린 미리보기를 내놓지 않도록 여기서 확인한다.
-    school_settings(conn, school_id)?;
-    let off_days = off_days_of(conn, school_id)?;
+    let scope = homeroom_scope(conn, class_id)?;
+    let off_days = off_days_of(conn, scope.school_id)?;
 
     let mut out = Vec::new();
     for d in due::open_days_between(from_d, to_d, &off_days) {
         let iso = format_date(d);
         let existing: i64 = match student_id {
             Some(id) => conn.query_row(
-                "SELECT COUNT(*) FROM absence_span WHERE student_id = ?1 AND date = ?2",
-                params![id, iso],
+                "SELECT COUNT(*) FROM absence_span
+                  WHERE class_id = ?1 AND student_id = ?2 AND date = ?3",
+                params![scope.id, id, iso],
                 |r| r.get(0),
             ),
             None => conn.query_row(
-                "SELECT COUNT(*) FROM absence_span s
-                 JOIN student st ON st.id = s.student_id
-                 WHERE st.school_id = ?1 AND s.date = ?2",
-                params![school_id, iso],
+                "SELECT COUNT(*) FROM absence_span WHERE class_id = ?1 AND date = ?2",
+                params![scope.id, iso],
                 |r| r.get(0),
             ),
         }
@@ -870,7 +867,8 @@ fn bulk_group_id(input: &StampInput, from: &str, to: &str) -> String {
     let mut picked = input.slots.clone();
     picked.sort();
     format!(
-        "bulk:{}:{}~{}:{}:{}:{}",
+        "bulk:{}:{}:{}~{}:{}:{}:{}",
+        input.class_id,
         input.student_id,
         from,
         to,
@@ -900,11 +898,12 @@ pub fn apply_bulk_impl(
     // 묶음 이름에 들어가는 기간도 자리를 채운 ISO다. `2026-6-1`과 `2026-06-01`이
     // 서로 다른 묶음이 되면 "같은 입력이면 같은 묶음"이라는 성질이 깨진다.
     let (from, to) = (format_date(from_d), format_date(to_d));
-    let school_id = student_school(conn, input.student_id)?;
-    let settings = school_settings(conn, school_id)?;
+    let scope = homeroom_scope(conn, input.class_id)?;
+    ensure_member(conn, scope.id, input.student_id)?;
+    let settings = school_settings(conn, scope.school_id)?;
     let prompt = slot_prompt_of(conn, input.type_id)?;
     let ranges = ranges_for(prompt.as_deref(), &input.slots, settings.max_slot as usize)?;
-    let off_days = off_days_of(conn, school_id)?;
+    let off_days = off_days_of(conn, scope.school_id)?;
     let days = due::open_days_between(from_d, to_d, &off_days);
     let group_id = bulk_group_id(input, &from, &to);
 
@@ -917,6 +916,7 @@ pub fn apply_bulk_impl(
             for (s, e) in &ranges {
                 let existing = find_exact(
                     conn,
+                    scope.id,
                     input.student_id,
                     &iso,
                     input.reason_id,
@@ -929,6 +929,7 @@ pub fn apply_bulk_impl(
                 }
                 insert_span(
                     conn,
+                    scope.id,
                     input.student_id,
                     &iso,
                     input.reason_id,
@@ -954,17 +955,8 @@ pub fn apply_bulk_impl(
 // ── 커맨드 ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_day_grid(
-    db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    date: String,
-) -> Result<DayGrid, String> {
-    with_conn(&db, |c| {
-        get_day_grid_impl(c, school_id, year_id, grade, class_no, &date)
-    })
+pub fn get_day_grid(db: State<DbState>, class_id: i64, date: String) -> Result<DayGrid, String> {
+    with_conn(&db, |c| get_day_grid_impl(c, class_id, &date))
 }
 
 #[tauri::command]
@@ -988,19 +980,15 @@ pub fn set_span_memo(db: State<DbState>, span_id: i64, memo: String) -> Result<(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn get_spans_between(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     from: String,
     to: String,
     today: String,
 ) -> Result<Vec<SpanItem>, String> {
     with_conn(&db, |c| {
-        get_spans_between_impl(c, school_id, year_id, grade, class_no, &from, &to, &today)
+        get_spans_between_impl(c, class_id, &from, &to, &today)
     })
 }
 
@@ -1016,28 +1004,23 @@ pub fn set_span_tag(
 #[tauri::command]
 pub fn get_month_log(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     year: i64,
     month: i64,
 ) -> Result<Vec<DayGroup>, String> {
-    with_conn(&db, |c| {
-        get_month_log_impl(c, school_id, year_id, grade, class_no, year, month)
-    })
+    with_conn(&db, |c| get_month_log_impl(c, class_id, year, month))
 }
 
 #[tauri::command]
 pub fn preview_bulk(
     db: State<DbState>,
-    school_id: i64,
+    class_id: i64,
     student_id: Option<i64>,
     from: String,
     to: String,
 ) -> Result<Vec<BulkPreviewDay>, String> {
     with_conn(&db, |c| {
-        preview_bulk_impl(c, school_id, student_id, &from, &to)
+        preview_bulk_impl(c, class_id, student_id, &from, &to)
     })
 }
 

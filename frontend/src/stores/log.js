@@ -52,7 +52,12 @@ export const useLogStore = defineStore('log', {
             const app = useAppStore()
             this.error = ''
             try {
-                return await invoke('get_spans_between', {...app.scope, from, to, today: app.today})
+                return await invoke('get_spans_between', {
+                    classId: app.classId,
+                    from,
+                    to,
+                    today: app.today,
+                })
             } catch (e) {
                 this.error = String(e)
                 throw e
@@ -65,7 +70,7 @@ export const useLogStore = defineStore('log', {
             this.error = ''
             try {
                 this.days = await invoke('get_month_log', {
-                    ...app.scope,
+                    classId: app.classId,
                     year: this.year,
                     month: this.month,
                 })

@@ -181,13 +181,12 @@ function saveCsv(kind, args, suggested) {
 <template>
     <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급과 명렬표를 넣어주세요."/>
 
-    <UiPage v-else :subtitle="`${app.currentYear?.year ?? ''}학년도 ${app.grade}학년 ${app.classNo}반`"
-            title="출결 기록">
+    <UiPage v-else :subtitle="app.currentClass?.name ?? ''" title="출결 기록">
         <template #actions>
             <UiButton variant="upload" @click="importNeis">NEIS 가져오기</UiButton>
             <input ref="fileInput" accept=".xlsx" hidden type="file" @change="onPick"/>
             <UiButton variant="download"
-                      @click="saveCsv('spans', {...app.scope, from: `${log.year}-${String(log.month).padStart(2,'0')}-01`, to: `${log.year}-${String(log.month).padStart(2,'0')}-31`}, `출결_${log.year}-${log.month}.csv`)">
+                      @click="saveCsv('spans', {classId: app.classId, from: `${log.year}-${String(log.month).padStart(2,'0')}-01`, to: `${log.year}-${String(log.month).padStart(2,'0')}-31`}, `출결_${log.year}-${log.month}.csv`)">
                 {{ log.month }}월 CSV
             </UiButton>
         </template>

@@ -32,7 +32,7 @@ export const useStatsStore = defineStore('stats', {
             this.error = ''
             try {
                 this.reports = await invoke('get_quota_reports', {
-                    ...app.scope,
+                    classId: app.classId,
                     ruleId: this.ruleId,
                     from: this.from,
                     to: this.to,

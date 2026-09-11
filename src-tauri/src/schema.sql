@@ -239,6 +239,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_tag_name_active
 CREATE TABLE IF NOT EXISTS absence_span
 (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    -- **어느 담임 학급의 기록인가.** 학생에만 매달면 그 학생이 내 교과 강좌에도 있을 때
+    -- 교과 화면에서 담임 출결이 보인다. 두 기록은 완전히 구별되어야 하므로
+    -- 구간이 학급을 직접 가리킨다 — 아래 트리거가 담임 학급만 받는다.
+    class_id     INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
     student_id   INTEGER NOT NULL REFERENCES student (id) ON DELETE CASCADE,
     date         TEXT    NOT NULL,
     reason_id    INTEGER REFERENCES attendance_reason (id), -- NULL = 미정
@@ -260,6 +264,7 @@ CREATE TABLE IF NOT EXISTS absence_span
     created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE INDEX IF NOT EXISTS ix_span_class ON absence_span (class_id, date);
 CREATE INDEX IF NOT EXISTS ix_span_date ON absence_span (date);
 CREATE INDEX IF NOT EXISTS ix_span_student ON absence_span (student_id, date);
 CREATE INDEX IF NOT EXISTS ix_span_group ON absence_span (group_id);
@@ -273,6 +278,26 @@ CREATE INDEX IF NOT EXISTS ix_span_incomplete
 -- 서류 미제출자 · NEIS 미등재 화면이 매번 부르는 질의다.
 CREATE INDEX IF NOT EXISTS ix_span_doc ON absence_span (doc_done, doc_due);
 CREATE INDEX IF NOT EXISTS ix_span_neis ON absence_span (neis_done, date);
+
+-- 담임 기록은 담임 학급에만 붙는다.
+--
+-- **이 트리거는 "판정하지 않는다"에 어긋나지 않는다.** 한도 규정에 트리거를 걸지 않는
+-- 이유는 교사가 실제로 넘긴 날을 기록하지 못하게 되기 때문이지만, 여기서 막는 것은
+-- 교사의 판단이 아니라 **가리킬 수 없는 곳을 가리키는 행**이다. 담임 출결이 교과
+-- 강좌에 붙는 순간 두 화면이 서로의 기록을 보게 되고, 그것은 어떤 입력의 결과도 아니다.
+CREATE TRIGGER IF NOT EXISTS trg_span_homeroom_only
+    BEFORE INSERT ON absence_span
+    WHEN (SELECT role FROM teaching_class WHERE id = NEW.class_id) <> 'homeroom'
+BEGIN
+    SELECT RAISE(ABORT, '담임 학급이 아닙니다.');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_span_homeroom_only_update
+    BEFORE UPDATE OF class_id ON absence_span
+    WHEN (SELECT role FROM teaching_class WHERE id = NEW.class_id) <> 'homeroom'
+BEGIN
+    SELECT RAISE(ABORT, '담임 학급이 아닙니다.');
+END;
 
 -- ─── 교과 수업 한 칸 ───────────────────────────────────────────
 -- 교과 교사가 기록하는 것은 `그 교시에 있었는가` 하나뿐이다. 구분 · 종류 · 기간도,
@@ -294,6 +319,14 @@ CREATE TABLE IF NOT EXISTS subject_session
 );
 
 CREATE INDEX IF NOT EXISTS ix_session_date ON subject_session (class_id, date);
+
+-- 교과 기록은 교과 강좌에만 붙는다. 위 담임 쪽과 짝이다.
+CREATE TRIGGER IF NOT EXISTS trg_session_subject_only
+    BEFORE INSERT ON subject_session
+    WHEN (SELECT role FROM teaching_class WHERE id = NEW.class_id) <> 'subject'
+BEGIN
+    SELECT RAISE(ABORT, '교과 강좌가 아닙니다.');
+END;
 
 -- 그 칸에서 **빠진 학생만** 적는다. 있던 학생은 적지 않는다.
 -- 담임 쪽에서 출석한 학생을 적지 않는 것과 같은 이유다 — 예외만 기록한다.

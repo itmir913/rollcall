@@ -8,13 +8,18 @@
 //! 거기 있기 때문이고, 그것은 파일 형식 문제지 업무 규칙이 아니다. 여기로 넘어오는
 //! 것은 이미 (학년, 반, 번호, 이름)으로 정리된 목록이다.
 //!
-//! 재가져오기는 **교체가 아니라 차분**이다. 사라진 번호를 지우면 그 학생의 출결
-//! 기록이 FK CASCADE로 함께 사라진다. 전출은 삭제가 아니므로 `enrolled_to`를 채운다.
+//! **명렬표 가져오기는 두 가지 일을 한다.** 학생을 만드는 일과 내 명단에 넣는 일이다.
+//! 둘은 다른 사건이라 표도 다르다 — 학생은 학교에 속하고(`student`), 소속은 따로
+//! 기록된다(`class_member`). 이미 그 학적 자리에 있는 학생은 다시 만들지 않고
+//! 명단에만 잇는다. 담임 반 학생이 내 교과 강좌에도 들어오면 학생 행은 하나,
+//! 소속이 둘이어야 하기 때문이다.
 //!
-//! 학생은 **학교에 매달린다.** 순회 교사가 같은 해에 학교를 둘 이상 맡으면
-//! (학년도, 학년, 반)만으로는 3학년 6반이 두 곳에서 겹친다. 그래서 명단을 읽고
-//! 고치는 모든 함수가 `school_id`를 받아 먼저 거른다.
+//! 재가져오기는 **교체가 아니라 차분**이다. 사라진 번호를 지우면 그 학생의 출결
+//! 기록이 FK CASCADE로 함께 사라진다. 명단에서 사라진 번호는 `class_member.left_on`을
+//! 채운다 — **학생의 `enrolled_to`가 아니다.** 내 명단에서 빠진 것과 학교를 떠난 것은
+//! 다른 일이고, 담임이 아는 것은 앞엣것뿐이다.
 
+use crate::commands::class::{homeroom_scope, homeroom_seat, members_of};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::state::{constraint_err, DbState};
@@ -107,117 +112,17 @@ pub fn diff_roster(
 
 // ── DB ────────────────────────────────────────────────────────
 
-const STUDENT_COLS: &str =
-    "id, school_id, year_id, grade, class_no, number, name, enrolled_from, enrolled_to";
-
-fn map_student(row: &rusqlite::Row) -> rusqlite::Result<StudentItem> {
-    Ok(StudentItem {
-        id: row.get(0)?,
-        school_id: row.get(1)?,
-        year_id: row.get(2)?,
-        grade: row.get(3)?,
-        class_no: row.get(4)?,
-        number: row.get(5)?,
-        name: row.get(6)?,
-        enrolled_from: row.get(7)?,
-        enrolled_to: row.get(8)?,
-    })
-}
-
-/// 그날 재학 중인 학생만. 격자가 이 목록으로 그려진다.
-///
-/// 기간은 `enrolled_from <= d < enrolled_to`다. 이 저장소의 `valid_to`와 같은 규칙이고,
-/// 개요·기록·서류 화면이 세는 재학생도 같은 식으로 센다 — 한 곳만 경계일을 재학으로
-/// 보면 그날 격자에 30명, 개요에 29명이 뜬다.
-/// 같은 날 번호를 물려받는 경우(전출 + 전입이 한 번의 적용에 함께 들어온다)도
-/// 경계일을 닫아야 그 번호가 하루 동안 두 학생으로 보이지 않는다.
-/// 그 날짜에 재학 중이던 학생. 지금은 테스트만 부르지만, 전출 학생을 어느 시점 기준으로
-/// 세는지가 여러 화면에 걸쳐 같아야 해서 규칙을 한 곳에 둔다.
-#[allow(dead_code)]
-pub fn get_students_on_impl(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    date: &str,
-) -> Result<Vec<StudentItem>, String> {
-    let sql = format!(
-        "SELECT {STUDENT_COLS} FROM student
-         WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-           AND enrolled_from <= ?5
-           AND (enrolled_to IS NULL OR ?5 < enrolled_to)
-         ORDER BY number"
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params![school_id, year_id, grade, class_no, date],
-            map_student,
-        )
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(rows)
-}
-
-/// 재학 중인 학생 전체(전출 제외).
-pub fn get_students_impl(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-) -> Result<Vec<StudentItem>, String> {
-    let sql = format!(
-        "SELECT {STUDENT_COLS} FROM student
-         WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-           AND enrolled_to IS NULL
-         ORDER BY number"
-    );
-    let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(
-            rusqlite::params![school_id, year_id, grade, class_no],
-            map_student,
-        )
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(rows)
-}
-
-/// 그 학교·학년도에 명단이 들어 있는 학급 목록. 첫 실행 뒤 학급 전환에 쓴다.
-pub fn get_classes_impl(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-) -> Result<Vec<(i64, i64)>, String> {
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT grade, class_no FROM student
-             WHERE school_id = ?1 AND year_id = ?2 AND enrolled_to IS NULL
-             ORDER BY grade, class_no",
-        )
-        .map_err(|e| e.to_string())?;
-    let rows = stmt
-        .query_map(rusqlite::params![school_id, year_id], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-    Ok(rows)
+/// 지금 내 명단. 소속은 `class_member`가 말하므로 학년 · 반으로 거르지 않는다.
+pub fn get_students_impl(conn: &Connection, class_id: i64) -> Result<Vec<StudentItem>, String> {
+    let scope = homeroom_scope(conn, class_id)?;
+    members_of(conn, scope.id)
 }
 
 fn current_tuples(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
 ) -> Result<Vec<(i64, i64, String)>, String> {
-    Ok(get_students_impl(conn, school_id, year_id, grade, class_no)?
+    Ok(members_of(conn, class_id)?
         .into_iter()
         .map(|s| (s.id, s.number, s.name))
         .collect())
@@ -225,29 +130,90 @@ fn current_tuples(
 
 pub fn preview_roster_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     incoming: &[RosterEntry],
 ) -> Result<Vec<RosterDiffRow>, String> {
-    let current = current_tuples(conn, school_id, year_id, grade, class_no)?;
+    let scope = homeroom_scope(conn, class_id)?;
+    let current = current_tuples(conn, scope.id)?;
     Ok(diff_roster(&current, incoming))
 }
 
-/// 미리보기에서 교사가 확정한 행만 받아 적용한다.
-///
-/// 프론트가 `action`을 바꿔 보낼 수 있다는 것이 요점이다. 번호 같고 이름 다름을
-/// 개명(`renamed`)으로 볼지, 전출+전입(`withdrawn` + `added`)으로 볼지는 교사가 정한다.
-pub fn apply_roster_impl(
+// ── 학적 자리와 소속 ──────────────────────────────────────────
+
+/// 그 학적 자리에 이미 앉아 있는 학생. `ux_student_seat`이 가리키는 한 자리다.
+fn seat_holder(
     conn: &Connection,
     school_id: i64,
     year_id: i64,
     grade: i64,
     class_no: i64,
+    number: i64,
+) -> Result<Option<(i64, String)>, String> {
+    conn.query_row(
+        "SELECT id, name FROM student
+          WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
+            AND number = ?5 AND enrolled_to IS NULL
+          ORDER BY id LIMIT 1",
+        rusqlite::params![school_id, year_id, grade, class_no, number],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .map(Some)
+    .or_else(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => Ok(None),
+        other => Err(other.to_string()),
+    })
+}
+
+/// 학생을 내 명단에 잇는다. 예전에 있다가 빠진 학생이면 `left_on`을 지워 되살린다.
+///
+/// 지웠다 다시 넣지 않는 이유는 소속 줄에 달린 것이 없어도 줄 자체가 기록이기 때문이다 —
+/// 언제부터 내 명단이었는지가 남아야 지난 기록이 어느 명단의 것이었는지 말할 수 있다.
+fn join_class(
+    conn: &Connection,
+    class_id: i64,
+    student_id: i64,
+    joined_on: &str,
+) -> Result<(), String> {
+    // 명단에 되돌아온 학생은 `left_on`만 지운다.
+    //
+    // **빠져 있던 기간은 남지 않는다.** `class_member`가 (학급, 학생) 한 쌍에 한 줄이라
+    // 소속 기간을 여러 구간으로 담을 수 없기 때문이다. 4월에 빠졌다가 6월에 돌아오면
+    // 5월 격자에도 그 학생이 선다. 소속을 구간으로 바꾸면 모든 명단 질의가 날짜마다
+    // 어느 구간인지 골라야 해서, 실제로 그런 일이 생기는 것을 보기 전에는 값이 비싸다.
+    // 그때 고칠 자리는 이 함수와 `class.rs`의 명단 조건 둘뿐이다.
+    let revived = conn
+        .execute(
+            "UPDATE class_member SET left_on = NULL
+              WHERE class_id = ?1 AND student_id = ?2 AND left_on IS NOT NULL",
+            rusqlite::params![class_id, student_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if revived > 0 {
+        return Ok(());
+    }
+    conn.execute(
+        "INSERT INTO class_member (class_id, student_id, joined_on) VALUES (?1, ?2, ?3)
+         ON CONFLICT(class_id, student_id) DO NOTHING",
+        rusqlite::params![class_id, student_id, joined_on],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// 미리보기에서 교사가 확정한 행만 받아 적용한다.
+///
+/// 프론트가 `action`을 바꿔 보낼 수 있다는 것이 요점이다. 번호 같고 이름 다름을
+/// 개명(`renamed`)으로 볼지, 명단 교체(`withdrawn` + `added`)로 볼지는 교사가 정한다.
+pub fn apply_roster_impl(
+    conn: &Connection,
+    class_id: i64,
     effective_date: &str,
     rows: &[RosterDiffRow],
 ) -> Result<RosterApplyResult, String> {
+    let scope = homeroom_scope(conn, class_id)?;
+    let (grade, class_no) = homeroom_seat(&scope)?;
+    let (school_id, year_id) = (scope.school_id, scope.year_id);
+
     with_transaction(conn, || {
         let mut result = RosterApplyResult {
             added: 0,
@@ -255,22 +221,24 @@ pub fn apply_roster_impl(
             withdrawn: 0,
         };
 
-        // 전출을 먼저 처리한다. 같은 번호를 새 학생이 물려받는 경우,
-        // 부분 유니크 인덱스(ux_student_active_number)가 순서를 강제하기 때문이다.
+        // 명단에서 빼는 것을 먼저 처리한다. 같은 번호를 새 학생이 물려받는 경우,
+        // 학적 자리를 비우는 순서가 강제되기 때문이다.
         for row in rows.iter().filter(|r| r.action == "withdrawn") {
             let id = row
                 .student_id
-                .ok_or_else(|| format!("{}번: 전출 대상 학생을 찾을 수 없습니다.", row.number))?;
+                .ok_or_else(|| format!("{}번: 명단에서 뺄 학생을 찾을 수 없습니다.", row.number))?;
+            // **학생의 `enrolled_to`를 채우지 않는다.** 내 명단에서 빠진 것과 학교를
+            // 떠난 것은 다른 일이고, 담임이 아는 것은 앞엣것뿐이다.
             let n = conn
                 .execute(
-                    "UPDATE student SET enrolled_to = ?1
-                     WHERE id = ?2 AND school_id = ?3 AND enrolled_to IS NULL",
-                    rusqlite::params![effective_date, id, school_id],
+                    "UPDATE class_member SET left_on = ?1
+                      WHERE class_id = ?2 AND student_id = ?3 AND left_on IS NULL",
+                    rusqlite::params![effective_date, scope.id, id],
                 )
                 .map_err(|e| e.to_string())?;
             if n == 0 {
                 return Err(format!(
-                    "{}번: 전출 대상 학생을 찾을 수 없습니다: {id}",
+                    "{}번: 명단에서 뺄 학생을 찾을 수 없습니다: {id}",
                     row.number
                 ));
             }
@@ -284,26 +252,47 @@ pub fn apply_roster_impl(
                     if name.is_empty() {
                         return Err(format!("{}번: 추가할 이름이 비어 있습니다.", row.number));
                     }
-                    conn.execute(
-                        "INSERT INTO student
-                           (school_id, year_id, grade, class_no, number, name, enrolled_from)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                        rusqlite::params![
+
+                    // **이미 있는 학생을 다시 만들지 않는다.** 같은 학적 자리에 같은
+                    // 이름이 앉아 있으면 그 학생이고(다른 명단에서 들어온 경우다),
+                    // 명단에만 이으면 된다.
+                    let holder =
+                        seat_holder(conn, school_id, year_id, grade, class_no, row.number)?;
+                    let student_id = match holder {
+                        Some((id, held)) if held == name => id,
+                        Some((id, _)) => {
+                            // 같은 자리에 다른 이름이 앉아 있다. 한 자리에 두 명일 수
+                            // 없으므로 앞사람은 그 자리를 떠난 것이다 — 학적을 마감해
+                            // 자리를 비운다. 교사의 판단을 대신하는 것이 아니라,
+                            // 가리킬 수 없는 행이 생기지 않게 하는 것이다.
+                            conn.execute(
+                                "UPDATE student SET enrolled_to = ?1 WHERE id = ?2",
+                                rusqlite::params![effective_date, id],
+                            )
+                            .map_err(|e| e.to_string())?;
+                            insert_student(
+                                conn,
+                                school_id,
+                                year_id,
+                                grade,
+                                class_no,
+                                row.number,
+                                name,
+                                effective_date,
+                            )?
+                        }
+                        None => insert_student(
+                            conn,
                             school_id,
                             year_id,
                             grade,
                             class_no,
                             row.number,
                             name,
-                            effective_date
-                        ],
-                    )
-                    .map_err(|e| {
-                        constraint_err(
-                            &e,
-                            &format!("이미 같은 번호의 재학생이 있습니다: {}번", row.number),
-                        )
-                    })?;
+                            effective_date,
+                        )?,
+                    };
+                    join_class(conn, scope.id, student_id, effective_date)?;
                     result.added += 1;
                 }
                 "renamed" => {
@@ -339,9 +328,36 @@ pub fn apply_roster_impl(
     })
 }
 
-pub fn update_student_impl(
+#[allow(clippy::too_many_arguments)]
+fn insert_student(
     conn: &Connection,
     school_id: i64,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
+    number: i64,
+    name: &str,
+    enrolled_from: &str,
+) -> Result<i64, String> {
+    conn.execute(
+        "INSERT INTO student
+           (school_id, year_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![school_id, year_id, grade, class_no, number, name, enrolled_from],
+    )
+    .map_err(|e| {
+        constraint_err(
+            &e,
+            &format!("이미 같은 번호의 재학생이 있습니다: {number}번"),
+        )
+    })?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// 번호와 이름을 고친다. **내 명단의 학생만 고친다.**
+pub fn update_student_impl(
+    conn: &Connection,
+    class_id: i64,
     id: i64,
     number: i64,
     name: &str,
@@ -353,10 +369,14 @@ pub fn update_student_impl(
     if name.is_empty() {
         return Err("이름이 비어 있습니다.".to_string());
     }
+    let scope = homeroom_scope(conn, class_id)?;
     let n = conn
         .execute(
-            "UPDATE student SET number = ?1, name = ?2 WHERE id = ?3 AND school_id = ?4",
-            rusqlite::params![number, name, id, school_id],
+            "UPDATE student SET number = ?1, name = ?2
+              WHERE id = ?3
+                AND id IN (SELECT student_id FROM class_member
+                            WHERE class_id = ?4 AND left_on IS NULL)",
+            rusqlite::params![number, name, id, scope.id],
         )
         .map_err(|e| {
             constraint_err(&e, &format!("이미 같은 번호의 재학생이 있습니다: {number}번"))
@@ -367,17 +387,22 @@ pub fn update_student_impl(
     Ok(())
 }
 
-/// 전출 처리. 삭제가 아니다.
+/// 내 명단에서 뺀다. 삭제가 아니고, **학교를 떠난 것도 아니다.**
+///
+/// 담임이 아는 것은 "이 학생이 더는 내 명단에 없다"까지다. 학적을 마감하면
+/// 다른 명단에서도 함께 사라지므로, 여기서 닫는 것은 소속 기간뿐이다.
 pub fn withdraw_student_impl(
     conn: &Connection,
-    school_id: i64,
+    class_id: i64,
     id: i64,
     date: &str,
 ) -> Result<(), String> {
+    let scope = homeroom_scope(conn, class_id)?;
     let n = conn
         .execute(
-            "UPDATE student SET enrolled_to = ?1 WHERE id = ?2 AND school_id = ?3",
-            rusqlite::params![date, id, school_id],
+            "UPDATE class_member SET left_on = ?1
+              WHERE class_id = ?2 AND student_id = ?3 AND left_on IS NULL",
+            rusqlite::params![date, scope.id, id],
         )
         .map_err(|e| e.to_string())?;
     if n == 0 {
@@ -466,83 +491,50 @@ pub fn detect_roster_class(entries: Vec<RosterEntry>) -> RosterClass {
 }
 
 #[tauri::command]
-pub fn get_students(
-    db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-) -> Result<Vec<StudentItem>, String> {
-    with_conn(&db, |c| {
-        get_students_impl(c, school_id, year_id, grade, class_no)
-    })
-}
-
-#[tauri::command]
-pub fn get_classes(
-    db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-) -> Result<Vec<(i64, i64)>, String> {
-    with_conn(&db, |c| get_classes_impl(c, school_id, year_id))
+pub fn get_students(db: State<DbState>, class_id: i64) -> Result<Vec<StudentItem>, String> {
+    with_conn(&db, |c| get_students_impl(c, class_id))
 }
 
 #[tauri::command]
 pub fn preview_roster(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     entries: Vec<RosterEntry>,
 ) -> Result<Vec<RosterDiffRow>, String> {
-    with_conn(&db, |c| {
-        preview_roster_impl(c, school_id, year_id, grade, class_no, &entries)
-    })
+    with_conn(&db, |c| preview_roster_impl(c, class_id, &entries))
 }
 
 #[tauri::command]
 pub fn apply_roster(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     effective_date: String,
     rows: Vec<RosterDiffRow>,
 ) -> Result<RosterApplyResult, String> {
     with_conn(&db, |c| {
-        apply_roster_impl(
-            c,
-            school_id,
-            year_id,
-            grade,
-            class_no,
-            &effective_date,
-            &rows,
-        )
+        apply_roster_impl(c, class_id, &effective_date, &rows)
     })
 }
 
 #[tauri::command]
 pub fn update_student(
     db: State<DbState>,
-    school_id: i64,
+    class_id: i64,
     id: i64,
     number: i64,
     name: String,
 ) -> Result<(), String> {
-    with_conn(&db, |c| update_student_impl(c, school_id, id, number, &name))
+    with_conn(&db, |c| update_student_impl(c, class_id, id, number, &name))
 }
 
 #[tauri::command]
 pub fn withdraw_student(
     db: State<DbState>,
-    school_id: i64,
+    class_id: i64,
     id: i64,
     date: String,
 ) -> Result<(), String> {
-    with_conn(&db, |c| withdraw_student_impl(c, school_id, id, &date))
+    with_conn(&db, |c| withdraw_student_impl(c, class_id, id, &date))
 }
 
 #[tauri::command]

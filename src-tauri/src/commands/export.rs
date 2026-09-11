@@ -17,6 +17,7 @@
 //! 같은 규칙을 두 곳에 두면 화면에서 본 순서와 내보낸 파일의 순서가 갈라진다.
 
 use crate::commands::attendance::load_spans;
+use crate::commands::class::{homeroom_scope, ClassScope};
 use crate::commands::mark::{get_doc_pending_impl, get_neis_pending_impl};
 use crate::commands::stats::get_quota_reports_impl;
 use crate::commands::with_conn;
@@ -211,8 +212,6 @@ pub(crate) fn phrase_of(
 }
 
 pub fn build_spans_csv(
-    grade: i64,
-    class_no: i64,
     spans: &[SpanItem],
     patterns: &HashMap<(i64, i64), Option<String>>,
 ) -> String {
@@ -222,8 +221,10 @@ pub fn build_spans_csv(
         push_row(
             &mut out,
             vec![
-                grade.to_string(),
-                class_no.to_string(),
+                // **학생의 학적이다.** 학급의 학년 · 반이 아니다 — 명단에 반이 다른
+                // 학생이 들어올 수 있고, 문자 발송은 이 세 값으로 수신자를 찾는다.
+                s.grade.to_string(),
+                s.class_no.to_string(),
                 s.number.to_string(),
                 s.name.clone(),
                 s.date_label.clone(),
@@ -266,15 +267,20 @@ const DOC_HEADER: &[&str] = &[
 ///
 /// **마감이 지난 것만 담지 않는다.** 마감 뒤에 재촉하는 것은 이미 늦은 일이라,
 /// 여유가 있을 때 보이는 쪽이 서류를 실제로 받게 한다.
-pub fn build_doc_pending_csv(grade: i64, class_no: i64, today: &str, spans: &[SpanItem]) -> String {
+pub fn build_doc_pending_csv(
+    today: &str,
+    spans: &[SpanItem],
+) -> String {
     let mut out = String::from(BOM);
     out.push_str(&header(DOC_HEADER));
     for s in spans {
         push_row(
             &mut out,
             vec![
-                grade.to_string(),
-                class_no.to_string(),
+                // **학생의 학적이다.** 학급의 학년 · 반이 아니다 — 명단에 반이 다른
+                // 학생이 들어올 수 있고, 문자 발송은 이 세 값으로 수신자를 찾는다.
+                s.grade.to_string(),
+                s.class_no.to_string(),
                 s.number.to_string(),
                 s.name.clone(),
                 s.date_label.clone(),
@@ -297,15 +303,19 @@ const NEIS_HEADER: &[&str] = &[
 
 /// 나이스 미등재 명단. 마감이 없으므로 경과일 대신 완성 여부를 붙인다 —
 /// 두 축이 비어 있는 건은 나이스에 넣을 수 없고, 그것이 미등재로 남은 이유인 경우가 많다.
-pub fn build_neis_pending_csv(grade: i64, class_no: i64, spans: &[SpanItem]) -> String {
+pub fn build_neis_pending_csv(
+    spans: &[SpanItem],
+) -> String {
     let mut out = String::from(BOM);
     out.push_str(&header(NEIS_HEADER));
     for s in spans {
         push_row(
             &mut out,
             vec![
-                grade.to_string(),
-                class_no.to_string(),
+                // **학생의 학적이다.** 학급의 학년 · 반이 아니다 — 명단에 반이 다른
+                // 학생이 들어올 수 있고, 문자 발송은 이 세 값으로 수신자를 찾는다.
+                s.grade.to_string(),
+                s.class_no.to_string(),
                 s.number.to_string(),
                 s.name.clone(),
                 s.date_label.clone(),
@@ -333,7 +343,9 @@ const UNTAGGED_HEADER: &[&str] = &[
 ///
 /// 태그가 빠져 세지 못한 건은 조용히 넘기지 않는다. 표 아래에 빈 줄을 하나 두고
 /// `태그 없는 기록` 표를 이어 붙인다 — 세지 않았다는 사실이 파일에도 남아야 한다.
-pub fn build_quota_csv(grade: i64, class_no: i64, report: &QuotaReport) -> String {
+pub fn build_quota_csv(
+    report: &QuotaReport,
+) -> String {
     let mut out = String::from(BOM);
     out.push_str(&header(QUOTA_HEADER));
 
@@ -357,8 +369,8 @@ pub fn build_quota_csv(grade: i64, class_no: i64, report: &QuotaReport) -> Strin
         push_row(
             &mut out,
             vec![
-                grade.to_string(),
-                class_no.to_string(),
+                row.grade.to_string(),
+                row.class_no.to_string(),
                 row.number.to_string(),
                 row.name.clone(),
                 report.rule.name.clone(),
@@ -380,8 +392,8 @@ pub fn build_quota_csv(grade: i64, class_no: i64, report: &QuotaReport) -> Strin
             push_row(
                 &mut out,
                 vec![
-                    grade.to_string(),
-                    class_no.to_string(),
+                    s.grade.to_string(),
+                    s.class_no.to_string(),
                     s.number.to_string(),
                     s.name.clone(),
                     s.date_label.clone(),
@@ -398,13 +410,12 @@ pub fn build_quota_csv(grade: i64, class_no: i64, report: &QuotaReport) -> Strin
 
 // ── 조회 ──────────────────────────────────────────────────────
 
-/// 기간 안의 한 학급. 전출한 학생의 지난 기록도 그대로 나온다 —
-/// 보관용 파일에서 전출 학생만 빠지면 그 해의 기록이 통째로 어긋난다.
+/// 기간 안의 한 학급. 명단에서 빠진 학생의 지난 기록도 그대로 나온다 —
+/// 보관용 파일에서 그 학생만 빠지면 그 해의 기록이 통째로 어긋난다.
+/// 그래서 구간이 가리키는 **학급**으로 거른다.
 ///
 /// 별칭은 `attendance::load_spans`가 정한 것을 그대로 쓴다. 구간이 `s`, 학생이 `st`다.
-const RANGE_SPANS: &str = "WHERE s.date >= ?1 AND s.date <= ?2
-                             AND st.school_id = ?3 AND st.year_id = ?4
-                             AND st.grade = ?5 AND st.class_no = ?6
+const RANGE_SPANS: &str = "WHERE s.class_id = ?1 AND s.date >= ?2 AND s.date <= ?3
                            ORDER BY s.date, st.number, s.id";
 
 // ── 구현 ──────────────────────────────────────────────────────
@@ -412,10 +423,7 @@ const RANGE_SPANS: &str = "WHERE s.date >= ?1 AND s.date <= ?2
 /// 기간 안의 모든 기록. 나이스에 가져오기 기능이 없으므로 이 파일은 보관용이다.
 pub fn export_spans_csv_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     from: &str,
     to: &str,
 ) -> Result<String, String> {
@@ -427,12 +435,16 @@ pub fn export_spans_csv_impl(
     // 다시 찍어낸 ISO로 질의한다. chrono는 `2026-9-10`도 받아들이는데 저장된 값은
     // 언제나 자리를 채운 형식이라, 그대로 넣으면 아무것도 걸리지 않는다.
     let (from, to) = (format_date(start), format_date(end));
+    let scope: ClassScope = homeroom_scope(conn, class_id)?;
 
-    let params: [&dyn ToSql; 6] = [&from, &to, &school_id, &year_id, &grade, &class_no];
+    let params: [&dyn ToSql; 3] = [&scope.id, &from, &to];
     // 경과일을 쓰지 않는 표라 기준일은 기간의 끝으로 넘긴다.
     let spans = load_spans(conn, RANGE_SPANS, &params, &to)?;
     let patterns = phrase_patterns(conn)?;
-    Ok(build_spans_csv(grade, class_no, &spans, &patterns))
+    Ok(build_spans_csv(
+        &spans,
+        &patterns,
+    ))
 }
 
 /// 미제출 명단. `kind`는 `doc`(증빙 서류) 또는 `neis`(나이스 등재)다.
@@ -442,29 +454,26 @@ pub fn export_spans_csv_impl(
 /// 본 순서와 파일의 순서가 같아야 교사가 둘을 대조할 수 있다.
 pub fn export_pending_csv_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     kind: &str,
     today: &str,
 ) -> Result<String, String> {
     // 자리를 채운 ISO로 맞춰 넘긴다. chrono는 `2026-9-10`도 받아들이는데, 날짜 비교가
     // 문자열 비교인 자리에서 그 값은 `2026-09-01`보다 앞선 것으로 읽힌다.
     let today = &format_date(parse_date(today)?);
+    let scope = homeroom_scope(conn, class_id)?;
     match kind {
         "doc" => {
-            let rows = get_doc_pending_impl(
-                conn, school_id, year_id, grade, class_no, None, None, false, today,
-            )?;
-            Ok(build_doc_pending_csv(grade, class_no, today, &rows))
+            let rows = get_doc_pending_impl(conn, scope.id, None, None, false, today)?;
+            Ok(build_doc_pending_csv(
+                today,
+                &rows,
+            ))
         }
         "neis" => {
-            let groups = get_neis_pending_impl(
-                conn, school_id, year_id, grade, class_no, None, None, today,
-            )?;
+            let groups = get_neis_pending_impl(conn, scope.id, None, None, today)?;
             let rows: Vec<SpanItem> = groups.into_iter().flat_map(|g| g.spans).collect();
-            Ok(build_neis_pending_csv(grade, class_no, &rows))
+            Ok(build_neis_pending_csv(&rows))
         }
         other => Err(format!("알 수 없는 명단 종류입니다: {other}")),
     }
@@ -473,27 +482,16 @@ pub fn export_pending_csv_impl(
 /// 한도 규정 하나의 집계. 세는 일은 `stats`가 하고 여기서는 표로만 옮긴다.
 pub fn export_quota_csv_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     rule_id: i64,
 ) -> Result<String, String> {
-    let reports = get_quota_reports_impl(
-        conn,
-        school_id,
-        year_id,
-        grade,
-        class_no,
-        Some(rule_id),
-        None,
-        None,
-    )?;
+    let scope = homeroom_scope(conn, class_id)?;
+    let reports = get_quota_reports_impl(conn, scope.id, Some(rule_id), None, None)?;
     let report = reports
         .into_iter()
         .find(|r| r.rule.id == rule_id)
         .ok_or_else(|| format!("한도 규정을 찾을 수 없습니다: {rule_id}"))?;
-    Ok(build_quota_csv(grade, class_no, &report))
+    Ok(build_quota_csv(&report))
 }
 
 // ── 커맨드 ────────────────────────────────────────────────────
@@ -501,43 +499,28 @@ pub fn export_quota_csv_impl(
 #[tauri::command]
 pub fn export_spans_csv(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     from: String,
     to: String,
 ) -> Result<String, String> {
-    with_conn(&db, |c| {
-        export_spans_csv_impl(c, school_id, year_id, grade, class_no, &from, &to)
-    })
+    with_conn(&db, |c| export_spans_csv_impl(c, class_id, &from, &to))
 }
 
 #[tauri::command]
 pub fn export_pending_csv(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     kind: String,
     today: String,
 ) -> Result<String, String> {
-    with_conn(&db, |c| {
-        export_pending_csv_impl(c, school_id, year_id, grade, class_no, &kind, &today)
-    })
+    with_conn(&db, |c| export_pending_csv_impl(c, class_id, &kind, &today))
 }
 
 #[tauri::command]
 pub fn export_quota_csv(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     rule_id: i64,
 ) -> Result<String, String> {
-    with_conn(&db, |c| {
-        export_quota_csv_impl(c, school_id, year_id, grade, class_no, rule_id)
-    })
+    with_conn(&db, |c| export_quota_csv_impl(c, class_id, rule_id))
 }

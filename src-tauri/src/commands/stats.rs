@@ -13,6 +13,7 @@
 //! 넘기면 학년말에야 발견된다.
 
 use crate::commands::attendance::{load_spans_on, max_slot_of};
+use crate::commands::class::homeroom_scope;
 use crate::commands::with_conn;
 use crate::due::{academic_year_of, format_date, parse_date, semester_of};
 use crate::state::DbState;
@@ -192,37 +193,35 @@ fn year_of(conn: &Connection, year_id: i64) -> Result<i64, String> {
 
 struct ClassStudent {
     id: i64,
+    /// 그 학생의 학적. 내보내기가 학급의 학년 · 반이 아니라 이것을 쓴다.
+    grade: i64,
+    class_no: i64,
     number: i64,
     name: String,
 }
 
-/// 그 학급의 학생 전부. **전출 학생도 뺀다고 판정하지 않는다** — 전출 전에 쓴
-/// 날짜가 통계에서 조용히 사라지면 안 되기 때문이다.
-fn class_students(
-    conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-) -> Result<Vec<ClassStudent>, String> {
+/// 그 학급의 명단 전부. **명단에서 빠진 학생도 뺀다고 판정하지 않는다** —
+/// 빠지기 전에 쓴 날짜가 통계에서 조용히 사라지면 안 되기 때문이다.
+/// 그래서 `left_on`도 `enrolled_to`도 보지 않고 한 번이라도 명단이었던 학생을 전부 센다.
+fn class_students(conn: &Connection, class_id: i64) -> Result<Vec<ClassStudent>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, number, name FROM student
-             WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-             ORDER BY number, id",
+            "SELECT st.id, st.grade, st.class_no, st.number, st.name
+               FROM class_member m JOIN student st ON st.id = m.student_id
+              WHERE m.class_id = ?1
+              ORDER BY st.number, st.id",
         )
         .map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map(
-            rusqlite::params![school_id, year_id, grade, class_no],
-            |r| {
-                Ok(ClassStudent {
-                    id: r.get(0)?,
-                    number: r.get(1)?,
-                    name: r.get(2)?,
-                })
-            },
-        )
+        .query_map(rusqlite::params![class_id], |r| {
+            Ok(ClassStudent {
+                id: r.get(0)?,
+                grade: r.get(1)?,
+                class_no: r.get(2)?,
+                number: r.get(3)?,
+                name: r.get(4)?,
+            })
+        })
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -282,13 +281,9 @@ fn load_rules(
 
 /// 규정이 세는 구간. 태그가 있으면 그 태그가 붙은 것만, 구분·종류가 채워져 있으면
 /// AND로 더 좁힌다. 셋 다 비어 있으면 그 학급의 모든 구간이다.
-#[allow(clippy::too_many_arguments)]
 fn counted_spans(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     from: &str,
     to: &str,
     rule: &QuotaRuleItem,
@@ -296,15 +291,11 @@ fn counted_spans(
     let mut sql = String::from(
         "SELECT sp.student_id, sp.date
          FROM absence_span sp
-         JOIN student s ON s.id = sp.student_id
-         WHERE s.school_id = ? AND s.year_id = ? AND s.grade = ? AND s.class_no = ?
+         WHERE sp.class_id = ?
            AND sp.date >= ? AND sp.date <= ?",
     );
     let mut args: Vec<Value> = vec![
-        Value::Integer(school_id),
-        Value::Integer(year_id),
-        Value::Integer(grade),
-        Value::Integer(class_no),
+        Value::Integer(class_id),
         Value::Text(from.to_string()),
         Value::Text(to.to_string()),
     ];
@@ -357,10 +348,7 @@ fn recognized_reason_id(conn: &Connection) -> Result<Option<i64>, String> {
 #[allow(clippy::too_many_arguments)]
 fn untagged_spans(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     from: &str,
     to: &str,
     rule: &QuotaRuleItem,
@@ -386,15 +374,13 @@ fn untagged_spans(
     let type_id = rule.type_id;
 
     let mut where_sql = String::from(
-        "WHERE st.school_id = ?1 AND st.year_id = ?2 AND st.grade = ?3 AND st.class_no = ?4
-           AND s.date >= ?5 AND s.date <= ?6
+        "WHERE s.class_id = ?1
+           AND s.date >= ?2 AND s.date <= ?3
            AND s.tag_id IS NULL",
     );
-    let mut params: Vec<&dyn ToSql> = vec![
-        &school_id, &year_id, &grade, &class_no, &from, &to,
-    ];
+    let mut params: Vec<&dyn ToSql> = vec![&class_id, &from, &to];
 
-    let mut next = 7;
+    let mut next = 4;
     if recognized.is_some() {
         where_sql.push_str(&format!(" AND s.reason_id = ?{next}"));
         params.push(&recognized);
@@ -431,21 +417,20 @@ fn state_of(used: i64, limit_n: i64) -> String {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn get_quota_reports_impl(
     conn: &Connection,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     rule_id: Option<i64>,
     from: Option<&str>,
     to: Option<&str>,
 ) -> Result<Vec<QuotaReport>, String> {
-    // 학교가 없으면 여기서 걸린다. 최대 교시를 여기서 들고 있지 않는 이유는,
-    // 구간을 읽는 헬퍼가 각 행의 학생이 속한 학교에서 그 값을 읽기 때문이다.
+    // 규정과 학년도는 학급에서 얻는다. 학교가 없으면 여기서 걸린다 — 최대 교시를
+    // 여기서 들고 있지 않는 이유는, 구간을 읽는 헬퍼가 각 행의 학생이 속한 학교에서
+    // 그 값을 읽기 때문이다.
+    let scope = homeroom_scope(conn, class_id)?;
+    let school_id = scope.school_id;
     max_slot_of(conn, school_id)?;
-    let (year_from, year_to) = academic_year_range(year_of(conn, year_id)?)?;
+    let (year_from, year_to) = academic_year_range(year_of(conn, scope.year_id)?)?;
 
     // 집계 구간은 학년도 범위와 교사가 고른 구간의 교집합이다. 학년도 밖을 세지 않는다.
     let win_from = match from {
@@ -459,7 +444,7 @@ pub fn get_quota_reports_impl(
     let win_from_text = format_date(win_from);
     let win_to_text = format_date(win_to);
 
-    let students = class_students(conn, school_id, year_id, grade, class_no)?;
+    let students = class_students(conn, scope.id)?;
     let rules = load_rules(conn, school_id, rule_id)?;
     // 오늘 날짜는 태그 누락 목록의 서류 경과일 표시에만 쓴다.
     let today = Local::now().date_naive();
@@ -470,16 +455,7 @@ pub fn get_quota_reports_impl(
         let unit = Unit::parse(&rule.unit)?;
         let buckets = buckets_for(period, win_from, win_to);
 
-        let hits = counted_spans(
-            conn,
-            school_id,
-            year_id,
-            grade,
-            class_no,
-            &win_from_text,
-            &win_to_text,
-            &rule,
-        )?;
+        let hits = counted_spans(conn, scope.id, &win_from_text, &win_to_text, &rule)?;
 
         // 날짜 단위는 (학생, 칸)마다 날짜 집합을, 건수 단위는 건수를 센다.
         let mut day_hits: HashMap<(i64, String), BTreeSet<String>> = HashMap::new();
@@ -561,6 +537,8 @@ pub fn get_quota_reports_impl(
 
             rows.push(QuotaRow {
                 student_id: s.id,
+                grade: s.grade,
+                class_no: s.class_no,
                 number: s.number,
                 name: s.name.clone(),
                 used,
@@ -571,17 +549,7 @@ pub fn get_quota_reports_impl(
             });
         }
 
-        let untagged = untagged_spans(
-            conn,
-            school_id,
-            year_id,
-            grade,
-            class_no,
-            &win_from_text,
-            &win_to_text,
-            &rule,
-            today,
-        )?;
+        let untagged = untagged_spans(conn, scope.id, &win_from_text, &win_to_text, &rule, today)?;
 
         out.push(QuotaReport {
             rule,
@@ -599,27 +567,14 @@ pub fn get_quota_reports_impl(
 // ── 커맨드 ────────────────────────────────────────────────────
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub fn get_quota_reports(
     db: State<DbState>,
-    school_id: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
+    class_id: i64,
     rule_id: Option<i64>,
     from: Option<String>,
     to: Option<String>,
 ) -> Result<Vec<QuotaReport>, String> {
     with_conn(&db, |conn| {
-        get_quota_reports_impl(
-            conn,
-            school_id,
-            year_id,
-            grade,
-            class_no,
-            rule_id,
-            from.as_deref(),
-            to.as_deref(),
-        )
+        get_quota_reports_impl(conn, class_id, rule_id, from.as_deref(), to.as_deref())
     })
 }

@@ -12,6 +12,8 @@ use rusqlite::Connection;
 
 fn span(id: i64, number: i64, name: &str) -> SpanItem {
     SpanItem {
+        grade: 3,
+        class_no: 6,
         id,
         student_id: number,
         number,
@@ -73,15 +75,16 @@ fn first_cells(line: &str, n: usize) -> Vec<String> {
 
 fn insert_span(
     conn: &Connection,
+    class_id: i64,
     student_id: i64,
     date: &str,
     axes: (Option<i64>, Option<i64>),
     memo: &str,
 ) -> i64 {
     conn.execute(
-        "INSERT INTO absence_span (student_id, date, reason_id, type_id, memo)
-         VALUES (?1, ?2, ?3, ?4, ?5)",
-        rusqlite::params![student_id, date, axes.0, axes.1, memo],
+        "INSERT INTO absence_span (class_id, student_id, date, reason_id, type_id, memo)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![class_id, student_id, date, axes.0, axes.1, memo],
     )
     .unwrap();
     conn.last_insert_rowid()
@@ -106,7 +109,7 @@ fn csv_cell_quotes_comma_quote_and_newline() {
 fn name_with_comma_stays_one_cell() {
     let mut s = span(1, 7, "김, 민준");
     s.memo = "확인서, 다음 주".to_string();
-    let csv = build_spans_csv(3, 6, &[s], &Default::default());
+    let csv = build_spans_csv(&[s], &Default::default());
     let rows = body(&csv);
     assert!(rows[1].contains("\"김, 민준\""), "{}", rows[1]);
     assert!(rows[1].contains("\"확인서, 다음 주\""), "{}", rows[1]);
@@ -125,10 +128,10 @@ fn every_table_starts_with_bom() {
         untagged: vec![],
     };
     for csv in [
-        build_spans_csv(3, 6, &[], &Default::default()),
-        build_doc_pending_csv(3, 6, "2026-09-10", &[]),
-        build_neis_pending_csv(3, 6, &[]),
-        build_quota_csv(3, 6, &report),
+        build_spans_csv(&[], &Default::default()),
+        build_doc_pending_csv("2026-09-10", &[]),
+        build_neis_pending_csv(&[]),
+        build_quota_csv(&report),
     ] {
         assert!(csv.starts_with('\u{feff}'), "BOM이 없다: {csv:?}");
     }
@@ -137,9 +140,9 @@ fn every_table_starts_with_bom() {
 #[test]
 fn empty_list_still_has_header() {
     for csv in [
-        build_spans_csv(3, 6, &[], &Default::default()),
-        build_doc_pending_csv(3, 6, "2026-09-10", &[]),
-        build_neis_pending_csv(3, 6, &[]),
+        build_spans_csv(&[], &Default::default()),
+        build_doc_pending_csv("2026-09-10", &[]),
+        build_neis_pending_csv(&[]),
     ] {
         let rows = body(&csv);
         assert_eq!(rows.len(), 1, "머리글만 남아야 한다: {rows:?}");
@@ -151,9 +154,9 @@ fn empty_list_still_has_header() {
 fn first_three_columns_are_grade_class_number() {
     let s = span(1, 7, "김민준");
     for csv in [
-        build_spans_csv(3, 6, std::slice::from_ref(&s), &Default::default()),
-        build_doc_pending_csv(3, 6, "2026-09-10", std::slice::from_ref(&s)),
-        build_neis_pending_csv(3, 6, std::slice::from_ref(&s)),
+        build_spans_csv(std::slice::from_ref(&s), &Default::default()),
+        build_doc_pending_csv("2026-09-10", std::slice::from_ref(&s)),
+        build_neis_pending_csv(std::slice::from_ref(&s)),
     ] {
         let rows = body(&csv);
         assert_eq!(first_cells(&rows[0], 3), ["학년", "반", "번호"]);
@@ -166,6 +169,8 @@ fn quota_table_also_leads_with_class_keys() {
     let report = QuotaReport {
         rule: rule("체험학습 연 20일", "year", "day", 20),
         rows: vec![QuotaRow {
+            grade: 3,
+            class_no: 6,
             student_id: 1,
             number: 7,
             name: "김민준".to_string(),
@@ -180,7 +185,7 @@ fn quota_table_also_leads_with_class_keys() {
         over_count: 0,
         untagged: vec![],
     };
-    let rows = body(&build_quota_csv(3, 6, &report));
+    let rows = body(&build_quota_csv(&report));
     assert_eq!(first_cells(&rows[0], 3), ["학년", "반", "번호"]);
     assert_eq!(first_cells(&rows[1], 3), ["3", "6", "7"]);
 }
@@ -189,7 +194,7 @@ fn quota_table_also_leads_with_class_keys() {
 
 #[test]
 fn unset_axes_read_as_undecided() {
-    let rows = body(&build_spans_csv(3, 6, &[span(1, 7, "김민준")], &Default::default()));
+    let rows = body(&build_spans_csv(&[span(1, 7, "김민준")], &Default::default()));
     assert!(rows[1].contains("미정"), "{}", rows[1]);
 }
 
@@ -197,7 +202,7 @@ fn unset_axes_read_as_undecided() {
 fn dates_are_written_in_screen_format() {
     let mut s = span(1, 7, "김민준");
     s.doc_due = Some("2026-09-17".to_string());
-    let rows = body(&build_doc_pending_csv(3, 6, "2026-09-10", &[s]));
+    let rows = body(&build_doc_pending_csv("2026-09-10", &[s]));
     assert!(rows[1].contains("2026.09.10.(목)"), "{}", rows[1]);
     assert!(rows[1].contains("2026.09.17.(목)"), "{}", rows[1]);
 }
@@ -213,8 +218,6 @@ fn overdue_column_reads_as_a_sentence() {
     let none = span(4, 10, "최유진");
 
     let rows = body(&build_doc_pending_csv(
-        3,
-        6,
         "2026-09-10",
         &[past, today, ahead, none],
     ));
@@ -230,7 +233,7 @@ fn neis_table_flags_incomplete_records() {
     let mut done = span(1, 7, "김민준");
     done.complete = true;
     let waiting = span(2, 8, "이서연");
-    let rows = body(&build_neis_pending_csv(3, 6, &[done, waiting]));
+    let rows = body(&build_neis_pending_csv(&[done, waiting]));
     assert!(rows[1].ends_with("완성"), "{}", rows[1]);
     assert!(rows[2].ends_with("미완성"), "{}", rows[2]);
 }
@@ -242,7 +245,7 @@ fn span_table_shows_document_and_neis_state() {
     s.doc_done_on = Some("2026-09-12".to_string());
     s.neis_done = false;
     s.overlapping = true;
-    let rows = body(&build_spans_csv(3, 6, &[s], &Default::default()));
+    let rows = body(&build_spans_csv(&[s], &Default::default()));
     assert!(rows[1].contains("받음"), "{}", rows[1]);
     assert!(rows[1].contains("미등재"), "{}", rows[1]);
     assert!(rows[1].contains("겹침"), "{}", rows[1]);
@@ -256,6 +259,8 @@ fn quota_table_lists_used_dates() {
     let report = QuotaReport {
         rule: rule("체험학습 연 20일", "year", "day", 20),
         rows: vec![QuotaRow {
+            grade: 3,
+            class_no: 6,
             student_id: 1,
             number: 7,
             name: "김민준".to_string(),
@@ -270,7 +275,7 @@ fn quota_table_lists_used_dates() {
         over_count: 0,
         untagged: vec![],
     };
-    let rows = body(&build_quota_csv(3, 6, &report));
+    let rows = body(&build_quota_csv(&report));
     assert!(rows[1].contains("학년도"), "{}", rows[1]);
     assert!(rows[1].contains("일수"), "{}", rows[1]);
     assert!(rows[1].contains("여유"), "{}", rows[1]);
@@ -287,6 +292,8 @@ fn quota_table_uses_month_buckets_when_present() {
     let report = QuotaReport {
         rule: rule("생리통 월 1회", "month", "count", 1),
         rows: vec![QuotaRow {
+            grade: 3,
+            class_no: 6,
             student_id: 1,
             number: 7,
             name: "김민준".to_string(),
@@ -312,7 +319,7 @@ fn quota_table_uses_month_buckets_when_present() {
         over_count: 1,
         untagged: vec![],
     };
-    let rows = body(&build_quota_csv(3, 6, &report));
+    let rows = body(&build_quota_csv(&report));
     assert!(rows[1].contains("달"), "{}", rows[1]);
     assert!(rows[1].contains("건수"), "{}", rows[1]);
     assert!(rows[1].contains("초과"), "{}", rows[1]);
@@ -332,7 +339,7 @@ fn untagged_records_are_not_dropped_silently() {
         over_count: 0,
         untagged: vec![orphan],
     };
-    let csv = build_quota_csv(3, 6, &report);
+    let csv = build_quota_csv(&report);
     assert!(csv.contains("태그 없는 기록"), "{csv}");
     assert!(csv.contains("정하윤"), "{csv}");
 
@@ -357,7 +364,7 @@ fn quota_table_without_untagged_has_no_second_block() {
         over_count: 0,
         untagged: vec![],
     };
-    let csv = build_quota_csv(3, 6, &report);
+    let csv = build_quota_csv(&report);
     assert!(!csv.contains("태그 없는 기록"), "{csv}");
     assert_eq!(body(&csv).len(), 1);
 }
@@ -368,9 +375,9 @@ fn quota_table_without_untagged_has_no_second_block() {
 fn unknown_pending_kind_is_rejected() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
+    let class = homeroom(&conn, year);
     let err =
-        export_pending_csv_impl(&conn, school, year, 3, 6, "check", "2026-09-10").unwrap_err();
+        export_pending_csv_impl(&conn, class, "check", "2026-09-10").unwrap_err();
     assert!(err.contains("check"), "{err}");
 }
 
@@ -378,10 +385,10 @@ fn unknown_pending_kind_is_rejected() {
 fn broken_date_is_rejected() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    assert!(export_spans_csv_impl(&conn, school, year, 3, 6, "어제", "2026-09-30").is_err());
-    assert!(export_spans_csv_impl(&conn, school, year, 3, 6, "2026-09-01", "2026-13-01").is_err());
-    assert!(export_pending_csv_impl(&conn, school, year, 3, 6, "doc", "어제").is_err());
+    let class = homeroom(&conn, year);
+    assert!(export_spans_csv_impl(&conn, class, "어제", "2026-09-30").is_err());
+    assert!(export_spans_csv_impl(&conn, class, "2026-09-01", "2026-13-01").is_err());
+    assert!(export_pending_csv_impl(&conn, class, "doc", "어제").is_err());
 }
 
 #[test]
@@ -391,9 +398,9 @@ fn a_day_past_the_end_of_the_month_is_rejected() {
     // 기간을 정하는 것은 부르는 쪽의 일이다.
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
+    let class = homeroom(&conn, year);
     let err =
-        export_spans_csv_impl(&conn, school, year, 3, 6, "2026-02-01", "2026-02-31").unwrap_err();
+        export_spans_csv_impl(&conn, class, "2026-02-01", "2026-02-31").unwrap_err();
     assert!(err.contains("2026-02-31"), "{err}");
 }
 
@@ -401,9 +408,9 @@ fn a_day_past_the_end_of_the_month_is_rejected() {
 fn reversed_range_is_rejected() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
+    let class = homeroom(&conn, year);
     let err =
-        export_spans_csv_impl(&conn, school, year, 3, 6, "2026-09-30", "2026-09-01").unwrap_err();
+        export_spans_csv_impl(&conn, class, "2026-09-30", "2026-09-01").unwrap_err();
     assert!(err.contains("앞뒤"), "{err}");
 }
 
@@ -411,8 +418,8 @@ fn reversed_range_is_rejected() {
 fn missing_quota_rule_is_rejected() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    let err = export_quota_csv_impl(&conn, school, year, 3, 6, 9999).unwrap_err();
+    let class = homeroom(&conn, year);
+    let err = export_quota_csv_impl(&conn, class, 9999).unwrap_err();
     assert!(err.contains("9999"), "{err}");
 }
 
@@ -422,13 +429,13 @@ fn missing_quota_rule_is_rejected() {
 fn span_export_reads_only_the_given_range() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    let student = insert_student(&conn, year, 7, "김, 민준");
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 7, "김, 민준");
     let axes = axes(&conn, "질병", "결석");
-    insert_span(&conn, student, "2026-09-10", axes, "감기");
-    insert_span(&conn, student, "2026-10-02", axes, "장염");
+    insert_span(&conn, class, student, "2026-09-10", axes, "감기");
+    insert_span(&conn, class, student, "2026-10-02", axes, "장염");
 
-    let csv = export_spans_csv_impl(&conn, school, year, 3, 6, "2026-09-01", "2026-09-30").unwrap();
+    let csv = export_spans_csv_impl(&conn, class, "2026-09-01", "2026-09-30").unwrap();
     assert!(csv.starts_with('\u{feff}'));
     assert!(csv.contains("감기"), "{csv}");
     assert!(!csv.contains("장염"), "{csv}");
@@ -440,8 +447,8 @@ fn span_export_reads_only_the_given_range() {
 fn empty_class_exports_header_only() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    let csv = export_spans_csv_impl(&conn, school, year, 3, 6, "2026-09-01", "2026-09-30").unwrap();
+    let class = homeroom(&conn, year);
+    let csv = export_spans_csv_impl(&conn, class, "2026-09-01", "2026-09-30").unwrap();
     assert_eq!(body(&csv).len(), 1);
 }
 
@@ -449,10 +456,10 @@ fn empty_class_exports_header_only() {
 fn quota_export_reads_the_named_rule() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    let student = insert_student(&conn, year, 7, "김민준");
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 7, "김민준");
     let axes = axes(&conn, "출석인정", "결석");
-    let id = insert_span(&conn, student, "2026-05-04", axes, "가족 여행");
+    let id = insert_span(&conn, class, student, "2026-05-04", axes, "가족 여행");
     conn.execute(
         "UPDATE absence_span SET tag_id = ?1 WHERE id = ?2",
         rusqlite::params![tag_id(&conn, "체험학습"), id],
@@ -460,7 +467,7 @@ fn quota_export_reads_the_named_rule() {
     .unwrap();
 
     let rule = quota_rule_id(&conn, "체험학습 연 20일");
-    let csv = export_quota_csv_impl(&conn, school, year, 3, 6, rule).unwrap();
+    let csv = export_quota_csv_impl(&conn, class, rule).unwrap();
     assert!(csv.starts_with('\u{feff}'));
     let rows = body(&csv);
     assert_eq!(first_cells(&rows[0], 3), ["학년", "반", "번호"]);
@@ -472,17 +479,17 @@ fn quota_export_reads_the_named_rule() {
 fn pending_export_lists_records_whose_due_has_not_arrived() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    let student = insert_student(&conn, year, 7, "김민준");
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 7, "김민준");
     let axes = axes(&conn, "질병", "결석");
-    let id = insert_span(&conn, student, "2026-09-10", axes, "감기");
+    let id = insert_span(&conn, class, student, "2026-09-10", axes, "감기");
     conn.execute(
         "UPDATE absence_span SET doc_due = '2026-12-31' WHERE id = ?1",
         rusqlite::params![id],
     )
     .unwrap();
 
-    let csv = export_pending_csv_impl(&conn, school, year, 3, 6, "doc", "2026-09-10").unwrap();
+    let csv = export_pending_csv_impl(&conn, class, "doc", "2026-09-10").unwrap();
     assert!(csv.contains("김민준"), "{csv}");
     assert!(csv.contains("남음"), "{csv}");
 }
@@ -493,19 +500,19 @@ fn neis_export_flattens_the_day_groups_oldest_first() {
     // 흐트러지면 나이스에 위에서 아래로 옮겨 적을 수 없다.
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let school = school_id(&conn);
-    let student = insert_student(&conn, year, 7, "김민준");
+    let class = homeroom(&conn, year);
+    let student = enroll(&conn, class, year, 7, "김민준");
     let axes = axes(&conn, "질병", "결석");
-    insert_span(&conn, student, "2026-09-08", axes, "늦게");
-    insert_span(&conn, student, "2026-09-01", axes, "먼저");
-    let done = insert_span(&conn, student, "2026-09-04", axes, "이미 넣음");
+    insert_span(&conn, class, student, "2026-09-08", axes, "늦게");
+    insert_span(&conn, class, student, "2026-09-01", axes, "먼저");
+    let done = insert_span(&conn, class, student, "2026-09-04", axes, "이미 넣음");
     conn.execute(
         "UPDATE absence_span SET neis_done = 1 WHERE id = ?1",
         rusqlite::params![done],
     )
     .unwrap();
 
-    let csv = export_pending_csv_impl(&conn, school, year, 3, 6, "neis", "2026-09-10").unwrap();
+    let csv = export_pending_csv_impl(&conn, class, "neis", "2026-09-10").unwrap();
     let rows = body(&csv);
     assert_eq!(rows.len(), 3, "머리글과 미등재 둘: {rows:?}");
     assert!(rows[1].contains("2026.09.01."), "{}", rows[1]);
@@ -532,13 +539,13 @@ fn the_phrase_column_uses_the_pattern_of_that_code() {
     s.code_label = Some("질병결석".to_string());
     s.memo = "감기".to_string();
 
-    let csv = build_spans_csv(3, 6, std::slice::from_ref(&s), &patterns);
+    let csv = build_spans_csv(std::slice::from_ref(&s), &patterns);
     assert!(csv.contains("감기로 질병결석"), "문구가 만들어지지 않았다:
 {csv}");
 
     // 메모가 비면 "(으)로" 부스러기가 남지 않아야 한다.
     s.memo = String::new();
-    let csv = build_spans_csv(3, 6, std::slice::from_ref(&s), &patterns);
+    let csv = build_spans_csv(std::slice::from_ref(&s), &patterns);
     assert!(csv.contains("질병결석"), "{csv}");
     assert!(!csv.contains("(으)로"), "빈 메모의 자리표시자가 남았다:
 {csv}");
@@ -557,7 +564,7 @@ fn an_unfinished_record_gets_no_phrase() {
     s.code_label = None;
 
     assert_eq!(phrase_of(&s, &patterns), "");
-    let _ = build_spans_csv(3, 6, std::slice::from_ref(&s), &patterns);
+    let _ = build_spans_csv(std::slice::from_ref(&s), &patterns);
 }
 
 fn phrase_patterns_of(

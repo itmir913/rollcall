@@ -61,7 +61,7 @@ export const useNeisImportStore = defineStore('neisImport', {
                 this.rows = read.rows
                 this.meta = read.meta
                 this.preview = await invoke('preview_neis_import', {
-                    ...app.scope,
+                    classId: app.classId,
                     rows: read.rows,
                     today: app.today,
                 })
@@ -95,7 +95,7 @@ export const useNeisImportStore = defineStore('neisImport', {
             this.error = ''
             try {
                 return await invoke('apply_neis_import', {
-                    ...app.scope,
+                    classId: app.classId,
                     rows: this.rows,
                     choice: {
                         add: [...this.picked.add],

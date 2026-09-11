@@ -2,7 +2,7 @@
  * 출결 기록 스토어.
  *
  * 여기서 지키는 것은 하나다 — **NEIS 검증은 파일의 기간으로 대조한다.**
- * 화면이 마지막에 보던 달로 맞추면 6월 파일을 9월 기록과 견주고는
+ * 화면이 마지막에 보던 달로 맞추면 6월 파일을 9월 기록과 대조하고는
  * "전부 앱에 없음"이라고 말한다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
@@ -15,10 +15,13 @@ vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn()}))
 
 function ready() {
     const app = useAppStore()
-    app.schoolId = 1
+    app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7}]
     app.yearId = 2
-    app.grade = 3
-    app.classNo = 6
+    app.classes = [{
+        id: 9, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+        grade: 3, classNo: 6, validTo: null,
+    }]
+    app.classId = 9
     app.today = '2026-09-11'
 }
 
@@ -34,8 +37,7 @@ describe('fetchBetween', () => {
         await useLogStore().fetchBetween('2026-06-01', '2026-06-30')
 
         expect(invoke).toHaveBeenCalledWith('get_spans_between', {
-            schoolId: 1, yearId: 2, grade: 3, classNo: 6,
-            from: '2026-06-01', to: '2026-06-30', today: '2026-09-11',
+            classId: 9, from: '2026-06-01', to: '2026-06-30', today: '2026-09-11',
         })
     })
 

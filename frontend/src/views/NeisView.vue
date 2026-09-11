@@ -84,7 +84,7 @@ function saveCsv(kind, args, suggested) {
             title="NEIS 미등재">
         <template #actions>
             <UiButton variant="download"
-                      @click="saveCsv('pending', {...app.scope, kind: 'neis', today: app.today}, 'NEIS_미등재.csv')">
+                      @click="saveCsv('pending', {classId: app.classId, kind: 'neis', today: app.today}, 'NEIS_미등재.csv')">
                 미등재 CSV
             </UiButton>
         </template>

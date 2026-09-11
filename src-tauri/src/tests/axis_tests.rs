@@ -5,31 +5,13 @@ use crate::tests::*;
 use rusqlite::Connection;
 
 /// 구간 하나를 직접 넣는다. 축과 기간은 이 파일의 관심사가 아니므로 비워 둔다.
-fn insert_span(conn: &Connection, student_id: i64, date: &str, memo: &str) {
+/// 구간은 **학급에 매단다.** 메모 후보도 그 학급에서 쓰인 말이어야 도움이 된다.
+fn insert_span(conn: &Connection, class_id: i64, student_id: i64, date: &str, memo: &str) {
     conn.execute(
-        "INSERT INTO absence_span (student_id, date, memo) VALUES (?1, ?2, ?3)",
-        rusqlite::params![student_id, date, memo],
+        "INSERT INTO absence_span (class_id, student_id, date, memo) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![class_id, student_id, date, memo],
     )
     .unwrap();
-}
-
-/// 학급을 지정해 학생을 넣는다. 헬퍼 `insert_student`는 3학년 6반에만 넣는다.
-fn insert_student_in(
-    conn: &Connection,
-    school: i64,
-    year_id: i64,
-    grade: i64,
-    class_no: i64,
-    number: i64,
-    name: &str,
-) -> i64 {
-    conn.execute(
-        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-03-02')",
-        rusqlite::params![school, year_id, grade, class_no, number, name],
-    )
-    .unwrap();
-    conn.last_insert_rowid()
 }
 
 // ── 시드 ──────────────────────────────────────────────────────
@@ -172,13 +154,15 @@ fn retired_code_leaves_the_current_list_but_stays_for_past_dates() {
 fn revising_a_code_closes_the_old_row_and_keeps_past_records_pointing_at_the_axes() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
     let (r, t) = axes(&conn, "질병", "조퇴");
 
     conn.execute(
-        "INSERT INTO absence_span (student_id, date, reason_id, type_id, start_slot, memo)
-         VALUES (?1, '2026-08-26', ?2, ?3, '5', '복통')",
-        rusqlite::params![sid, r, t],
+        "INSERT INTO absence_span
+             (class_id, student_id, date, reason_id, type_id, start_slot, memo)
+         VALUES (?1, ?2, '2026-08-26', ?3, ?4, '5', '복통')",
+        rusqlite::params![class, sid, r, t],
     )
     .unwrap();
 
@@ -336,16 +320,16 @@ fn axis_labels_cannot_be_blank() {
 fn memo_suggestions_come_from_past_entries_most_used_first() {
     // 별도 테이블 없이 쓸수록 후보가 쌓인다.
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
 
-    insert_span(&conn, sid, "2026-08-24", "몸살");
-    insert_span(&conn, sid, "2026-08-25", "몸살");
-    insert_span(&conn, sid, "2026-08-26", "복통");
+    insert_span(&conn, class, sid, "2026-08-24", "몸살");
+    insert_span(&conn, class, sid, "2026-08-25", "몸살");
+    insert_span(&conn, class, sid, "2026-08-26", "복통");
 
     assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 3, 6, 8).unwrap(),
+        get_memo_suggestions_impl(&conn, class, 8).unwrap(),
         vec!["몸살", "복통"]
     );
 }
@@ -354,16 +338,16 @@ fn memo_suggestions_come_from_past_entries_most_used_first() {
 fn an_empty_memo_is_not_a_suggestion() {
     // 메모는 비어 있는 것이 정상이다. 그것이 후보 버튼으로 나오면 자리만 차지한다.
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
 
-    insert_span(&conn, sid, "2026-08-24", "");
-    insert_span(&conn, sid, "2026-08-25", "   ");
-    insert_span(&conn, sid, "2026-08-26", "복통");
+    insert_span(&conn, class, sid, "2026-08-24", "");
+    insert_span(&conn, class, sid, "2026-08-25", "   ");
+    insert_span(&conn, class, sid, "2026-08-26", "복통");
 
     assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 3, 6, 8).unwrap(),
+        get_memo_suggestions_impl(&conn, class, 8).unwrap(),
         vec!["복통"]
     );
 }
@@ -372,89 +356,64 @@ fn an_empty_memo_is_not_a_suggestion() {
 fn the_same_memo_typed_with_a_stray_space_is_one_candidate() {
     // 저장은 교사가 친 그대로다. 앞뒤 공백을 떼지 않고 세면 똑같이 생긴 버튼이 둘 나온다.
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
 
-    insert_span(&conn, sid, "2026-08-24", "복통");
-    insert_span(&conn, sid, "2026-08-25", "복통 ");
-    insert_span(&conn, sid, "2026-08-26", " 복통");
+    insert_span(&conn, class, sid, "2026-08-24", "복통");
+    insert_span(&conn, class, sid, "2026-08-25", "복통 ");
+    insert_span(&conn, class, sid, "2026-08-26", " 복통");
 
     assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 3, 6, 8).unwrap(),
+        get_memo_suggestions_impl(&conn, class, 8).unwrap(),
         vec!["복통"]
     );
 }
 
 #[test]
 fn memo_suggestions_stay_inside_the_class() {
-    // 후보는 그 반에서 실제로 쓰인 말이어야 도움이 된다.
+    // 후보는 그 반에서 실제로 쓰인 말이어야 도움이 된다. 범위가 학급이므로
+    // 작년 반도 옆 학교도 자연히 갈린다 — 학급이 학년도와 학교를 함께 가리킨다.
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let mine = insert_student(&conn, year, 2, "이영희");
-    let other_class = insert_student_in(&conn, school, year, 1, 2, 1, "최지훈");
+    let class = homeroom(&conn, year);
+    let mine = enroll(&conn, class, year, 2, "이영희");
 
-    insert_span(&conn, mine, "2026-08-26", "복통");
-    insert_span(&conn, other_class, "2026-08-26", "옆반메모");
+    let next_door = insert_class(&conn, year, "homeroom", "1학년 2반", Some(1), Some(2));
+    let other_class = insert_student_at(&conn, year, 1, 2, 1, "최지훈");
+    join_class(&conn, next_door, other_class);
+
+    insert_span(&conn, class, mine, "2026-08-26", "복통");
+    insert_span(&conn, next_door, other_class, "2026-08-26", "옆반메모");
 
     assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 3, 6, 8).unwrap(),
+        get_memo_suggestions_impl(&conn, class, 8).unwrap(),
         vec!["복통"]
     );
     assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 1, 2, 8).unwrap(),
+        get_memo_suggestions_impl(&conn, next_door, 8).unwrap(),
         vec!["옆반메모"]
-    );
-}
-
-#[test]
-fn memo_suggestions_stay_inside_the_school_and_the_year() {
-    let conn = setup_test_db();
-    let school = school_id(&conn);
-    let year = insert_year(&conn, 2026);
-    let last_year = insert_year(&conn, 2025);
-
-    conn.execute(
-        "INSERT INTO school (name, max_slot, due_days, due_skip_offdays, sort_order, active)
-         VALUES ('옆 학교', 6, 5, 1, 20, 1)",
-        [],
-    )
-    .unwrap();
-    let other_school = conn.last_insert_rowid();
-
-    let mine = insert_student(&conn, year, 2, "이영희");
-    let older = insert_student_in(&conn, school, last_year, 3, 6, 2, "작년학생");
-    let elsewhere = insert_student_in(&conn, other_school, year, 3, 6, 2, "옆학교학생");
-
-    insert_span(&conn, mine, "2026-08-26", "복통");
-    insert_span(&conn, older, "2025-08-26", "작년메모");
-    insert_span(&conn, elsewhere, "2026-08-26", "옆학교메모");
-
-    assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 3, 6, 8).unwrap(),
-        vec!["복통"]
     );
 }
 
 #[test]
 fn memo_suggestions_respect_the_limit() {
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    let sid = insert_student(&conn, year, 2, "이영희");
+    let class = homeroom(&conn, year);
+    let sid = enroll(&conn, class, year, 2, "이영희");
 
     for (i, memo) in ["몸살", "복통", "두통"].iter().enumerate() {
-        insert_span(&conn, sid, &format!("2026-08-{:02}", 20 + i), memo);
+        insert_span(&conn, class, sid, &format!("2026-08-{:02}", 20 + i), memo);
     }
 
     assert_eq!(
-        get_memo_suggestions_impl(&conn, school, year, 3, 6, 2)
+        get_memo_suggestions_impl(&conn, class, 2)
             .unwrap()
             .len(),
         2
     );
-    assert!(get_memo_suggestions_impl(&conn, school, year, 3, 6, 0)
+    assert!(get_memo_suggestions_impl(&conn, class, 0)
         .unwrap()
         .is_empty());
 }
@@ -463,9 +422,9 @@ fn memo_suggestions_respect_the_limit() {
 fn a_class_with_no_records_yet_gets_an_empty_list() {
     // 첫 실행에서 후보가 없는 것은 실패가 아니다.
     let conn = setup_test_db();
-    let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
-    assert!(get_memo_suggestions_impl(&conn, school, year, 3, 6, 8)
+    let class = homeroom(&conn, year);
+    assert!(get_memo_suggestions_impl(&conn, class, 8)
         .unwrap()
         .is_empty());
 }

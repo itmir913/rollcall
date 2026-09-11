@@ -20,13 +20,13 @@ use crate::tests::*;
 use crate::types::{OffDayItem, SpanEdit, StampInput};
 
 const TODAY: &str = "2026-09-10";
-const SCHOOL_GRADE: i64 = 3;
-const SCHOOL_CLASS: i64 = 6;
 
 struct Fixture {
     conn: rusqlite::Connection,
     school: i64,
     year: i64,
+    /// 담임 학급 하나. 모든 화면의 범위가 이것이다.
+    class: i64,
     students: Vec<i64>,
 }
 
@@ -34,15 +34,17 @@ fn fixture() -> Fixture {
     let conn = setup_test_db();
     let school = school_id(&conn);
     let year = insert_year(&conn, 2026);
+    let class = homeroom(&conn, year);
     let students = vec![
-        insert_student(&conn, year, 5, "김하늘"),
-        insert_student(&conn, year, 12, "박서연"),
-        insert_student(&conn, year, 19, "임세훈"),
+        enroll(&conn, class, year, 5, "김하늘"),
+        enroll(&conn, class, year, 12, "박서연"),
+        enroll(&conn, class, year, 19, "임세훈"),
     ];
     Fixture {
         conn,
         school,
         year,
+        class,
         students,
     }
 }
@@ -52,6 +54,7 @@ fn stamp(f: &Fixture, student: i64, reason: &str, r#type: &str, slots: &[&str]) 
     stamp_span_impl(
         &f.conn,
         &StampInput {
+            class_id: f.class,
             student_id: student,
             date: TODAY.to_string(),
             reason_id,
@@ -72,58 +75,37 @@ fn a_whole_day_goes_through_every_screen() {
     stamp(&f, f.students[0], "질병", "결석", &[]);
     stamp(&f, f.students[1], "미인정", "지각", &["2"]);
 
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY)
-        .unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
     assert_eq!(grid.rows.len(), 3, "재학생은 구간이 없어도 행이 나온다");
     assert_eq!(grid.spans.len(), 2);
 
     // 2. 개요가 보는 숫자. 기록된 것은 **학생 수**이지 구간 수가 아니다.
-    let summary = get_home_summary_impl(
-        &f.conn,
-        f.school,
-        f.year,
-        SCHOOL_GRADE,
-        SCHOOL_CLASS,
-        TODAY,
-        5,
-    )
-    .unwrap();
+    let summary = get_home_summary_impl(&f.conn, f.class, TODAY, 5).unwrap();
     assert_eq!(summary.enrolled, 3);
     assert_eq!(summary.recorded, 2);
     assert_eq!(summary.doc_pending, 2, "안 받은 서류는 마감과 무관하게 전부 센다");
     assert_eq!(summary.neis_pending, 2);
 
     // 3. 서류 미제출자 화면에서 하나를 받는다. **그 줄은 목록에서 사라지지 않는다.**
-    let pending = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let pending = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap();
     assert_eq!(pending.len(), 2);
 
     set_doc_done_impl(&f.conn, pending[0].id, true, TODAY).unwrap();
-    let after = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, true, TODAY,
-    )
+    let after = get_doc_pending_impl(&f.conn, f.class, None, None, true, TODAY)
     .unwrap();
     assert_eq!(after.len(), 2, "include_done이면 받은 것도 함께 보여준다");
     assert!(after.iter().any(|s| s.doc_done));
 
     // 4. 나이스에 하루치를 한 번에 넣는다.
-    let marked = mark_day_neis_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY, TODAY,
-    )
-    .unwrap();
+    let marked = mark_day_neis_impl(&f.conn, f.class, TODAY, TODAY).unwrap();
     assert_eq!(marked, 2);
 
-    let neis = get_neis_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, TODAY,
-    )
-    .unwrap();
+    let neis = get_neis_pending_impl(&f.conn, f.class, None, None, TODAY).unwrap();
     assert!(neis.is_empty(), "전부 등재했으므로 남는 날짜가 없다");
 
     // 5. 출결 기록은 날짜별로 묶인다.
-    let log =
-        get_month_log_impl(&f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, 2026, 9).unwrap();
+    let log = get_month_log_impl(&f.conn, f.class, 2026, 9).unwrap();
     assert_eq!(log.len(), 1);
     assert_eq!(log[0].spans.len(), 2);
     assert_eq!(log[0].enrolled, 3);
@@ -136,14 +118,12 @@ fn stamping_twice_cancels_but_a_different_combination_stacks() {
 
     stamp(&f, f.students[0], "질병", "지각", &["1"]);
     stamp(&f, f.students[0], "질병", "지각", &["1"]); // 같은 조합 — 취소
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY)
-        .unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
     assert!(grid.spans.is_empty());
 
     stamp(&f, f.students[0], "질병", "지각", &["1"]);
     stamp(&f, f.students[0], "질병", "조퇴", &["5"]);
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY)
-        .unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
     assert_eq!(grid.spans.len(), 2, "하루 2구간은 정상 입력이다");
 }
 
@@ -168,6 +148,7 @@ fn an_unfinished_record_is_saved_and_counted() {
     stamp_span_impl(
         &f.conn,
         &StampInput {
+            class_id: f.class,
             student_id: f.students[0],
             date: TODAY.to_string(),
             reason_id: None,
@@ -177,10 +158,7 @@ fn an_unfinished_record_is_saved_and_counted() {
     )
     .unwrap();
 
-    let summary = get_home_summary_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY, 5,
-    )
-    .unwrap();
+    let summary = get_home_summary_impl(&f.conn, f.class, TODAY, 5).unwrap();
     assert_eq!(summary.incomplete, 1);
     assert_eq!(summary.recorded, 1);
 }
@@ -191,9 +169,7 @@ fn changing_the_school_setting_never_moves_an_existing_due_date() {
     let f = fixture();
     stamp(&f, f.students[0], "질병", "결석", &[]);
 
-    let before = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let before = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap()[0]
         .doc_due
         .clone();
@@ -202,9 +178,7 @@ fn changing_the_school_setting_never_moves_an_existing_due_date() {
     school.due_days = 1;
     update_school_impl(&f.conn, &school).unwrap();
 
-    let after = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let after = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap()[0]
         .doc_due
         .clone();
@@ -218,9 +192,7 @@ fn an_off_day_pushes_the_due_date_of_records_made_after_it() {
     let f = fixture();
 
     stamp(&f, f.students[0], "질병", "결석", &[]);
-    let without = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let without = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap()[0]
         .doc_due
         .clone();
@@ -238,9 +210,7 @@ fn an_off_day_pushes_the_due_date_of_records_made_after_it() {
     .unwrap();
     stamp(&f, f.students[1], "질병", "결석", &[]);
 
-    let rows = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let rows = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap();
     let with = rows
         .iter()
@@ -266,17 +236,7 @@ fn the_quota_counts_by_tag_across_different_types() {
     set_span_tag_impl(&f.conn, leave, Some(trip)).unwrap();
 
     let rule = quota_rule_id(&f.conn, "체험학습 연 20일");
-    let reports = get_quota_reports_impl(
-        &f.conn,
-        f.school,
-        f.year,
-        SCHOOL_GRADE,
-        SCHOOL_CLASS,
-        Some(rule),
-        None,
-        None,
-    )
-    .unwrap();
+    let reports = get_quota_reports_impl(&f.conn, f.class, Some(rule), None, None).unwrap();
 
     let row = reports[0]
         .rows
@@ -293,17 +253,7 @@ fn a_record_without_a_tag_is_shown_instead_of_being_skipped() {
     stamp(&f, f.students[0], "출석인정", "결석", &[]);
 
     let rule = quota_rule_id(&f.conn, "체험학습 연 20일");
-    let reports = get_quota_reports_impl(
-        &f.conn,
-        f.school,
-        f.year,
-        SCHOOL_GRADE,
-        SCHOOL_CLASS,
-        Some(rule),
-        None,
-        None,
-    )
-    .unwrap();
+    let reports = get_quota_reports_impl(&f.conn, f.class, Some(rule), None, None).unwrap();
 
     assert!(!reports[0].untagged.is_empty());
 }
@@ -315,9 +265,7 @@ fn editing_keeps_the_due_date_and_deleting_removes_only_that_span() {
     let first = stamp(&f, f.students[0], "질병", "지각", &["1"])[0];
     let second = stamp(&f, f.students[0], "질병", "조퇴", &["5"])[0];
 
-    let before = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let before = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap()
     .into_iter()
     .find(|s| s.id == first)
@@ -337,9 +285,7 @@ fn editing_keeps_the_due_date_and_deleting_removes_only_that_span() {
     .unwrap();
     set_span_memo_impl(&f.conn, first, "늦잠").unwrap();
 
-    let rows = get_doc_pending_impl(
-        &f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, None, None, false, TODAY,
-    )
+    let rows = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap();
     let edited = rows.iter().find(|s| s.id == first).unwrap();
     assert_eq!(edited.doc_due, before, "고쳐도 마감은 그대로다");
@@ -347,8 +293,7 @@ fn editing_keeps_the_due_date_and_deleting_removes_only_that_span() {
     assert_eq!(edited.memo, "늦잠");
 
     delete_span_impl(&f.conn, first).unwrap();
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY)
-        .unwrap();
+    let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
     assert_eq!(grid.spans.len(), 1);
     assert_eq!(grid.spans[0].id, second);
 }
@@ -374,7 +319,36 @@ fn another_school_never_leaks_into_this_class() {
         )
         .unwrap();
 
-    let grid = get_day_grid_impl(&f.conn, f.school, f.year, SCHOOL_GRADE, SCHOOL_CLASS, TODAY)
-        .unwrap();
-    assert_eq!(grid.rows.len(), 3, "우리 학교 학생만 나온다");
+    let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
+    assert_eq!(grid.rows.len(), 3, "내 명단에 있는 학생만 나온다");
+}
+
+/// 담임 커맨드에 교과 `classId`가 오면 거절한다. 같은 학생이 양쪽에 있어도 그렇다.
+///
+/// 담임 화면에 교과의 숫자가 한 줄도 나오면 안 되고, 반대도 마찬가지다 —
+/// 어떤 교사는 담임만, 어떤 교사는 교과만 한다.
+#[test]
+fn 담임_출결은_교과_강좌_화면으로_새지_않는다() {
+    let f = fixture();
+    let subject = insert_class(&f.conn, f.year, "subject", "지구과학Ⅰ", None, None);
+    // 내 담임 반 학생이 내 강좌에도 들어온다. 학생 행은 하나, 소속이 둘이다.
+    join_class(&f.conn, subject, f.students[0]);
+    stamp(&f, f.students[0], "질병", "결석", &[]);
+
+    for err in [
+        get_day_grid_impl(&f.conn, subject, TODAY).unwrap_err(),
+        get_home_summary_impl(&f.conn, subject, TODAY, 5).unwrap_err(),
+        get_month_log_impl(&f.conn, subject, 2026, 9).unwrap_err(),
+        get_doc_pending_impl(&f.conn, subject, None, None, false, TODAY).unwrap_err(),
+        get_neis_pending_impl(&f.conn, subject, None, None, TODAY).unwrap_err(),
+        mark_day_neis_impl(&f.conn, subject, TODAY, TODAY).unwrap_err(),
+        get_quota_reports_impl(&f.conn, subject, None, None, None).unwrap_err(),
+    ] {
+        assert!(err.contains("담임 학급이 아닙니다"), "{err}");
+    }
+
+    // 담임 `classId`로 부르면 그 학생의 구간이 그대로 나온다.
+    let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
+    assert_eq!(grid.spans.len(), 1);
+    assert_eq!(grid.spans[0].student_id, f.students[0]);
 }

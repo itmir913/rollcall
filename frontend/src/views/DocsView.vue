@@ -95,7 +95,7 @@ async function setTag(span, tagId) {
             title="서류 미제출자">
         <template #actions>
             <UiButton variant="download"
-                      @click="saveCsv('pending', {...app.scope, kind: 'doc', today: app.today}, '서류_미제출자.csv')">
+                      @click="saveCsv('pending', {classId: app.classId, kind: 'doc', today: app.today}, '서류_미제출자.csv')">
                 미제출자 CSV
             </UiButton>
         </template>

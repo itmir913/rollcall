@@ -30,7 +30,7 @@ export const useHomeStore = defineStore('home', {
             this.error = ''
             try {
                 this.summary = await invoke('get_home_summary', {
-                    ...app.scope,
+                    classId: app.classId,
                     date: app.today,
                     limit,
                 })

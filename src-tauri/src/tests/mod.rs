@@ -128,6 +128,19 @@ pub fn join_class(conn: &Connection, class_id: i64, student_id: i64) -> i64 {
     conn.last_insert_rowid()
 }
 
+/// 시험에서 쓰는 담임 학급 하나. 3학년 6반이고, `insert_student`가 만드는 학적과 짝이다.
+pub fn homeroom(conn: &Connection, year_id: i64) -> i64 {
+    insert_class(conn, year_id, "homeroom", "3학년 6반", Some(3), Some(6))
+}
+
+/// 학생을 만들고 그 명단에 넣는다. 화면이 보는 상태가 이것이다 —
+/// `insert_student`는 학적만 만들므로 명단이 비어 있다.
+pub fn enroll(conn: &Connection, class_id: i64, year_id: i64, number: i64, name: &str) -> i64 {
+    let id = insert_student(conn, year_id, number, name);
+    join_class(conn, class_id, id);
+    id
+}
+
 /// 학적 자리를 직접 지정해 학생을 넣는다. 다른 반 학생을 만들 때 쓴다.
 pub fn insert_student_at(
     conn: &Connection,
