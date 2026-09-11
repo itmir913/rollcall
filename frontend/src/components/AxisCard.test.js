@@ -3,7 +3,7 @@
  *
  * 여기서 지키는 것은 둘이다.
  *   · **카드가 움직이지 않는다** — 종류를 바꿔도 버튼 수가 변하지 않고 활성 여부만 바뀐다.
- *   · **종류가 기간을 정한다** — 결석은 고를 것이 없고, 지각에 조회가, 조퇴에 종례가 없다.
+ *   · **종류가 기간을 결정한다** — 결석은 고를 것이 없고, 지각에 조회가, 조퇴에 종례가 없다.
  */
 import {describe, expect, it} from 'vitest'
 import {mount} from '@vue/test-utils'
@@ -96,7 +96,7 @@ describe('축 카드', () => {
         expect(wrapper.emitted('update:modelValue').at(-1)[0].slots).toEqual(['1', '3'])
     })
 
-    it('하나만 고르는 종류는 앞의 선택을 갈아 끼운다', async () => {
+    it('하나만 고르는 종류는 앞의 선택을 바꾼다', async () => {
         const wrapper = build({reasonId: 10, typeId: 1, slots: ['1']})
         await slotButtons(wrapper).find((b) => labelOf(b) === '3').trigger('click')
         expect(wrapper.emitted('update:modelValue').at(-1)[0].slots).toEqual(['3'])

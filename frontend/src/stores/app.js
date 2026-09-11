@@ -3,18 +3,18 @@ import {invoke} from '@tauri-apps/api/core'
 import {academicYearOf, yearSpanOf} from '../services/academicYear'
 
 /**
- * 맡은 것의 두 갈래. 담임은 구분 · 종류 · 기간을 기록하고, 교과는 그 교시에
+ * 담당 학급 · 강좌의 두 갈래. 담임은 구분 · 종류 · 기간을 기록하고, 교과는 그 교시에
  * 있었는지만 기록한다. 그래서 화면이 나뉘고, 한쪽의 숫자가 다른 쪽에 유출되면 안 된다.
  */
 export const MODES = ['homeroom', 'subject']
 
 /**
- * 앱이 지금 무엇을 보고 있는가 — **학년도 → 학교 → 맡은 것.**
+ * 앱이 지금 무엇을 보고 있는가 — **학년도 → 학교 → 담당 학급 · 강좌.**
  *
  * 이것이 이 앱의 계층이다. 전에는 학급을 고르면 학교가 역산됐는데, 그러면 그 학년도에
- * 아직 맡은 것이 없는 학교를 가리킬 수 없다 — 순회 교사가 2027학년도에 B학교를
+ * 아직 담당 학급 · 강좌가 없는 학교를 가리킬 수 없다 — 순회 교사가 2027학년도에 B학교를
  * 등록하고 강좌를 아직 안 넣은 하루가 그 상태다. 그래서 **학교가 저장되는 범위**이고,
- * 맡은 것 목록은 그 학교 것만 온다(`get_teaching_classes(schoolId)`).
+ * 담당 학급 · 강좌 목록은 그 학교 것만 온다(`get_teaching_classes(schoolId)`).
  *
  * **모드는 고른 학급의 역할이다.** 따로 담지 않고 게터로 둔 이유는, 둘을 나란히
  * 담으면 담임 모드에 교과 강좌가 걸린 화면이 나올 수 있고 그때는 DB 트리거가
@@ -40,9 +40,9 @@ export const useAppStore = defineStore('app', {
          */
         bootError: '',
         /**
-         * 맡은 것을 한 번이라도 만든 적이 있는가. **첫 실행 판단의 근거다.**
+         * 담당 학급 · 강좌를 한 번이라도 만든 적이 있는가. **첫 실행 판단의 근거다.**
          * 설정(`app_config`)의 `onboarded`에 남으므로 학년도를 옮겨도 따라온다 —
-         * 지금 맡은 것이 0개인 것은 시작하지 않은 것이 아니라 등록할 차례다.
+         * 지금 담당 학급 · 강좌가 0개인 것은 시작하지 않은 것이 아니라 등록할 차례다.
          */
         onboarded: false,
         years: [],
@@ -55,9 +55,9 @@ export const useAppStore = defineStore('app', {
          */
         pickedSchoolId: null,
         /**
-         * 이 학년도에 맡은 것 전부. **학교가 여럿이면 여러 학교 것이 한 목록에 온다.**
+         * 이 학년도의 담당 학급 · 강좌 전부. **학교가 여럿이면 여러 학교 것이 한 목록에 온다.**
          * 화면이 보는 것은 지금 학교 것(`schoolClasses`)이고, 이 목록 전체는
-         * "아직 시작하지 않았는가"와 "이미 맡고 있는 것인가"를 판단하는 데 쓴다.
+         * "아직 시작하지 않았는가"와 "이미 담당하고 있는가"를 판단하는 데 쓴다.
          */
         classes: [],
         /** 지금 보고 있는 학급. 담임 · 교과 커맨드가 받는 단 하나의 범위다. */
@@ -83,14 +83,14 @@ export const useAppStore = defineStore('app', {
         /** 하루의 마지막 교시. 화면이 앱 상수를 알지 않게 한다. */
         maxSlot: (s) => schoolOf(s)?.maxSlot ?? 7,
         /**
-         * 지금 학교에서 맡은 것. **역할이 정해지는 자리다** —
+         * 지금 학교의 담당 학급 · 강좌. **역할이 결정되는 자리다** —
          * A학교에서는 담임 + 교과, B학교에서는 교과만. 그것이 순회 교사다.
          */
         schoolClasses: (s) => s.classes.filter((c) => c.schoolId === (schoolOf(s)?.id ?? null)),
         /** 지금 보고 있는 학급 행. 이름 · 역할 · 학교가 여기 붙어 있다. */
         currentClass: (s) => classOf(s),
         /**
-         * homeroom | subject. **고른 학급이 정한다.**
+         * homeroom | subject. **고른 학급이 결정한다.**
          *
          * 화면이 이 값으로 구분되므로, 학급과 어긋나는 순간 담임 화면이 교과 강좌의
          * 명단을 그린다. 그래서 따로 담지 않고 여기서 읽는다.
@@ -115,16 +115,16 @@ export const useAppStore = defineStore('app', {
         /**
          * Welcome 화면으로 보내야 하는가. 흐름은 `Welcome → 개요`다.
          *
-         * **맡은 것을 한 번이라도 만든 적이 있는가로 판단한다.** 지금 맡은 것의 수로
-         * 보면 두 자리에서 틀린다 — 3월에 지난해 학급을 전부 마감한 교사가 사이드바도
-         * 없는 마법사로 튕기고, 새 학년도로 옮긴 직후도 같은 모습이 된다. 그 둘은
+         * **담당 학급 · 강좌를 한 번이라도 만든 적이 있는가로 판단한다.** 지금 몇 개를
+         * 담당하는가로 보면 두 자리에서 틀린다 — 3월에 지난해 학급을 전부 마감한 교사가
+         * 사이드바도 없는 마법사로 튕기고, 새 학년도로 옮긴 직후도 같은 모습이 된다. 그 둘은
          * 시작하지 않은 것이 아니라 **등록할 차례**다.
          *
          * **부팅이 실패했으면 보내지 않는다.** 읽지 못해 비어 있는 것과 아직 만들지
          * 않아 비어 있는 것은 화면에서 같아 보이는데, 앞의 경우 마법사로 보내면
          * 교사는 이미 넣은 학교와 명렬표가 사라졌다고 읽는다.
          *
-         * 지금 맡은 것이 있으면 그것도 시작한 증거다. 설정에 적는 것이 한 번이라도
+         * 지금 담당 학급 · 강좌가 있으면 그것도 시작한 증거다. 설정에 적는 것이 한 번이라도
          * 실패했을 때 그 교사만 마법사에 갇히는 일이 없도록 둘을 함께 본다.
          *
          * `firstRun`으로 판단하지 않는 이유는 따로 있다 — 교사가 Welcome을 끝내지 않고
@@ -171,7 +171,7 @@ export const useAppStore = defineStore('app', {
                 await this.fetchSchools()
                 await this.fetchClasses()
                 this.restore({homeroom: toNumber(homeroom), subject: toNumber(subject)})
-                // 맡은 것이 있다는 것은 이미 시작했다는 뜻이다. 이 열쇠가 없던 때에
+                // 담당 학급 · 강좌가 있다는 것은 이미 시작했다는 뜻이다. 이 열쇠가 없던 때에
                 // 쓰던 설정에는 값이 적혀 있지 않으므로 여기서 한 번 채운다 —
                 // 채우지 않으면 그 교사는 학급을 전부 마감한 날 마법사로 돌아간다.
                 if (this.classes.length > 0) await this.markStarted()
@@ -220,9 +220,9 @@ export const useAppStore = defineStore('app', {
         },
 
         /**
-         * 이 학년도에 맡은 것을 전부 읽는다. **학교마다 한 번씩 묻는다** —
+         * 이 학년도의 담당 학급 · 강좌를 전부 읽는다. **학교마다 한 번씩 묻는다** —
          * 커맨드의 범위가 학교 하나이기 때문이고, "아직 시작하지 않았다"는 판단은
-         * 학년도 전체를 봐야 하기 때문이다. 한 학교만 읽으면 그 학교에 아직 맡은 것이
+         * 학년도 전체를 봐야 하기 때문이다. 한 학교만 읽으면 그 학교에 아직 담당 학급 · 강좌가
          * 없다는 것과 앱을 처음 켰다는 것이 같은 모양으로 보인다.
          */
         async fetchClasses() {
@@ -247,7 +247,7 @@ export const useAppStore = defineStore('app', {
          * 학년도가 바뀌어 지난해 학급이 마감되면 그 번호로 묻는 질의가 전부 빈다.
          * 적힌 것이 없으면 그 역할의 첫 학급을 고른다.
          *
-         * **마지막에 본 모드는 그대로 둔다.** 그 모드에 맡은 것이 없으면 학급 없이
+         * **마지막에 본 모드는 그대로 둔다.** 그 모드에 담당 학급 · 강좌가 없으면 학급 없이
          * 열린다 — 담임 학급이 없는 담임 모드가 정상 상태이고, 말없이 반대 모드로
          * 열면 교사는 자기가 무엇을 눌렀는지 모른 채 다른 화면을 보게 된다.
          */
@@ -267,7 +267,7 @@ export const useAppStore = defineStore('app', {
          * 모드마다 기억해 둔 학급을 목록에 맞춘다. **사라진 것을 지우고 빈 자리를 채운다.**
          *
          * 마감한 학급이 `lastClassId`에 남아 있으면, 스위치를 눌렀을 때 목록에 없는
-         * 학급으로 돌아간다 — 사이드바는 "맡은 것 없음"을 적는데 화면들은 그 번호로
+         * 학급으로 돌아간다 — 사이드바는 "담임 학급 없음"을 표시하는데 화면들은 그 번호로
          * 질의를 던지므로, 무엇이 잘못됐는지 보이지 않는다.
          *
          * **비어 있는 자리도 같은 고장이다.** 설정에서 첫 교과 강좌를 `select: false`로
@@ -368,10 +368,55 @@ export const useAppStore = defineStore('app', {
         },
 
         /**
-         * 학교를 옮긴다. **맡은 것도 그 학교 것으로 다시 고른다** —
+         * 학년도를 지운다. **그 아래가 통째로 사라진다** — 학교 · 담당 학급 · 강좌 ·
+         * 명단 · 출결 · 교과 차시가 전부 함께 지워진다(CASCADE). 되돌릴 수 없으므로
+         * 화면은 묻기 전에 무엇이 사라지는지 보여준다 — 그 수는 목록 한 줄
+         * (`get_years`)에 이미 실려 온다(`schoolCount` · `classCount` · `studentCount` ·
+         * `spanCount` · `sessionCount`).
+         *
+         * **보고 있던 학년도를 지웠으면 남은 것으로 옮긴다.** Rust가 설정(`app_config`)의
+         * 범위 열쇠를 비우지만 그것은 다음 실행에서야 읽힌다 — 지금 화면은 사라진 학년도의
+         * 번호와 그 아래 학교 · 학급을 그대로 들고 있고, 질의마다 빈 결과가 돌아오는데
+         * 이유는 어디에도 표시되지 않는다. 그래서 메모리의 범위를 여기서 함께 비우고
+         * `selectYear`로 옮긴다 — 학교와 담당 학급 · 강좌를 다시 읽는 일이 그쪽에 있다.
+         *
+         * **다른 학년도를 지운 것이면 목록만 다시 읽는다.** 보고 있던 자리는 그대로다.
+         * 옮겨 버리면 교사가 보던 화면이 이유 없이 처음으로 돌아간다.
+         *
+         * 마지막 하나는 Rust가 거절한다 — 학년도가 0개가 되면 학교도 담당 학급 · 강좌도
+         * 만들 수 없다. 거절 문구를 `error`에 담고 **다시 던진다.**
+         */
+        async deleteYear(yearId) {
+            this.error = ''
+            const watching = this.yearId === yearId
+            try {
+                await invoke('delete_year', {yearId})
+                this.years = await invoke('get_years')
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+            if (!watching) return
+            // 사라진 번호를 **먼저** 비운다. 옮기다가 실패해도 없는 학년도와 그 아래
+            // 학교 · 학급을 가리킨 채로 남지 않는다. 열쇠가 비어 있다는 것은
+            // "아직 고르지 않았다"는 뜻이고, 지운 직후가 정확히 그 상태다.
+            this.yearId = null
+            this.pickedSchoolId = null
+            this.classId = null
+            this.lastClassId = {homeroom: null, subject: null}
+            this.schools = []
+            this.classes = []
+            // 목록은 최신 학년도가 먼저다. 부팅이 고르는 것과 같은 규칙이라,
+            // 여기서 다른 규칙을 쓰면 지운 뒤와 다시 켠 뒤가 서로 다른 자리를 연다.
+            const next = this.years[0]?.id ?? null
+            if (next != null) await this.selectYear(next)
+        },
+
+        /**
+         * 학교를 옮긴다. **담당 학급 · 강좌도 그 학교 것으로 다시 고른다** —
          * 학교만 바뀌고 학급이 남으면 B학교 화면에 A학교 명단이 그려진다.
          *
-         * 맡은 것이 아직 없는 학교도 가리킬 수 있다. 그 상태에서는 학급 없이 열리고,
+         * 담당 학급 · 강좌가 아직 없는 학교도 가리킬 수 있다. 그 상태에서는 학급 없이 열리고,
          * 화면이 무엇을 등록해야 하는지 알린다.
          */
         async selectSchool(schoolId) {
@@ -391,13 +436,13 @@ export const useAppStore = defineStore('app', {
          * 고른 것과 보고 있는 것이 어긋날 자리를 남기지 않는다.
          *
          * 다른 학교의 것을 골랐으면 학교도 함께 옮긴다. 학교가 뒤에 남으면 그 학교의
-         * 최대 교시 · 제출 기한으로 다른 학교의 출결을 찍게 된다.
+         * 최대 교시 · 제출 기한으로 다른 학교의 출결을 입력하게 된다.
          */
         async selectClass(classId) {
             this.error = ''
             const target = this.classes.find((c) => c.id === classId)
             if (!target) {
-                this.error = `맡은 학급이 아닙니다: ${classId}`
+                this.error = `담당 학급 · 강좌가 아닙니다: ${classId}`
                 throw new Error(this.error)
             }
             this.pickedSchoolId = target.schoolId
@@ -411,7 +456,7 @@ export const useAppStore = defineStore('app', {
          * 담임과 교과를 오간다. 학급은 **그 모드에서 마지막에 본 것**으로 돌아온다 —
          * 매번 다시 고르게 하면 하루에도 몇 번씩 오가는 교사에게 그만큼 클릭이 는다.
          *
-         * **그 모드에 맡은 것이 없어도 넘어간다.** 스위치는 늘 보이고, 비어 있는 쪽은
+         * **그 모드에 담당 학급 · 강좌가 없어도 넘어간다.** 스위치는 늘 보이고, 비어 있는 쪽은
          * 비어 있다고 말하는 화면이 받는다.
          */
         async setMode(mode) {
@@ -426,9 +471,9 @@ export const useAppStore = defineStore('app', {
         },
 
         /**
-         * 맡은 것을 새로 만들고 그것으로 옮긴다. Welcome과 설정이 부른다.
+         * 담당 학급 · 강좌를 새로 만들고 그것으로 옮긴다. Welcome과 설정이 부른다.
          *
-         * **이미 맡고 있는 것이면 만들지 않고 고른다.** 교사가 [저장]을 두 번 누르는 것은
+         * **이미 담당하고 있으면 만들지 않고 고른다.** 교사가 [저장]을 두 번 누르는 것은
          * 흔한 일이고, 그때마다 학급이 늘면 명단이 어느 쪽에 붙었는지 알 수 없게 된다.
          * 담임은 학년 · 반이, 교과는 이름이 같은 것을 가리킨다.
          */
@@ -446,7 +491,7 @@ export const useAppStore = defineStore('app', {
             this.error = ''
             const school = schoolId ?? this.schoolId
             if (school == null) {
-                this.error = '학교를 먼저 등록해야 맡은 것을 더할 수 있습니다.'
+                this.error = '학교를 먼저 등록해야 담당 학급 · 강좌를 만들 수 있습니다.'
                 throw new Error(this.error)
             }
             // **학교까지 본다.** `classes`는 학년도 전체라 다른 학교의 학급도 들어 있고,
@@ -478,7 +523,7 @@ export const useAppStore = defineStore('app', {
                 })
                 await this.fetchClasses()
                 if (select) await this.selectClass(id)
-                // 맡은 것을 만든 순간이 곧 시작한 순간이다. 고르지 않고 만들었어도
+                // 담당 학급 · 강좌를 만든 순간이 곧 시작한 순간이다. 고르지 않고 만들었어도
                 // 마찬가지다 — 설정에서 강좌 하나를 더한 교사도 이미 시작한 교사다.
                 // **보여주는 일을 끝낸 뒤에 적는다.** 적는 데 실패해도 만든 학급은
                 // 그 자리에 열려 있어야 한다.
@@ -508,7 +553,7 @@ function schoolOf(state) {
     )
 }
 
-/** 지금 학교에서 맡은 것. 게터 셋이 같은 것을 묻기에 한 곳에 둔다. */
+/** 지금 학교의 담당 학급 · 강좌. 게터 셋이 같은 것을 묻기에 한 곳에 둔다. */
 function schoolClassesOf(state) {
     const id = schoolOf(state)?.id ?? null
     return state.classes.filter((c) => c.schoolId === id)

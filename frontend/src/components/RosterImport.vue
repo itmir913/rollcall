@@ -6,7 +6,7 @@
  * 텍스트만으로는 확실히 알 수 없다. 파일에는 그 정보가 들어 있다.
  *
  * 여기서 하는 일은 **파일을 읽어 목록을 만드는 것까지**다. 그 목록을 어떻게
- * 반영할지(추가·전출·개명)는 미리보기 화면과 Rust가 정한다.
+ * 반영할지(추가·전출·개명)는 미리보기 화면과 Rust가 결정한다.
  */
 import {ref} from 'vue'
 import {save} from '@tauri-apps/plugin-dialog'
@@ -49,7 +49,7 @@ async function handleFile(file) {
         const parts = [`${result.entries.length}명을 읽었습니다.`]
         if (result.missing.length) {
             const labels = result.missing.map((c) => COL_LABELS[c]).join(' · ')
-            parts.push(`${labels} 열이 없어 학급은 아래에서 정해주세요.`)
+            parts.push(`${labels} 열이 없어 학급은 아래에서 골라주세요.`)
         }
         // 어느 파서가 읽었는지 알린다. 폴백이 쓰였다면 파일이 표준에서 벗어났다는 뜻이고,
         // 값이 이상할 때 어디를 의심할지 알려주는 단서가 된다.

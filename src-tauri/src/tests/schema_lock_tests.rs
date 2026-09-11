@@ -205,7 +205,7 @@ fn the_school_table_defaults_to_the_common_settings() {
     assert_eq!(skip, 1);
 }
 
-/// 학교 단위 값이 `app_config`로 새지 않았는지 확인한다. `app_config`는 학교가
+/// 학교 단위 값이 `app_config`로 유출되지 않았는지 확인한다. `app_config`는 학교가
 /// 하나뿐이라는 가정이 들어간 전역 키-값이라, 여기에 최대 교시를 넣으면 둘째
 /// 학교를 등록하는 날 그 값을 읽는 모든 곳을 다시 찾아야 한다.
 #[test]

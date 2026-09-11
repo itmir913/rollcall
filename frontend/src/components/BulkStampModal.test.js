@@ -1,5 +1,5 @@
 /**
- * 여러 날 찍기.
+ * 여러 날 입력.
  *
  * 기간은 **화면이 아니라 입력의 한 축**이라 탭이 아니라 창이다.
  * 주말과 휴업일은 Rust가 빼 주지만, 남은 날 중 학교가 쉰 날은 교사가 지운다 —
@@ -31,7 +31,23 @@ function build(preview = vi.fn().mockResolvedValue(DAYS)) {
 const dayButtons = () =>
     [...document.querySelectorAll('.bulk__days .pick')]
 
-describe('여러 날 찍기', () => {
+describe('여러 날 입력', () => {
+    /**
+     * 화면에 나오는 말을 고정한다. `찍다`는 실무 표현이라고 여겨 두었던 말인데
+     * 현직 교사가 어색하다고 확인했다 — 창 제목도 단추도 `입력`이다.
+     */
+    it('출결을 찍는다고 말하지 않는다 — 입력이라고 적는다', async () => {
+        const {wrapper} = build()
+        wrapper.vm.days = DAYS
+        await wrapper.vm.$nextTick()
+
+        const text = document.body.textContent
+        expect(text).not.toContain('찍')
+        expect(text).toContain('여러 날에 같은 출결 입력하기')
+        expect(text).toContain('일에 입력합니다')
+        wrapper.unmount()
+    })
+
     it('기간을 고르기 전에는 날짜를 묻지 않는다', () => {
         const {wrapper} = build()
         expect(document.querySelector('.bulk')).toBeNull()
@@ -85,7 +101,7 @@ describe('여러 날 찍기', () => {
         wrapper.unmount()
     })
 
-    it('교사가 뺀 날은 찍지 않는다', async () => {
+    it('교사가 뺀 날은 입력하지 않는다', async () => {
         const {wrapper} = build()
         wrapper.vm.days = DAYS
         await wrapper.vm.$nextTick()
@@ -102,7 +118,7 @@ describe('여러 날 찍기', () => {
         wrapper.unmount()
     })
 
-    it('고른 날이 하나도 없으면 찍을 수 없다', async () => {
+    it('고른 날이 하나도 없으면 입력할 수 없다', async () => {
         const {wrapper} = build()
         wrapper.vm.days = DAYS
         await wrapper.vm.$nextTick()

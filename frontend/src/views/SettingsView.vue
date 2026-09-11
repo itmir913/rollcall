@@ -1,9 +1,9 @@
 <script setup>
 /**
- * 설정 — 학년도 · 학교 · 한도 규정 · 맡은 것 · 명렬표 · 화면.
+ * 설정 — 학년도 · 학교 · 한도 규정 · 학급과 강좌 · 명렬표 · 화면.
  *
- * **계층이 그대로 화면의 차례다 — 학년도 → 학교 → 맡은 것.** 학년도를 고르면 그
- * 학년도의 학교가 나오고, 학교를 고르면 그 학교의 맡은 것이 나온다. 위에서 고른 것이
+ * **계층이 그대로 화면의 차례다 — 학년도 → 학교 → 담당 학급 · 강좌.** 학년도를 고르면
+ * 그 학년도의 학교가 나오고, 학교를 고르면 그 학교의 학급과 강좌가 나온다. 위에서 고른 것이
  * 아래의 범위다.
  *
  * **학년도를 바꾸는 길은 여기뿐이다.** 첫 실행 화면은 한 번 지나가면 닿을 수 없어,
@@ -15,11 +15,11 @@
  * **학교 단위 값이 여기 모인다.** 최대 교시와 제출 기한은 앱 상수가 아니라 학교가
  * 들고 있는 값이다.
  *
- * **맡은 것을 더하고 마감하는 곳도 여기다.** 담임 학급과 교과 강좌가 한 목록에 나란히
- * 표시되는 화면은 여기뿐이다 — 기록 화면은 모드로 완전히 분리되지만, 무엇을 맡았는지 정하는
- * 일은 두 갈래를 함께 봐야 한다. 여기에 나오는 것은 맡은 것의 목록일 뿐 한쪽의 기록이
- * 다른 쪽에 새는 것이 아니다. **학급을 옮기는 길은 여기 두지 않는다** — 그것은 이동
- * 화면과 모드 스위치가 맡는다.
+ * **담당 학급 · 강좌를 더하고 마감하는 곳도 여기다.** 담임 학급과 교과 강좌가 한 목록에
+ * 나란히 표시되는 화면은 여기뿐이다 — 기록 화면은 모드로 완전히 분리되지만, 무엇을
+ * 담당하는지 설정하는 일은 두 갈래를 함께 봐야 한다. 여기에 나오는 것은 학급과 강좌의
+ * 목록일 뿐 한쪽의 기록이 다른 쪽에 새는 것이 아니다. **학급을 옮기는 길은 여기 두지
+ * 않는다** — 그것은 이동 화면과 모드 스위치가 담당한다.
  *
  * 명렬표 가져오기도 여기 있다 — 학기에 한두 번 쓰는 일이라 사이드바에 둘 이유가 없다.
  */
@@ -76,7 +76,7 @@ const droppingOffDay = ref(null)
 /** 지우려고 고른 강좌 묶음. 이것도 행이 사라지는 DELETE다. */
 const droppingClassTag = ref(null)
 
-/** 마감하려고 고른 맡은 것. 지우는 것이 아니라 목록에서 내리는 것이다. */
+/** 마감하려고 고른 학급 · 강좌. 지우는 것이 아니라 목록에서 내리는 것이다. */
 const closingClass = ref(null)
 
 /** 마감하려고 고른 학교. 학교도 지우지 않고 목록에서 내린다. */
@@ -140,7 +140,7 @@ function nextYear() {
 }
 
 /**
- * 학년도를 옮긴다. **학교도 맡은 것도 그 학년도의 것으로 통째로 바뀐다** —
+ * 학년도를 옮긴다. **학교도 학급 · 강좌도 그 학년도의 것으로 통째로 바뀐다** —
  * 지난해 줄은 지난해 학교에 그대로 남고 사라지지 않는다.
  */
 async function pickYear(yearId) {
@@ -170,7 +170,7 @@ async function addYear() {
     }
 }
 
-/** 학교를 옮긴다. 아래의 설정 · 맡은 것 · 명렬표가 전부 그 학교의 것이 된다. */
+/** 학교를 옮긴다. 아래의 설정 · 학급과 강좌 · 명렬표가 전부 그 학교의 것이 된다. */
 async function pickSchool(schoolId) {
     if (schoolId === app.schoolId) return
     message.value = ''
@@ -285,7 +285,7 @@ async function confirmDropClassTag() {
 }
 
 /**
- * 맡은 것을 더한다. **더하는 것은 옮겨 가는 일이 아니다.**
+ * 담당 학급 · 강좌를 더한다. **더하는 것은 옮겨 가는 일이 아니다.**
  *
  * 새로 만든 것을 곧바로 고르는 동작은 첫 실행 화면을 위한 것이라, 설정에서는 보던
  * 학급으로 되돌린다 — 교과 강좌 하나를 더했다고 화면 전체가 교과 모드로 넘어가면
@@ -358,7 +358,7 @@ async function setGroup(cls, groupTagId) {
 }
 
 /**
- * 맡은 것을 마감한다. **확인을 한 번 거치되 "지웁니다"라고 말하지 않는다** —
+ * 담당 학급 · 강좌를 마감한다. **확인을 한 번 거치되 "지웁니다"라고 말하지 않는다** —
  * 지난 출결이 이 학급을 가리키므로 행은 그대로 남고 목록에서만 내려간다.
  */
 async function confirmRetireClass() {
@@ -421,12 +421,12 @@ onMounted(async () => {
 </script>
 
 <template>
-    <UiPage subtitle="학년도 · 학교 · 맡은 것 · 명렬표 · 화면" title="설정">
+    <UiPage subtitle="학년도 · 학교 · 학급과 강좌 · 명렬표 · 화면" title="설정">
         <UiNotice :text="message" kind="warn"/>
         <UiNotice :text="school.error" kind="error"/>
         <UiNotice :text="axis.error" kind="error"/>
 
-        <UiLedger hint="학교와 맡은 것이 학년도 안에 있다" title="학년도">
+        <UiLedger hint="학교와 학급 · 강좌가 학년도 안에 있다" title="학년도">
             <div class="set__row">
                 <span class="set__label">이번 학년도</span>
                 <span class="set__value">
@@ -436,7 +436,7 @@ onMounted(async () => {
                         {{ year.year }}학년도
                     </button>
                     <span class="set__hint">
-                        학년도를 옮기면 학교부터 다시 정합니다. 지난해 학교와 맡은 것은
+                        학년도를 옮기면 학교부터 다시 고릅니다. 지난해 학교와 학급 · 강좌는
                         지난 학년도에 그대로 남습니다
                     </span>
                 </span>
@@ -471,7 +471,7 @@ onMounted(async () => {
                            type="text" @keyup.enter="addSchool"/>
                     <UiButton size="tight" @click="addSchool">학교 추가</UiButton>
                     <span class="set__hint">
-                        고른 학교에 아래의 설정과 맡은 것이 붙습니다 — 순회 교사는 둘 이상을 맡습니다
+                        고른 학교에 아래의 설정과 학급 · 강좌가 붙습니다 — 순회 교사는 학교를 둘 이상 담당합니다
                     </span>
                 </span>
             </div>
@@ -482,7 +482,7 @@ onMounted(async () => {
                 <span class="set__value">
                     <span class="set__hint">
                         {{ yearLabel }}에 등록한 학교가 없습니다. 위에 이름을 적어 만들면
-                        최대 교시 · 제출 기한과 맡은 것을 여기서 정합니다
+                        최대 교시 · 제출 기한과 담당 학급 · 강좌를 여기서 설정합니다
                     </span>
                 </span>
             </div>
@@ -622,10 +622,10 @@ onMounted(async () => {
         </UiLedger>
 
         <UiLedger v-if="school.school"
-                  :hint="`${school.school?.name ?? ''}에서 맡은 것 · 마감은 삭제가 아니다`"
-                  title="맡은 것">
+                  :hint="`${school.school?.name ?? ''}에서 담당하는 학급과 강좌 · 마감은 삭제가 아니다`"
+                  title="담당 학급 · 강좌">
             <!-- 담임과 교과를 한 목록에 나란히 둔다. 기록 화면은 모드로 완전히 분리되지만,
-                 무엇을 맡았는지 정하는 일은 두 갈래를 함께 봐야 한다.
+                 무엇을 담당하는지 설정하는 일은 두 갈래를 함께 봐야 한다.
                  **옮겨 가는 단추는 두지 않는다** — 모드를 넘나드는 길은 스위치 하나다. -->
             <div v-for="cls in app.homeroomClasses" :key="cls.id" class="set__row">
                 <span class="set__label">담임</span>
@@ -796,7 +796,7 @@ onMounted(async () => {
             </div>
             <p class="modal__note">
                 지우는 것이 아닙니다. 목록에서 내려가 더 고를 수 없게 될 뿐이고,
-                이 학교에 쌓인 맡은 것과 지난 기록은 그대로 남습니다.
+                이 학교에 쌓인 학급 · 강좌와 지난 기록은 그대로 남습니다.
             </p>
 
             <template #foot>
@@ -808,7 +808,7 @@ onMounted(async () => {
         <UiModal :open="Boolean(closingClass)" title="이 학급을 목록에서 내립니다"
                  @close="closingClass = null">
             <div v-if="closingClass" class="modal__what">
-                <span class="modal__key">맡은 것</span>
+                <span class="modal__key">학급 · 강좌</span>
                 <span class="modal__val">{{ closingClass.name }}</span>
                 <span class="modal__key">구분</span>
                 <span class="modal__val">

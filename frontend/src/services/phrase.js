@@ -3,7 +3,7 @@
  *
  * 저장된 구간의 문구는 Rust가 만들어 `spanText`로 내려준다. 여기 있는 것은
  * **아직 저장하지 않은 조합**(축 카드의 "현재 선택된 출결")을 위한 것이다.
- * 두 문구가 다르면 교사는 찍기 전과 후에 다른 말을 보게 된다.
+ * 두 문구가 다르면 교사는 입력 전과 후에 다른 말을 보게 된다.
  */
 import {CLOSING, HOMEROOM, UNKNOWN, groupRuns, slotLabel} from './slots'
 
@@ -18,7 +18,7 @@ export function spanPhrase({slotPrompt, slots}) {
         const runs = groupRuns(slots)
         if (runs.length === 0) return '기간 미정'
         // 저장되면 묶음 하나가 구간 하나가 되고, Rust가 그것을 `1교시부터 3교시까지`로
-        // 적는다. 여기서 `1~3교시`라고 하면 찍기 전과 후에 다른 말을 보게 된다.
+        // 적는다. 여기서 `1~3교시`라고 하면 입력 전과 후에 다른 말을 보게 된다.
         return runs
             .map(([a, b]) => (a === b ? `${a}교시` : `${a}교시부터 ${b}교시까지`))
             .join(' · ')

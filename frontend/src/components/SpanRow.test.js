@@ -46,7 +46,7 @@ describe('출결 줄', () => {
         expect(build().find('.row__reason button').text()).toContain('사유를 입력하세요')
     })
 
-    it('사유를 누르면 펼치라고 알린다 — 그 줄만 커진다', async () => {
+    it('사유를 누르면 열라고 알린다 — 그 줄만 커진다', async () => {
         const wrapper = build()
         await wrapper.find('.row__reason button').trigger('click')
         expect(wrapper.emitted('toggleExpand')).toHaveLength(1)
@@ -56,7 +56,7 @@ describe('출결 줄', () => {
         expect(build().find('.edit').exists()).toBe(false)
     })
 
-    it('펼치면 사유 칸과 후보 · 태그 칩이 함께 열린다', () => {
+    it('열면 사유 칸과 후보 · 태그 칩이 함께 나온다', () => {
         const wrapper = build({memo: '감기'}, {expanded: true})
         expect(wrapper.find('.edit__area').element.value).toBe('감기')
         expect(wrapper.findAll('.chip').length).toBe(3) // 후보 둘 + 태그 하나

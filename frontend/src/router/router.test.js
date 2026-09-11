@@ -53,7 +53,7 @@ describe('사이드바 구성', () => {
             for (const link of groups.flat()) {
                 const need = META.get(link.to).mode
                 expect(need ?? mode, `${mode} 목록에 ${link.to}가 있다`).toBe(mode)
-                // 두 모드가 함께 쓰는 줄만 `always`다. 맡은 것이 없어도 열려야 하는
+                // 두 모드가 함께 쓰는 줄만 `always`다. 담당 학급 · 강좌가 없어도 열려야 하는
                 // 줄이 그 둘이고, 나머지는 잠긴다.
                 expect(Boolean(link.always), `always 표시가 어긋난다: ${link.to}`)
                     .toBe(need === undefined)
@@ -97,7 +97,7 @@ describe('모드 가드', () => {
         expect(modeRedirect(app, {meta: {}})).toBe(true)
     })
 
-    it('그 모드에 맡은 것이 없으면 되돌린다 — 범위 없이 질의를 던지지 않는다', () => {
+    it('그 모드에 담당 학급 · 강좌가 없으면 되돌린다 — 범위 없이 질의를 던지지 않는다', () => {
         const app = scope({classes: [SUBJECT], classId: null, mode: 'homeroom'})
 
         expect(app.mode).toBe('homeroom')
@@ -114,13 +114,13 @@ describe('모드 가드', () => {
 })
 
 describe('Welcome 가드', () => {
-    it('맡은 것이 있으면 붙잡지 않는다 — 고른 학급이 없어도', () => {
+    it('담당 학급 · 강좌가 있으면 붙잡지 않는다 — 고른 학급이 없어도', () => {
         const app = scope({classes: [SUBJECT], classId: null, mode: 'homeroom'})
 
         expect(welcomeRedirect(app, {name: 'overview'})).toBe(true)
     })
 
-    it('맡은 것이 하나도 없으면 Welcome으로 보낸다', () => {
+    it('담당 학급 · 강좌가 하나도 없으면 Welcome으로 보낸다', () => {
         const app = scope({classes: [], classId: null})
 
         expect(welcomeRedirect(app, {name: 'today'})).toEqual({name: 'welcome'})

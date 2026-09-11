@@ -9,11 +9,11 @@
  * **버린 줄은 조용히 넘기지 않는다.** 서른 명 중 스물아홉 명만 들어왔는데 아무 말이
  * 없으면 교사는 알 방법이 없다. 몇 번째 줄이 왜 빠졌는지 함께 보여준다.
  *
- * **명단이 붙는 곳은 `classId`가 정한다.** 비우면 지금 보고 있는 학급이다 — 설정은
+ * **명단이 붙는 곳은 `classId`가 결정한다.** 비우면 지금 보고 있는 학급이다 — 설정은
  * 줄마다 다른 학급을 가리키고, 첫 실행은 방금 만든 학급에 차례로 넣는다. 파일이
- * 말하는 학년 · 반은 그 학생의 학적이지 소속이 아니라 이 자리를 정하지 않는다.
+ * 말하는 학년 · 반은 그 학생의 학적이지 소속이 아니라 이 자리를 결정하지 않는다.
  *
- * **열쇠는 역할이 정한다.** 담임은 번호 하나가 열쇠이고, 교과 강좌는 (학년, 반, 번호)
+ * **열쇠는 역할이 결정한다.** 담임은 번호 하나가 열쇠이고, 교과 강좌는 (학년, 반, 번호)
  * 학적 자리 전체가 열쇠다 — 선택과목은 1반부터 n반까지 모여 3학년 1반 4번과 3학년
  * 6반 4번이 같은 강좌에 있다. 그래서 교과에서만 자리 칸과 반별 인원을 그린다.
  * 담임 화면에 `3학년 6반`이 서른 번 반복되면 읽는 데 방해만 된다.
@@ -43,7 +43,7 @@ const app = useAppStore()
 const roster = useRosterStore()
 const download = useDownloadStore()
 
-/** 이 화면이 명단을 넣을 학급. 밖에서 정해 주지 않으면 지금 보고 있는 학급이다. */
+/** 이 화면이 명단을 넣을 학급. 밖에서 지정해 주지 않으면 지금 보고 있는 학급이다. */
 const targetId = computed(() => props.classId ?? app.classId)
 const target = computed(() => app.classes.find((c) => c.id === targetId.value) ?? null)
 
@@ -318,7 +318,7 @@ async function apply() {
         ]
         // 학적을 새로 만든 수는 파일이 맞는지 알려주는 값이라 생겼을 때 반드시 적는다.
         if (created) parts.push(`학적을 새로 만든 것 ${created}명`)
-        if (result.blocked) parts.push(`자리를 정하지 못해 넘긴 줄 ${result.blocked}개`)
+        if (result.blocked) parts.push(`자리를 결정하지 못해 넘긴 줄 ${result.blocked}개`)
         message.value = `${parts.join(' · ')}을 저장했습니다.`
 
         const alerts = []

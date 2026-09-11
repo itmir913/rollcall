@@ -1,6 +1,6 @@
 //! `due.rs` — 마감일 계산과 날짜 유틸.
 //!
-//! 기한은 학교 설정 두 값으로 정해진다 — `due_days`와 `due_skip_offdays`.
+//! 기한은 학교 설정 두 값으로 결정된다 — `due_days`와 `due_skip_offdays`.
 //! 건너뛸 날은 주말과 **교사가 등록한 휴업일**이다. 공휴일 API를 부르지 않으므로
 //! 개교기념일·재량휴업일은 `off_day` 행으로만 들어온다.
 
@@ -62,7 +62,7 @@ fn due_date_uses_the_plain_calendar_when_skip_is_off() {
 #[test]
 fn zero_due_days_means_the_base_day_itself() {
     // 교사가 0을 넣었으면 그날이 마감이다. 토요일이어도 옮기지 않는다 —
-    // 교사가 정한 값을 프로그램이 조정하지 않는다.
+    // 교사가 설정한 값을 프로그램이 조정하지 않는다.
     assert_eq!(due_date(d("2026-09-12"), 0, true, &none()), d("2026-09-12"));
     assert_eq!(
         due_date(d("2026-09-12"), 0, false, &none()),

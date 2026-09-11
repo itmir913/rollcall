@@ -20,7 +20,7 @@ export const useSubjectStore = defineStore('subject', {
     state: () => ({
         /** 오늘 수업이 보고 있는 날짜. 저장은 언제나 ISO다. */
         date: null,
-        /** 마지막으로 읽은 기간. 찍은 뒤 그 자리를 다시 읽으려고 들고 있다. */
+        /** 마지막으로 읽은 기간. 입력한 뒤 그 자리를 다시 읽으려고 들고 있다. */
         from: null,
         to: null,
         /** 그 기간의 차시. 날짜 오름차순 · 교시 오름차순으로 온다. */
@@ -72,7 +72,7 @@ export const useSubjectStore = defineStore('subject', {
 
         /**
          * 담임으로 적어 둔 기록이 있는 학생. **읽기 전용 참고다.**
-         * 내가 이 화면에서 찍은 결석과 섞이면 안 되므로 목록부터 따로 둔다.
+         * 내가 이 화면에서 입력한 결석과 섞이면 안 되므로 목록부터 따로 둔다.
          */
         notedRows: (s) => s.roll.filter((r) => r.homeroomNote),
 
@@ -104,7 +104,7 @@ export const useSubjectStore = defineStore('subject', {
         /**
          * 고른 차시와 그 명단을 함께 비운다. **둘은 한 쌍이다** —
          * 차시만 비우고 명단을 남기면 화면에 아무 칸에도 속하지 않는 번호가 뜨고,
-         * 명단만 비우면 그 뒤의 찍기가 보이지 않는 칸으로 들어간다.
+         * 명단만 비우면 그 뒤의 입력이 보이지 않는 칸으로 들어간다.
          */
         clearPick() {
             this.sessionId = null
@@ -188,7 +188,7 @@ export const useSubjectStore = defineStore('subject', {
             return await this.fetchRange(range.from, range.to)
         },
 
-        /** 마지막으로 읽은 기간을 다시 읽는다. 찍은 뒤 결석 수를 맞추는 자리다. */
+        /** 마지막으로 읽은 기간을 다시 읽는다. 입력한 뒤 결석 수를 맞추는 자리다. */
         async refresh() {
             if (!this.from || !this.to) return []
             return await this.fetchRange(this.from, this.to)
@@ -273,11 +273,11 @@ export const useSubjectStore = defineStore('subject', {
         },
 
         /**
-         * 학생 하나를 찍는다. 같은 학생을 다시 찍으면 취소다 —
-         * 담임 쪽 "같은 조합을 다시 찍으면 취소"와 같은 규칙이라 확인을 묻지 않는다.
-         * 돌려주는 값이 **찍은 뒤의** 결석 여부다.
+         * 학생 하나를 입력한다. 같은 학생을 다시 누르면 취소다 —
+         * 담임 쪽 "같은 조합을 다시 누르면 취소"와 같은 규칙이라 확인을 묻지 않는다.
+         * 돌려주는 값이 **입력한 뒤의** 결석 여부다.
          *
-         * **고른 차시가 없으면 찍지 않는다.** 화면이 명단을 그리지 않으니 닿을 일이
+         * **고른 차시가 없으면 입력하지 않는다.** 화면이 명단을 그리지 않으니 닿을 일이
          * 없어 보이지만, 닿는 순간 어느 칸에 들어갔는지 아무도 모르는 기록이 된다.
          */
         async toggle(studentId) {
@@ -304,7 +304,7 @@ export const useSubjectStore = defineStore('subject', {
         },
 
         /**
-         * 빠진 학생 한 줄의 메모. **결석을 먼저 찍어야 한다** — 메모는 결석에 붙는
+         * 빠진 학생 한 줄의 메모. **결석을 먼저 입력해야 한다** — 메모는 결석에 붙는
          * 말이라, 빠지지 않은 학생에게 메모만 남으면 그 줄이 결석인지 아닌지 알 수 없다.
          */
         async setAbsenceMemo(studentId, memo) {

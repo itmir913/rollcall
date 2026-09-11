@@ -222,7 +222,7 @@ pub fn update_school_impl(
 
 /// 학교를 목록에서 내린다. **지우지 않는다.**
 ///
-/// 학생 · 맡은 것 · 출결이 이 행을 가리키고 있고 전부 `ON DELETE CASCADE`라, 행을
+/// 학생과 담당 학급 · 강좌와 출결이 이 행을 가리키고 있고 전부 `ON DELETE CASCADE`라, 행을
 /// 지우면 그 학교의 기록이 통째로 사라진다. 잘못 만든 학교를 정리하는 동작이
 /// 한 해치 출결을 지우는 동작이어서는 안 된다.
 pub fn retire_school_impl(conn: &Connection, school_id: i64) -> Result<(), String> {

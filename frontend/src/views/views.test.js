@@ -202,6 +202,21 @@ describe('개요', () => {
         expect(text).toContain('담임 학급 등록하기')
     })
 
+    /**
+     * 화면에 쓰는 말을 고정한다. `출결을 찍다`는 실무 표현이라고 여겨 예외로 두었던
+     * 말인데 현직 교사가 어색하다고 확인했다 — `입력하다` · `기록하다`를 쓴다.
+     * 빈 상태 문구는 첫 실행 직후에 교사가 가장 먼저 읽는 문장이라 여기서 고정한다.
+     */
+    it('빈 상태에서 출결을 찍는다고 말하지 않는다', () => {
+        const app = useAppStore()
+        app.classes = []
+        app.classId = null
+
+        const text = render(OverviewView).text()
+        expect(text).toContain('출결을 입력할 수 있습니다')
+        expect(text).not.toContain('찍')
+    })
+
     it('학급은 있는데 고르지 않았으면 고르라고 알린다 — 설정으로 보내지 않는다', () => {
         useAppStore().classId = null
 
@@ -228,7 +243,7 @@ describe('오늘의 출결', () => {
         expect(wrapper.text()).toContain('오늘의 출결')
     })
 
-    it('번호를 누르면 그 자리에서 찍는다', async () => {
+    it('번호를 누르면 그 자리에서 입력한다', async () => {
         const day = useDayStore()
         day.date = '2026-09-10'
         day.grid = {
@@ -331,7 +346,7 @@ describe('출결 기록 · 서류 · NEIS', () => {
 })
 
 describe('설정', () => {
-    /** 읽기를 멈춰 세운다. 화면을 그린 직후 스토어가 빈 응답으로 덮이면 볼 것이 없다. */
+    /** 읽기를 고정한다. 화면을 그린 직후 스토어가 빈 응답으로 덮이면 볼 것이 없다. */
     function freezeFetches() {
         vi.spyOn(useSchoolStore(), 'fetchAll').mockResolvedValue()
         vi.spyOn(useAxisStore(), 'fetchAll').mockResolvedValue()
@@ -404,7 +419,7 @@ describe('담임 · 교과 모드', () => {
 
         expect(railLabels(wrapper)).toEqual(HOMEROOM_RAIL)
 
-        // 모드는 고른 학급이 정한다. 교과 강좌로 옮기면 사이드바가 함께 바뀐다.
+        // 모드는 고른 학급이 결정한다. 교과 강좌로 옮기면 사이드바가 함께 바뀐다.
         app.classId = 20
         await nextTick()
 
@@ -417,7 +432,7 @@ describe('담임 · 교과 모드', () => {
 
     it('한쪽만 맡아도 스위치를 그린다 — 숨기면 그 모드가 있다는 것조차 알 수 없다', async () => {
         // **의도 3.** 비담임 교사에게 스위치를 숨기면 담임 기능이 이 앱에 있다는 사실을
-        // 화면에서 알 길이 없고, 나중에 담임을 맡아도 들어갈 입구가 없다.
+        // 화면에서 알 길이 없고, 나중에 담임을 담당해도 들어갈 입구가 없다.
         const wrapper = renderApp()
         await flushPromises()
 
@@ -425,7 +440,7 @@ describe('담임 · 교과 모드', () => {
         expect(wrapper.findAll('.rail__mode').map((b) => b.text())).toEqual(['담임', '교과'])
     })
 
-    it('맡은 것이 없는 모드는 사이드바를 비활성화하고 등록할 길을 알린다', async () => {
+    it('담당 학급 · 강좌가 없는 모드는 사이드바를 비활성화하고 등록할 길을 알린다', async () => {
         // 지우지 않고 잠근다. 지우면 무엇이 있었는지 알 수 없다.
         const app = useAppStore()
         app.classes = [{

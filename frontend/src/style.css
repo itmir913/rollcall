@@ -5,7 +5,7 @@
  *
  * 기본은 라이트다. 다크는 `html[data-theme="dark"]`로만 켜진다 — 시스템 설정을
  * 자동으로 따라가지 않고, "시스템 따름"을 고른 경우에만 index.html의 부트 스크립트가
- * 그 결과를 data-theme에 찍는다. 즉 이 파일은 미디어 쿼리를 쓰지 않는다.
+ * 그 결과를 data-theme에 기록한다. 즉 이 파일은 미디어 쿼리를 쓰지 않는다.
  * 상태가 한 곳(data-theme 속성)에만 있어야 토글과 시스템 설정이 서로 어긋나지 않는다.
  *
  * **색은 이 파일에만 있다.** 컴포넌트에 색을 직접 적으면 라이트에서 멀쩡해 보여
@@ -82,7 +82,7 @@ html[data-theme="dark"] {
  * 그런 값이 꼭 필요한 자리는 픽셀을 그대로 적고 왜 그런지를 옆에 적는다.
  * 억지로 눈금에 맞추면 화면이 움직이고, 움직이는 화면은 어긋난 여백보다 나쁘다.
  *
- * **시각 디자인은 아직 정해지지 않았다.** 나중에 정할 때 이 파일만 고치면
+ * **시각 디자인은 아직 결정되지 않았다.** 나중에 결정할 때 이 파일만 고치면
  * 전 화면이 함께 바뀌도록 하려는 것이다.
  */
 :root {
@@ -113,6 +113,12 @@ html[data-theme="dark"] {
 html {
     background: var(--c-base);
     color: var(--c-ink);
+
+    /* **스크롤바 자리를 늘 비워 둔다.** 내용이 한 줄 늘어 스크롤바가 나타나는 순간
+     * 본문 폭이 그만큼 줄어 화면 전체가 좌우로 흔들린다. 목록을 한 건 지웠을 때도
+     * 반대로 흔들린다 — 교사가 누른 자리가 그 사이에 옮겨 간다.
+     * `stable`이 그 자리를 미리 잡아 두어 스크롤바가 있든 없든 폭이 같다. */
+    scrollbar-gutter: stable;
 }
 
 body {
@@ -169,6 +175,46 @@ input, select, textarea, button {
 .bare {
     min-height: 100vh;
     background: var(--c-base);
+}
+
+/* ── 스크롤바 ────────────────────────────────────────────────
+ * 창이 WebView2(Chromium)라 `::-webkit-scrollbar`가 실제로 그려진다.
+ *
+ * **`scrollbar-width`와 `scrollbar-color`를 함께 쓰지 않는다.** 최신 Chromium은
+ * 그 둘 중 하나라도 있으면 표준 스크롤바로 넘어가면서 아래 모양을 통째로 무시한다.
+ * 한쪽만 고른다. */
+::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+/* 손잡이를 안쪽 상자로 그린다. 투명 테두리가 여백 노릇을 해서, 폭을 줄이지 않고도
+ * 가늘어 보인다 — 폭을 줄이면 잡기 어려워진다. */
+::-webkit-scrollbar-thumb {
+    background: var(--c-line);
+    background-clip: content-box;
+    border: 3px solid transparent;
+    border-radius: var(--r-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--c-ink-3);
+    background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* 안쪽 스크롤 상자에서도 폭이 흔들리지 않게 한다. */
+.list,
+.pane__body,
+[class*="__scroll"] {
+    scrollbar-gutter: stable;
 }
 
 /* ── 사이드바 ────────────────────────────────────────────── */
@@ -697,7 +743,7 @@ a.strip__cell:hover {
     font-weight: 700;
 }
 
-/* 후보가 정해져 있고 늘어나도 십여 개인 값은 버튼으로 표시한다.
+/* 후보가 고정되어 있고 늘어나도 십여 개인 값은 버튼으로 표시한다.
  * 드롭다운은 열기 전까지 후보가 보이지 않아 클릭이 한 번 더 든다. */
 .pick {
     border: 1px solid var(--c-line);

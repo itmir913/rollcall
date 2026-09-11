@@ -14,7 +14,7 @@ export const CLOSING = '종례'
 /** 열린 쪽을 화면에 적을 때 쓰는 기호. 저장은 NULL이다. */
 export const UNKNOWN = '?'
 
-/** 기간을 아직 정하지 않은 상태. 저장은 양쪽 NULL이다. */
+/** 기간을 아직 설정하지 않은 상태. 저장은 양쪽 NULL이다. */
 export const UNDECIDED = '미정'
 
 /** 조회 < 1교시 < … < N교시 < 종례 */
@@ -54,7 +54,7 @@ export function allowedSlots(slotPrompt, maxSlot) {
             return periods
         default:
             // 종류가 미정이면 `?`를 열지 않는다. `?`는 **묻고 있는 쪽이 열려 있다**는
-            // 뜻인데, 종류가 없으면 어느 쪽을 묻는지 정해지지 않아 저장할 수 없다.
+            // 뜻인데, 종류가 없으면 어느 쪽을 묻는지 결정되지 않아 저장할 수 없다.
             return [HOMEROOM, ...periods, CLOSING]
     }
 }

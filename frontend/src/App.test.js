@@ -4,9 +4,9 @@
  * 이 파일이 지키는 것은 셋이다.
  *   · **스위치는 늘 보인다.** 한쪽만 맡은 교사에게 지우면 담임 학급을 등록하러 갈
  *     길 자체가 사라지고, 이 앱이 자기 것의 절반만이라고 말하는 것이 된다.
- *   · **맡은 것이 없는 모드에서 항목을 지우지 않고 잠근다.** 사라지면 무엇이
+ *   · **담당 학급 · 강좌가 없는 모드에서 항목을 지우지 않고 잠근다.** 사라지면 무엇이
  *     없어졌는지 보이지 않는다. 잠긴 줄은 눌리지 않고 이유가 바로 아래 적힌다.
- *   · **맨 아래에 지금 학교가 있다.** 학년도 → 학교가 정해져야 역할이 정해진다.
+ *   · **맨 아래에 지금 학교가 있다.** 학년도 → 학교가 결정되어야 역할이 결정된다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {flushPromises, mount} from '@vue/test-utils'
@@ -98,7 +98,7 @@ describe('모드 스위치', () => {
         ])
     })
 
-    it('모드마다 목록이 통째로 갈린다 — 한 줄도 새지 않는다', async () => {
+    it('모드마다 목록이 통째로 분리된다 — 한 줄도 새지 않는다', async () => {
         const app = scope({classes: [HOMEROOM, SUBJECT]})
         const wrapper = renderApp()
         await flushPromises()
@@ -117,7 +117,7 @@ describe('모드 스위치', () => {
     })
 })
 
-describe('맡은 것이 없는 모드', () => {
+describe('담당 학급 · 강좌가 없는 모드', () => {
     it('항목을 지우지 않고 잠근다 — 이유가 그 자리에 적힌다', async () => {
         scope({classes: [SUBJECT], classId: null, mode: 'homeroom'})
         const wrapper = renderApp()
@@ -143,7 +143,7 @@ describe('맡은 것이 없는 모드', () => {
         expect(wrapper.find('.rail__where').text()).toContain('수업을 등록하지 않았습니다')
     })
 
-    it('맡은 것이 있으면 잠그지 않는다', async () => {
+    it('담당 학급 · 강좌가 있으면 잠그지 않는다', async () => {
         scope()
         const wrapper = renderApp()
         await flushPromises()

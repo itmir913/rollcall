@@ -26,6 +26,9 @@ import {fileURLToPath} from 'node:url'
 
 const SRC = dirname(fileURLToPath(import.meta.url))
 
+/** 줄바꿈. 역슬래시 이스케이프가 편집 중에 뭉개지는 것을 피한다. */
+const NL = String.fromCharCode(10)
+
 /** 색 리터럴이 허용된 단 하나의 파일. 여기가 토큰의 집이다. */
 const TOKEN_FILE = 'style.css'
 
@@ -119,7 +122,7 @@ function smallSizes(value) {
 }
 
 /**
- * 글자 크기를 정하는 선언. `font-size` 외에 세 가지를 더 본다.
+ * 글자 크기를 설정하는 선언. `font-size` 외에 세 가지를 더 본다.
  *   - `font:` 단축 속성 — 크기가 그 안에 들어 있어 `font-size`만 훑으면 통째로 빠져나간다.
  *   - `fontSize` — Vue의 `:style` 객체는 camelCase로 적는다.
  *   - `--t-*` — 토큰 파일이 애초에 16px보다 작은 크기 토큰을 만들지 못하게 막는다.
@@ -340,6 +343,12 @@ const LIGHT_SELECTOR = /(?<![-\w]):root\s*(?=\{)/g
  */
 const DARK_SELECTOR = /(?:html|:root)?\[data-theme\s*=\s*["']?dark["']?\s*]\s*(?=\{)/g
 
+/**
+ * 바로 뒤에 `{`가 오는 `html`만. `html[data-theme="dark"]`는 다크 토큰 블록이지
+ * 문서 전체에 걸리는 규칙이 아니라, 여기로 읽으면 스크롤바 검사가 엉뚱한 블록을 본다.
+ */
+const HTML_SELECTOR = /(?<![-\w])html\s*(?=\{)/g
+
 /** 블록들에서 색 토큰 이름을 모은다. 색 토큰은 `--c-` 접두사를 쓴다. */
 function colorTokens(blocks) {
     return [...new Set(blocks.flatMap((b) => [...b.matchAll(/(--c-[\w-]+)\s*:/g)].map((m) => m[1])))]
@@ -371,7 +380,7 @@ describe('색', () => {
         ).toEqual([])
     })
 
-    it('인라인 style 속성으로 색·글자 크기를 정하지 않는다', () => {
+    it('인라인 style 속성으로 색·글자 크기를 설정하지 않는다', () => {
         const offenders = FILES.flatMap(({path, text}) => inlineStyleOffenders(path, text))
         expect(
             offenders,
@@ -424,6 +433,56 @@ describe('토큰 파일', () => {
 })
 
 /**
+ * 스크롤바 — **화면이 흔들리지 않는다.**
+ *
+ * 내용이 한 줄 늘어 스크롤바가 나타나는 순간 본문 폭이 그만큼 줄어 화면 전체가
+ * 좌우로 움직인다. 목록에서 한 건을 지웠을 때도 반대로 움직인다. 교사가 30행짜리
+ * 격자를 훑으며 누르는 프로그램이라, 누르려던 자리가 그 사이에 옮겨 간다.
+ *
+ * 규칙이 셋이고 셋이 함께 있어야 뜻이 있다.
+ *   1. `html`의 `scrollbar-gutter: stable` — 스크롤바 자리를 미리 잡아 둔다.
+ *   2. `::-webkit-scrollbar` 모양 — 창이 WebView2(Chromium)라 실제로 그려진다.
+ *   3. `scrollbar-width` · `scrollbar-color`를 쓰지 않는다 — 최신 Chromium은 그 둘 중
+ *      하나라도 있으면 표준 스크롤바로 넘어가면서 2번을 통째로 무시한다. 색만 바꾸려고
+ *      한 줄 더한 것이 모양을 전부 되돌리는데, 브라우저는 아무 경고도 하지 않는다.
+ */
+describe('스크롤바', () => {
+    const tokens = FILES.find((f) => f.path === TOKEN_FILE)
+    const css = tokens ? stripComments(tokens.text) : ''
+
+    it('html이 스크롤바 자리를 늘 비워 둔다', () => {
+        const blocks = ruleBlocks(css, HTML_SELECTOR)
+        expect(
+            blocks.length,
+            'style.css에서 `html` 규칙을 찾지 못했다. 선택자를 바꿨다면 HTML_SELECTOR도 함께 고쳐라.',
+        ).toBeGreaterThan(0)
+        expect(
+            blocks.some((b) => /scrollbar-gutter\s*:\s*stable/.test(b)),
+            '`html`에 scrollbar-gutter: stable이 없다. 스크롤바가 나타나고 사라질 때마다 ' +
+            '본문 폭이 바뀌어 화면 전체가 좌우로 움직인다.',
+        ).toBe(true)
+    })
+
+    it('::-webkit-scrollbar 모양을 그린다', () => {
+        expect(
+            /::-webkit-scrollbar(-thumb)?\s*\{/.test(css),
+            '스크롤바 모양이 없다. 창이 WebView2라 이 선택자가 실제로 그려지는 자리다.',
+        ).toBe(true)
+    })
+
+    it('scrollbar-width · scrollbar-color를 쓰지 않는다', () => {
+        // 주석에는 이 두 이름이 "쓰지 않는다"는 근거로 적혀 있다. 주석을 지운 본문만 본다.
+        const offenders = ['scrollbar-width', 'scrollbar-color']
+            .filter((prop) => new RegExp(`${prop}\\s*:`).test(css))
+        expect(
+            offenders,
+            '이 둘 중 하나라도 있으면 최신 Chromium이 표준 스크롤바로 넘어가면서 ' +
+            `::-webkit-scrollbar 모양을 통째로 무시한다. 한쪽만 고른다.\n${offenders.join(', ')}`,
+        ).toEqual([])
+    })
+})
+
+/**
  * CLAUDE.md가 ❌로 못박은 순수 한국어 동사. 일상에서 거의 쓰이지 않아 읽는 사람이
  * 한 번 멈춘다 — 같은 뜻의 `한자어 + 하다`가 훨씬 자연스럽다.
  *
@@ -432,28 +491,64 @@ describe('토큰 파일', () => {
  * 적용되지만 아직 남은 것이 있어, 그쪽을 정리할 때 이 검사의 범위를 `FILES` 전체로
  * 넓히면 된다 — 범위만 바꾸면 되도록 검사와 목록을 분리해 두었다.
  */
-const BANNED_WORDS = [
-    ['펼친다', '표시한다 · 전개한다'],
-    ['가른다', '구분한다'],
-    ['견준다', '비교한다 · 대조한다'],
-    ['갈무리한다', '저장한다'],
-    ['되짚는다', '확인한다'],
-    ['앉힌다', '배치한다'],
-    ['베낀다', '복사한다'],
-    ['매단다', '연결한다'],
-]
+/**
+ * 금칙어 목록을 **`terms.md`에서 읽는다.**
+ *
+ * 목록을 여기에 적어 두면 `terms.md` · 이 파일 · `src-tauri/src/tests/terms_tests.rs`
+ * 세 곳이 곧 갈라진다. 셋이 다른 말을 하면 어느 것이 규칙인지 아무도 모른다.
+ * 고칠 곳은 `terms.md`의 표 하나다.
+ *
+ * 표의 모양은 `| \`찾을 문자열\` | 대신 쓸 말 |`이고 **백틱 안의 앞뒤 빈칸도 문자열의
+ * 일부다** — `정하다`류는 앞 빈칸이 있어야 `판정하지` · `결정한다`가 걸리지 않는다.
+ */
+function bannedWords() {
+    const path = join(SRC, '..', '..', 'terms.md')
+    const text = readFileSync(path, 'utf-8')
+    const section = text.split('## 4. 검사기가 읽는 목록')[1]
+    expect(section, 'terms.md에 `## 4. 검사기가 읽는 목록` 절이 없다.').toBeDefined()
+
+    const rules = []
+    for (const line of section.split(NL)) {
+        const row = line.trim()
+        if (!row.startsWith('| `')) continue
+        const cells = row.replace(/^\|/, '').replace(/\|$/, '').split('|')
+        // 백틱 안쪽이 곧 찾을 문자열이다. trim으로 빈칸을 없애면 안 된다.
+        const word = cells[0].trim().replace(/^`/, '').replace(/`$/, '')
+        rules.push([word, (cells[1] ?? '').trim()])
+    }
+    expect(rules.length, 'terms.md의 금칙어 표를 읽지 못했다.').toBeGreaterThan(10)
+    return rules
+}
+
+/**
+ * 검사에서 빼는 파일. **금칙어 목록과 그 목록을 확인하는 시험은 그 낱말을 쓸 수밖에 없다.**
+ * 그 밖의 `*.test.js`도 뺀다 — "이 낱말이 없어야 한다"고 단언하려면 낱말을 적어야 한다.
+ */
+const TERM_SKIP = /(^|\/)style\.test\.js$/
 
 describe('문구', () => {
-    it('style.css에 CLAUDE.md가 ❌로 못박은 낱말이 없다', () => {
-        const tokens = FILES.find((f) => f.path === TOKEN_FILE)
-        expect(tokens, 'style.css를 찾지 못했다.').toBeDefined()
+    const rules = bannedWords()
 
-        const offenders = BANNED_WORDS
-            .filter(([word]) => tokens.text.includes(word))
-            .map(([word, better]) => `${TOKEN_FILE} — ${word} → ${better}`)
+    it('terms.md가 금칙어 표를 들고 있다', () => {
+        expect(rules.map(([w]) => w)).toContain('맡은 것')
+    })
+
+    it('화면과 소스에 교사가 쓰지 않는 말이 없다', () => {
+        // **주석도 검사한다.** 주석의 낱말이 다음 화면 문구의 낱말이 되기 때문이다.
+        const offenders = []
+        for (const file of FILES) {
+            if (TERM_SKIP.test(file.path)) continue
+            file.text.split(NL).forEach((line, i) => {
+                for (const [word, better] of rules) {
+                    if (line.includes(word)) {
+                        offenders.push(`${file.path}:${i + 1} [${word.trim()}] → ${better}`)
+                    }
+                }
+            })
+        }
         expect(
             offenders,
-            `순수 한국어 동사는 읽는 사람이 한 번 멈춘다. 한자어 + 하다로 쓴다.\n${offenders.join('\n')}`,
+            ['화면에 쓰지 않는 말이 남아 있다. 낱말만 바꾸고 뜻은 그대로 둘 것.', ...offenders].join(NL),
         ).toEqual([])
     })
 })
@@ -532,5 +627,10 @@ describe('검사기 자체', () => {
         expect(ruleBlocks(sample, DARK_SELECTOR), '주석은 규칙이 아니다').toEqual([])
         expect(ruleBlocks(sample, LIGHT_SELECTOR)).toHaveLength(1)
         expect(ruleBlocks(":root[data-theme='dark'] { --c-ink: #fff; }", DARK_SELECTOR)).toHaveLength(1)
+    })
+
+    it('html 규칙만 html로 읽는다 — 다크 선택자를 여기로 읽으면 스크롤바 검사가 헛돈다', () => {
+        expect(ruleBlocks('html { scrollbar-gutter: stable; }', HTML_SELECTOR)).toHaveLength(1)
+        expect(ruleBlocks('html[data-theme="dark"] { --c-ink: #fff; }', HTML_SELECTOR)).toEqual([])
     })
 })

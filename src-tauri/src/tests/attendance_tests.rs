@@ -1,7 +1,7 @@
 //! 출결 입력과 수정의 시험.
 //!
-//! 이 모듈이 지키는 것은 두 가지다 — **교사가 찍은 것을 그대로 저장한다**는 것과,
-//! **같은 조합을 다시 찍으면 취소된다**는 것. 나머지(한도 · 겹침 · 미완성)는
+//! 이 모듈이 지키는 것은 두 가지다 — **교사가 입력한 것을 그대로 저장한다**는 것과,
+//! **같은 조합을 다시 입력하면 취소된다**는 것. 나머지(한도 · 겹침 · 미완성)는
 //! 저장을 막지 않고 표시할 값만 계산한다.
 
 use crate::commands::attendance::*;
@@ -97,7 +97,7 @@ fn doc_due_of(conn: &Connection, span_id: i64) -> Option<String> {
 // ── 같은 조합 = 무르기 ────────────────────────────────────────
 
 #[test]
-fn 같은_조합을_두_번_찍으면_취소된다() {
+fn 같은_조합을_두_번_입력하면_취소된다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
     let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]);
@@ -121,7 +121,7 @@ fn 같은_조합을_두_번_찍으면_취소된다() {
 // ── 무르기는 교사가 적어 둔 것을 지우지 않는다 ────────────────
 //
 // 무르기의 전제는 그 구간에 아무것도 붙어 있지 않다는 것이다. 태그 · 사유 · 서류 ·
-// NEIS 표시가 남아 있는데 지우면, 다시 찍어도 빈 구간만 돌아온다.
+// NEIS 표시가 남아 있는데 지우면, 다시 입력해도 빈 구간만 돌아온다.
 
 #[test]
 fn 태그와_사유가_붙은_건은_무르기로_지우지_않는다() {
@@ -187,7 +187,7 @@ fn 한_묶음_중_하나만_적혀_있어도_전부_그대로_둔다() {
     let (reason, kind) = axes(&f.conn, "질병", "결과");
     let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1", "3"]);
     let ids = stamp_span_impl(&f.conn, &input).unwrap().span_ids;
-    assert_eq!(ids.len(), 2, "이어지지 않은 교시라 두 건이다");
+    assert_eq!(ids.len(), 2, "연속하지 않은 교시라 두 건이다");
     set_span_memo_impl(&f.conn, ids[1], "병원").unwrap();
 
     let again = stamp_span_impl(&f.conn, &input).unwrap();
@@ -248,7 +248,7 @@ fn 구분만_달라도_다른_건이다() {
 // ── 기간 규칙 ─────────────────────────────────────────────────
 
 #[test]
-fn 이어지지_않은_교시는_구간이_나뉜다() {
+fn 연속하지_않은_교시는_구간이_나뉜다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결과");
 
@@ -280,7 +280,7 @@ fn 이어지지_않은_교시는_구간이_나뉜다() {
 }
 
 #[test]
-fn 이어진_교시는_한_구간이다() {
+fn 연속한_교시는_한_구간이다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결과");
 
@@ -537,7 +537,7 @@ fn 수정으로_축을_비울_수_있다() {
 }
 
 #[test]
-fn 이어지지_않은_교시로는_한_구간을_고칠_수_없다() {
+fn 연속하지_않은_교시로는_한_구간을_고칠_수_없다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결과");
     let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1"]))
@@ -578,7 +578,7 @@ fn 없는_기록을_고치거나_지우면_오류다() {
 }
 
 #[test]
-fn 명단에_없는_학생에게는_찍을_수_없다() {
+fn 명단에_없는_학생에게는_입력할_수_없다() {
     let f = fixture();
     let err =
         stamp_span_impl(&f.conn, &stamp(f.class, 9999, "2026-09-10", None, None, &[])).unwrap_err();
@@ -835,7 +835,7 @@ fn 미리보기는_그_학생의_기록만_알린다() {
     let (reason, kind) = axes(&f.conn, "질병", "결석");
     stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-06-02", reason, kind, &[])).unwrap();
 
-    // 찍은 학생에게는 표시가 붙는다.
+    // 입력한 학생에게는 표시가 붙는다.
     let mine =
         preview_bulk_impl(&f.conn, f.class, Some(f.students[0]), "2026-06-01", "2026-06-05")
             .unwrap();
@@ -939,7 +939,7 @@ fn 구간_문구는_열린_쪽을_물음표로_적는다() {
 }
 
 #[test]
-fn 구간_묶기는_이어진_것끼리만_묶는다() {
+fn 구간_묶기는_연속한_것끼리만_묶는다() {
     let picked = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
 
     assert_eq!(
@@ -957,7 +957,7 @@ fn 구간_묶기는_이어진_것끼리만_묶는다() {
         ranges_for(Some("none"), &picked(&["3"]), 7).unwrap(),
         vec![(Some("조회".to_string()), Some("종례".to_string()))]
     );
-    // 종류를 아직 안 정했고 교시도 안 골랐으면 기간 미정이다.
+    // 종류를 아직 설정하지 않았고 교시도 안 골랐으면 기간 미정이다.
     assert_eq!(ranges_for(None, &[], 7).unwrap(), vec![(None, None)]);
 
     // `?`는 **묻고 있는 쪽이 열려 있다**는 뜻이고, 저장은 NULL이다(`slots.rs`).
@@ -972,7 +972,7 @@ fn 구간_묶기는_이어진_것끼리만_묶는다() {
         vec![(None, Some("종례".to_string()))],
         "조퇴는 언제부터인지 모르는 채 종례까지다"
     );
-    // 종류가 미정이면 어느 쪽을 묻는지 정해지지 않아 저장할 수 없다.
+    // 종류가 미정이면 어느 쪽을 묻는지 결정되지 않아 저장할 수 없다.
     assert!(ranges_for(None, &picked(&["?"]), 7).is_err());
     assert!(ranges_for(Some("multi"), &picked(&["?"]), 7).is_err());
 }
@@ -1014,7 +1014,7 @@ fn 무르기는_날짜_표기에_흔들리지_않는다() {
     let (reason, kind) = axes(&f.conn, "질병", "결석");
 
     stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[])).unwrap();
-    // 같은 날을 다른 표기로 다시 찍어도 같은 건이므로 취소다.
+    // 같은 날을 다른 표기로 다시 입력해도 같은 건이므로 취소다.
     let again =
         stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-9-10", reason, kind, &[])).unwrap();
     assert_eq!(again.action, "cancelled");

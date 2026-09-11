@@ -19,7 +19,7 @@
 //! 채운다 — **학생의 `enrolled_to`가 아니다.** 내 명단에서 빠진 것과 학교를 떠난 것은
 //! 다른 일이고, 담임이 아는 것은 앞엣것뿐이다.
 //!
-//! **차분의 열쇠는 역할이 정한다.** 담임은 `번호` 하나이고, 교과는 `(학년, 반, 번호)`
+//! **차분의 열쇠는 역할이 결정한다.** 담임은 `번호` 하나이고, 교과는 `(학년, 반, 번호)`
 //! 학적 자리 전체다. 교과 강좌는 선택과목이라 1반~n반이 섞여 번호 하나로는 학생을
 //! 구별할 수 없다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다.
 //!
@@ -67,7 +67,7 @@ pub fn detect_class(entries: &[RosterEntry]) -> RosterClass {
 
 // ── 열쇠 ──────────────────────────────────────────────────────
 
-/// 명렬표 한 줄이 어떤 학생을 가리키는가. **역할이 정한다.**
+/// 명렬표 한 줄이 어떤 학생을 가리키는가. **역할이 결정한다.**
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RosterKeying {
     /// 담임 — `번호` 하나가 열쇠다. 반이 다른 학생이 명단에 있어도 번호로 짝을 찾는다.
@@ -99,7 +99,7 @@ fn key_of_member(k: RosterKeying, st: &StudentItem) -> Key {
     }
 }
 
-/// 파일 한 줄의 열쇠. 교과에서 학년 · 반이 비면 자리를 정할 수 없어 `None`이다.
+/// 파일 한 줄의 열쇠. 교과에서 학년 · 반이 비면 자리를 결정할 수 없어 `None`이다.
 fn key_of_entry(k: RosterKeying, e: &RosterEntry) -> Option<Key> {
     match k {
         RosterKeying::ByNumber => Some(Key::Number(e.number)),
@@ -471,7 +471,7 @@ fn hand_over_seat(
 /// 미리보기에서 교사가 확정한 행만 받아 적용한다.
 ///
 /// 프론트가 `action`을 바꿔 보낼 수 있다는 것이 요점이다. 번호 같고 이름 다름을
-/// 개명(`renamed`)으로 볼지, 명단 교체(`withdrawn` + `added`)로 볼지는 교사가 정한다.
+/// 개명(`renamed`)으로 볼지, 명단 교체(`withdrawn` + `added`)로 볼지는 교사가 결정한다.
 /// 자리를 다른 이름이 쓰고 있는 줄을 `linked`로 바꾸는 것도 교사다.
 pub fn apply_roster_impl(
     conn: &Connection,
@@ -540,7 +540,7 @@ pub fn apply_roster_impl(
                         (None, Some(grade), Some(class_no)) => (grade, class_no),
                         (None, _, _) => {
                             return Err(format!(
-                                "{}: 학년 · 반이 없어 학적 자리를 정할 수 없습니다.",
+                                "{}: 학년 · 반이 없어 학적 자리를 결정할 수 없습니다.",
                                 where_of(row)
                             ))
                         }
@@ -818,7 +818,7 @@ pub fn withdraw_student_impl(
 /// 연락처는 `type` · `phone` · `memo` · 순서다.
 ///
 /// 덧붙일 말은 `memo`에 적는다(`직장 번호 · 주간에는 받지 않음`). 관계와 번호 외에 무엇을 더 적을지는
-/// 아직 정해지지 않았고, 자리를 먼저 만들면 무엇을 넣을지부터 되묻게 된다.
+/// 아직 결정되지 않았고, 자리를 먼저 만들면 무엇을 넣을지부터 되묻게 된다.
 pub fn get_contacts_impl(conn: &Connection, student_id: i64) -> Result<Vec<ContactItem>, String> {
     let mut stmt = conn
         .prepare(

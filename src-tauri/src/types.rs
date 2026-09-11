@@ -38,6 +38,17 @@ pub struct OffDayItem {
 
 // ── 학년도 ────────────────────────────────────────────────────
 
+/// 학년도 한 줄. **뒤의 다섯 수는 "이 학년도를 지우면 무엇이 함께 사라지는가"다.**
+///
+/// 삭제는 `ON DELETE CASCADE`로 그 아래를 통째로 지우는, 되돌릴 수 없는 쓰기다.
+/// 확인 대화상자가 그 양을 **묻기 전에** 보여줘야 하는데, 수를 따로 받아 오는 커맨드를
+/// 두면 화면이 대화상자를 여는 순간 한 번 더 기다린다.
+///
+/// **담임 출결과 교과 차시를 한 수로 합치지 않는다.** 두 기록은 표부터 다르고, 합친
+/// 수는 "출결 300건"이 담임 것인지 교과 것인지 말해 주지 못한다.
+///
+/// 마감하거나 목록에서 내린 것(`school.active = 0` · `teaching_class.valid_to`)도 센다 —
+/// 지울 때는 그것들도 똑같이 사라지기 때문이다. 목록 조회와 세는 기준이 다른 것이 맞다.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AcademicYearItem {
@@ -45,9 +56,19 @@ pub struct AcademicYearItem {
     pub year: i64,
     pub starts_on: Option<String>,
     pub ends_on: Option<String>,
+    /// 그 학년도의 학교 수.
+    pub school_count: i64,
+    /// 담당 학급 · 강좌 수(`teaching_class`). 담임과 교과를 함께 센다.
+    pub class_count: i64,
+    /// 학적 수(`student`). 명단에서 빠진 학생도 학적은 남아 있으므로 함께 센다.
+    pub student_count: i64,
+    /// 담임 출결 건수(`absence_span`).
+    pub span_count: i64,
+    /// 교과 차시 수(`subject_session`).
+    pub session_count: i64,
 }
 
-// ── 내가 맡은 것 ──────────────────────────────────────────────
+// ── 담당 학급 · 강좌 ──────────────────────────────────────────
 
 /// 담임 학급 하나 또는 교과 강좌 하나. **화면의 범위가 이 행의 `id`다.**
 ///
@@ -55,7 +76,7 @@ pub struct AcademicYearItem {
 /// 가리킬 반이 없다.
 ///
 /// **학년도를 따로 들지 않는다.** 학교가 이미 학년도를 안다 —
-/// 학년도 → 학교 → 맡은 것이 이 앱의 계층이다.
+/// 학년도 → 학교 → 담당 학급 · 강좌가 이 앱의 계층이다.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeachingClassItem {
@@ -190,7 +211,7 @@ pub struct ContactItem {
     /// "주간에는 받지 않음" 같은 것. 앱은 해석하지 않는다.
     #[serde(default)]
     pub memo: String,
-    /// 먼저 걸 번호를 정한다. 급한 순간에 고민하지 않게.
+    /// 먼저 걸 번호의 순서를 설정한다. 급한 순간에 고민하지 않게.
     #[serde(default)]
     pub sort_order: i64,
 }
@@ -308,7 +329,7 @@ pub struct SpanItem {
     pub type_id: Option<i64>,
     pub reason_label: Option<String>,
     pub type_label: Option<String>,
-    /// 두 축이 다 정해졌을 때의 코드 라벨. 아니면 None.
+    /// 두 축이 다 결정되었을 때의 코드 라벨. 아니면 None.
     pub code_label: Option<String>,
     pub start_slot: Option<String>,
     pub end_slot: Option<String>,
@@ -332,12 +353,12 @@ pub struct SpanItem {
     pub overlapping: bool,
 }
 
-/// 찍기 요청. 같은 조합이 이미 있으면 **취소**된다.
+/// 입력 요청. 같은 조합이 이미 있으면 **취소**된다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StampInput {
     /// 어느 담임 학급의 기록인가. **학생이 아니라 학급이 범위다** —
-    /// 같은 학생이 내 교과 강좌에도 있을 수 있어, 학생만으로는 자리를 정할 수 없다.
+    /// 같은 학생이 내 교과 강좌에도 있을 수 있어, 학생만으로는 자리를 결정할 수 없다.
     pub class_id: i64,
     pub student_id: i64,
     pub date: String,
@@ -346,7 +367,7 @@ pub struct StampInput {
     #[serde(default)]
     pub type_id: Option<i64>,
     /// 고른 교시들. 결과처럼 여럿일 수 있고, 비어 있으면 기간 미정이다.
-    /// 이어진 교시는 Rust가 한 구간으로 묶는다.
+    /// 연속한 교시는 Rust가 한 구간으로 묶는다.
     #[serde(default)]
     pub slots: Vec<String>,
 }
@@ -357,7 +378,7 @@ pub struct StampResult {
     /// added | cancelled | kept
     ///
     /// `kept`는 같은 조합이 이미 있는데 그 구간에 태그 · 사유 · 서류 · NEIS 표시가
-    /// 남아 있어 **무르지 않은** 경우다. 그것까지 지우면 다시 찍어도 빈 구간만
+    /// 남아 있어 **무르지 않은** 경우다. 그것까지 지우면 다시 입력해도 빈 구간만
     /// 돌아와, 교사가 적어 둔 것이 말없이 사라진다.
     pub action: String,
     pub span_ids: Vec<i64>,
@@ -493,7 +514,7 @@ pub struct QuotaReport {
     pub window_to: String,
     /// **그 창 밖이라 세지 못한 구간 수.** 조용히 넘기지 않는다 —
     /// 학년도는 기준 연도일 뿐 날짜 울타리가 아니라, 2026학년도 학급에 2027-03-05를
-    /// 찍는 일이 실제로 있다. 그 건은 한도에도 태그 누락 목록에도 들어가지 않으므로
+    /// 입력하는 일이 실제로 있다. 그 건은 한도에도 태그 누락 목록에도 들어가지 않으므로
     /// 세어서 알리지 않으면 교사에게 "덜 썼다"고 거짓으로 말하게 된다.
     pub outside: i64,
 }
@@ -536,7 +557,7 @@ pub struct SubjectSessionItem {
     pub total: i64,
 }
 
-/// 차시 한 칸의 명단 한 줄. 교과가 찍는 것은 `absent` 하나뿐이다.
+/// 차시 한 칸의 명단 한 줄. 교과가 기록하는 것은 `absent` 하나뿐이다.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SubjectRollItem {
@@ -553,7 +574,7 @@ pub struct SubjectRollItem {
     ///
     /// **읽기 전용 참고다.** 내가 담임인 학급의 기록만 보고, 이 화면에서 적은 것과
     /// 눈에 띄게 구별되어야 한다 — 교과 수업에서 빈 자리를 보았는데 아침에 담임으로
-    /// 질병결석을 찍어 두었으면 그것을 알려주는 것이 기능이지 유출이 아니다.
+    /// 질병결석을 입력해 두었으면 그것을 알려주는 것이 기능이지 유출이 아니다.
     pub homeroom_note: Option<String>,
 }
 

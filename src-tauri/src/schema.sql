@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS academic_year
 -- 바뀌어도 지난해 학교가 목록에 남고, 그 학교의 최대 교시 · 제출 기한을 고치면
 -- 지난해 화면까지 소급해 바뀐다.
 --
--- **이것이 이 앱의 계층이다 — 학년도 → 학교 → 맡은 것(담임 | 교과).**
+-- **이것이 이 앱의 계층이다 — 학년도 → 학교 → 담당 학급 · 강좌(담임 | 교과).**
 -- 그래서 `student`와 `teaching_class`는 학년도를 따로 들지 않는다. 학교가 이미
 -- 알고 있고, 둘이 따로 있으면 2027학년도 학교에 속한 2026학년도 학급 같은
 -- 어긋난 조합이 만들어질 수 있다.
@@ -139,12 +139,12 @@ CREATE TABLE IF NOT EXISTS class_tag
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_class_tag_name ON class_tag (school_id, name);
 
--- ─── 내가 맡은 것 ──────────────────────────────────────────────
+-- ─── 담당 학급 · 강좌 ──────────────────────────────────────────
 -- 담임 학급과 교과 강좌가 이 표에 함께 온다. 기록하는 것이 달라 화면은 나뉘지만,
--- "내가 맡은 무엇"이라는 점은 같아서 표를 나누면 이동 · 설정이 두 벌이 된다.
+-- "내가 담당한다"는 점은 같아서 표를 나누면 이동 · 설정이 두 벌이 된다.
 --
 -- **학교에 속한다.** 학년도는 학교가 들고 있다 — 해가 바뀌면 그 학년도의 학교를
--- 새로 만들고 맡은 것도 새로 넣는다. 지난해 줄은 지난해 학교에 그대로 남는다.
+-- 새로 만들고 담당 학급 · 강좌도 새로 넣는다. 지난해 줄은 지난해 학교에 그대로 남는다.
 CREATE TABLE IF NOT EXISTS teaching_class
 (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS teaching_class
     -- homeroom = 구분 · 종류 · 기간을 기록한다 (absence_span)
     -- subject  = 교시마다 있었는지 없었는지만 기록한다 (subject_session)
     --
-    -- 두 모드는 화면에서 서로 새지 않는다. 쓰는 사람이 다르기 때문이다 —
+    -- 두 모드는 화면에서 서로 유출되지 않는다. 쓰는 사람이 다르기 때문이다 —
     -- 비담임 교사에게 서류 미제출이 스쳐 지나가면 매일 남의 일을 보는 것이 된다.
     role       TEXT    NOT NULL CHECK (role IN ('homeroom', 'subject')),
     -- 화면에 적히는 이름. '3학년 6반' · '지구과학Ⅰ'
@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS teaching_class
     grade      INTEGER CHECK (grade IS NULL OR grade >= 1),
     class_no   INTEGER CHECK (class_no IS NULL OR class_no >= 1),
     -- 화면에서 함께 묶어 보일 이름. 없어도 된다 — 묶을 것이 없는 과목이 더 많다.
-    -- **한 강좌에 하나다.** 여럿을 허용하면 어느 묶음으로 접어 보일지 정해야 하고,
+    -- **한 강좌에 하나다.** 여럿을 허용하면 어느 묶음으로 접어 보일지 결정해야 하고,
     -- 그 판단은 프로그램이 할 일이 아니다.
     group_tag_id INTEGER REFERENCES class_tag (id) ON DELETE SET NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
@@ -173,7 +173,7 @@ CREATE INDEX IF NOT EXISTS ix_class_scope
     ON teaching_class (school_id, role, sort_order);
 
 -- 한 학교에서 같은 역할의 같은 이름은 하나다.
--- 이름이 화면의 식별자이기도 하다 — 목록에 '3학년 6반'이 둘 있으면 어느 쪽에 찍었는지
+-- 이름이 화면의 식별자이기도 하다 — 목록에 '3학년 6반'이 둘 있으면 어느 쪽에 입력했는지
 -- 교사가 알 수 없다. 마감한 것은 세지 않는다(같은 이름을 다시 맡는 해가 온다).
 CREATE UNIQUE INDEX IF NOT EXISTS ux_class_name_active
     ON teaching_class (school_id, role, name)
@@ -182,12 +182,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_class_name_active
 -- **역할은 바꾸지 못한다.** 격리 트리거들은 자식 표(`absence_span` · `subject_session`)의
 -- 쓰기만 본다. 그래서 담임 학급의 role을 subject로 바꾸면 이미 달린 담임 출결이
 -- 교과 강좌에 붙은 채 남고, 두 화면이 서로의 기록을 보게 된다 — 어떤 입력의 결과도
--- 아닌 상태다. 맡은 것이 바뀌었으면 새로 만들고 옛것을 마감한다.
+-- 아닌 상태다. 담당이 바뀌었으면 새로 만들고 옛것을 마감한다.
 CREATE TRIGGER IF NOT EXISTS trg_class_role_is_fixed
     BEFORE UPDATE OF role ON teaching_class
     WHEN NEW.role <> OLD.role
 BEGIN
-    SELECT RAISE(ABORT, '맡은 것의 역할은 바꿀 수 없습니다. 새로 만들고 옛것을 마감하세요.');
+    SELECT RAISE(ABORT, '담당 학급 · 강좌의 역할은 바꿀 수 없습니다. 새로 만들고 옛것을 마감하세요.');
 END;
 
 -- ─── 소속 ──────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ CREATE TABLE IF NOT EXISTS attendance_type
 );
 
 -- ─── 구분 × 종류 = 코드 ────────────────────────────────────────
--- 두 축이 모두 정해졌을 때만 존재한다. 문구 패턴과 나이스 표기가 여기 붙는다.
+-- 두 축이 모두 결정되었을 때만 존재한다. 문구 패턴과 나이스 표기가 여기 붙는다.
 -- 고치지 않는다 — valid_to로 마감하고 새 행을 넣는다.
 CREATE TABLE IF NOT EXISTS attendance_code
 (
@@ -288,7 +288,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_tag_name_active
     WHERE valid_to IS NULL;
 
 -- ─── 부재 구간 (기록) ──────────────────────────────────────────
--- reason_id와 type_id는 **각각 NULL일 수 있다.** NULL은 "아직 안 정했다"는 뜻이다.
+-- reason_id와 type_id는 **각각 NULL일 수 있다.** NULL은 "아직 설정하지 않았다"는 뜻이다.
 -- start_slot / end_slot의 NULL은 "열린 구간"이다. 둘 다 NULL이면 기간 미정이다.
 --
 -- 서류와 나이스는 **이 구간에 달린 두 개의 불리언**이다. 서류 '종류'는 기록하지
@@ -454,9 +454,9 @@ CREATE TABLE IF NOT EXISTS quota_rule
 -- **모드마다 마지막 자리를 따로 기억한다.** 오가며 쓰는 값이라, 돌아왔을 때 있던
 -- 자리가 아니면 매번 다시 골라야 한다.
 --
--- **학교는 맡은 것에서 역산하지 않는다.** 그 학년도에 맡은 것이 아직 없는 학교는
+-- **학교는 담당 학급 · 강좌에서 역산하지 않는다.** 그 학년도에 담당이 아직 없는 학교는
 -- 역산으로는 가리킬 수 없고, 순회 교사가 학교를 옮겨도 화면이 따라오지 않는다.
--- 학교가 범위이고 맡은 것이 그 안에 있다 — 순서를 거꾸로 두면 담임 학급을 고르는
+-- 학교가 범위이고 담당 학급 · 강좌가 그 안에 있다 — 순서를 거꾸로 두면 담임 학급을 고르는
 -- 것만으로 학교가 바뀐다.
 --
 -- **학교 단위 값은 여기 넣지 않는다.** school 행에 자리가 있다.

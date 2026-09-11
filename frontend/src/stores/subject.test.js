@@ -4,7 +4,7 @@
  * 여기서 지키는 것은 넷이다.
  *   1. **담임 모드에서는 아무것도 읽지 않는다.** 한쪽의 숫자가 다른 쪽에 유출되면 안 된다.
  *   2. 교시를 여럿 골라도 칸은 교시마다 하나씩 만들어진다(연강도 두 칸이다).
- *   3. 찍기는 같은 학생을 다시 찍으면 취소이고, 돌려주는 값이 찍은 뒤의 상태다.
+ *   3. 입력은 같은 학생을 다시 누르면 취소이고, 돌려주는 값이 입력한 뒤의 상태다.
  *   4. 실패를 삼키지 않는다 — `error`에 담고 다시 던진다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
@@ -24,7 +24,7 @@ const ROLL = (over = {}) => ({
     absent: false, memo: '', homeroomNote: null, ...over,
 })
 
-/** 교과 강좌 하나를 맡은 교사. 모드는 고른 학급의 역할이 정한다. */
+/** 교과 강좌 하나를 맡은 교사. 모드는 고른 학급의 역할이 결정한다. */
 function subjectTeacher() {
     const app = useAppStore()
     app.schools = [{id: 1, yearId: 2, name: '한빛고등학교', maxSlot: 7}]
@@ -142,7 +142,7 @@ describe('날짜 옮기기', () => {
         return subject
     }
 
-    it('하루 옮기면 고른 차시와 명단을 함께 비운다 — 보이지 않는 날에 찍히면 안 된다', async () => {
+    it('하루 옮기면 고른 차시와 명단을 함께 비운다 — 보이지 않는 날에 입력되면 안 된다', async () => {
         const subject = await openedOn11()
 
         await subject.move(1)
@@ -170,7 +170,7 @@ describe('날짜 옮기기', () => {
         expect(subject.roll).toHaveLength(1)
     })
 
-    it('옮긴 뒤에는 찍지 않는다 — 어느 칸에 들어갔는지 모르는 기록을 만들지 않는다', async () => {
+    it('옮긴 뒤에는 입력하지 않는다 — 어느 칸에 들어갔는지 모르는 기록을 만들지 않는다', async () => {
         const subject = await openedOn11()
         await subject.move(1)
         invoke.mockClear()
@@ -247,8 +247,8 @@ describe('차시 만들기 · 지우기', () => {
     })
 })
 
-describe('찍기', () => {
-    it('찍은 뒤의 결석 여부를 돌려주고 명단을 다시 읽는다', async () => {
+describe('입력', () => {
+    it('입력한 뒤의 결석 여부를 돌려주고 명단을 다시 읽는다', async () => {
         subjectTeacher()
         answers({sessions: [SESSION()], roll: [ROLL({absent: true})], toggled: true})
 

@@ -5,7 +5,7 @@ import {useAppStore} from '../stores/app'
  * 흐름: Welcome → 개요(`/`)
  *
  * 사이드바는 **빈도로 나눈다.** 개요가 입구이고, 그 아래 넷이 매일 여는 화면이다 —
- * 찍고(오늘의 출결), 확인하고(출결 기록), 서류를 챙기고(서류 미제출자),
+ * 입력하고(오늘의 출결), 확인하고(출결 기록), 서류를 챙기고(서류 미제출자),
  * 나이스에 넣는다(NEIS 미등재). 통계와 NEIS 검증은 월말에나 연다.
  * 설정과 업데이트는 업무가 아니므로 맨 아래 고정이다.
  *
@@ -47,7 +47,7 @@ const routes = [
         meta: {nav: 'NEIS 검증', mode: 'homeroom'},
     },
     // 교과는 차시 단위다. 오늘 수업에서 [교시 추가]로 칸을 만들고 그 칸에서 빠진
-    // 학생만 찍는다. 수업 기록은 그 칸들이 날짜별로 쌓인 곳이다.
+    // 학생만 기록한다. 수업 기록은 그 칸들이 날짜별로 쌓인 곳이다.
     {
         path: '/subject/today', name: 'subject-today',
         component: () => import('../views/SubjectTodayView.vue'),
@@ -66,7 +66,7 @@ const routes = [
 /**
  * 두 모드가 함께 쓰는 입구. 개요가 첫 줄이고, 이동이 그 아래다.
  *
- * `always`는 **맡은 것이 없어도 열리는 줄**이라는 뜻이다. 담임 학급이 없는 담임
+ * `always`는 **담당 학급 · 강좌가 없어도 열리는 줄**이라는 뜻이다. 담임 학급이 없는 담임
  * 모드에서 나머지 항목은 비활성화되지만, 이 둘까지 잠그면 등록하러 갈 길이 막힌다.
  */
 const NAV_TOP = [
@@ -130,7 +130,7 @@ export const NAV_FOOT = [
  * 열 때마다 백업 파일이 둘씩 쌓인다.
  *
  * Welcome 자신은 되돌리지 않는다. 되돌리면 그 자리에서 이동이 끝나지 않는다.
- * **맡은 것이 하나라도 생기면 `needsWelcome`이 꺼진다** — 담임 학급이 없는 담임
+ * **담당 학급 · 강좌가 하나라도 생기면 `needsWelcome`이 꺼진다** — 담임 학급이 없는 담임
  * 모드나 아직 강좌를 넣지 않은 학교는 시작하지 않은 상태가 아니다.
  */
 export function welcomeRedirect(app, to) {
@@ -145,11 +145,11 @@ export function welcomeRedirect(app, to) {
  * 교과 모드로 바꾸기 전에 열어 둔 주소로 뒤로 가면 담임 화면이 그대로 열리고,
  * 그 화면은 교과 강좌의 범위로 담임 질의를 던진다.
  *
- * **그 모드에 맡은 것이 없을 때도 되돌린다.** 비담임 교사가 담임 모드로 들어오는 것은
+ * **그 모드에 담당 학급 · 강좌가 없을 때도 되돌린다.** 비담임 교사가 담임 모드로 들어오는 것은
  * 정상이지만, 그때 담임 화면은 범위가 없어 빈 목록만 그린다. 개요가 그 자리에서
  * 무엇을 등록해야 하는지 알린다.
  *
- * 부팅 전에는 판단하지 않는다. 그때는 맡은 것을 아직 읽지 못해 모드가 기본값(담임)이라,
+ * 부팅 전에는 판단하지 않는다. 그때는 담당 학급 · 강좌를 아직 읽지 못해 모드가 기본값(담임)이라,
  * 교과 화면을 열려는 교사까지 개요로 되돌리게 된다.
  */
 export function modeRedirect(app, to) {
@@ -162,7 +162,7 @@ export function modeRedirect(app, to) {
 const router = createRouter({history: createWebHashHistory(), routes})
 
 // 두 판단을 연결한다. 앞이 다른 곳으로 보내면 뒤는 묻지 않는다 —
-// Welcome은 모드를 가리지 않는 화면이고, 맡은 것이 없으면 모드도 정해지지 않았다.
+// Welcome은 모드를 가리지 않는 화면이고, 담당 학급 · 강좌가 없으면 모드도 결정되지 않았다.
 router.beforeEach((to) => {
     const app = useAppStore()
     const welcome = welcomeRedirect(app, to)

@@ -1,6 +1,6 @@
 //! 서류 · 나이스 표시와 두 미제출 목록.
 //!
-//! 구간은 SQL로 직접 넣는다. 찍기 커맨드는 다른 모듈의 것이고, 여기서 검사하려는 것은
+//! 구간은 SQL로 직접 넣는다. 입력 커맨드는 다른 모듈의 것이고, 여기서 검사하려는 것은
 //! 표시와 목록이지 입력 경로가 아니다.
 
 use crate::commands::mark::*;
@@ -44,7 +44,7 @@ fn add_full_span(
     conn.last_insert_rowid()
 }
 
-/// 옆 반과 그 명단의 학생 하나. 내가 맡은 또 하나의 담임 학급이다 —
+/// 옆 반과 그 명단의 학생 하나. 내가 담당하는 또 하나의 담임 학급이다 —
 /// 범위가 학급이므로 섞이지 않아야 한다.
 fn next_door(conn: &Connection, school_id: i64, name: &str) -> (i64, i64) {
     let class = insert_class(conn, school_id, "homeroom", "3학년 7반", Some(3), Some(7));
@@ -309,7 +309,7 @@ fn save_one(conn: &Connection, entry: crate::types::FocusEntry) -> Result<(), St
 }
 
 /// 축 · 기간 · 사유 · 태그 · 등재 표시가 한 번에 들어간다. 화면이 커맨드를
-/// 네 번 조립하면 그 차례가 곧 업무 규칙이 되어 프런트로 샌다.
+/// 네 번 조립하면 그 차례가 곧 업무 규칙이 되어 프런트로 유출된다.
 #[test]
 fn save_focus_entries_applies_every_field_at_once() {
     let conn = setup_test_db();

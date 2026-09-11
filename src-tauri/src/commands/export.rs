@@ -2,7 +2,7 @@
 //!
 //! 세 가지를 CSV **문자열**로 만든다. 파일로 쓰는 일은 하지 않는다 —
 //! 저장 위치를 고르는 것은 화면의 일이고, 프런트의 `write_bytes_file`이 그 바이트를
-//! 디스크에 저장한다. Rust가 경로까지 정하면 다이얼로그가 두 번 뜬다.
+//! 디스크에 저장한다. Rust가 경로까지 결정하면 다이얼로그가 두 번 뜬다.
 //!
 //! **앞 세 열은 언제나 `학년,반,번호`다.** 문자 일괄 발송 시스템이 그 셋으로 수신자를
 //! 찾으므로, 열 순서를 바꾸면 명단이 통째로 쓸모없어진다.
@@ -78,7 +78,7 @@ fn opt_date_label(iso: Option<&str>) -> String {
     iso.map(date_label).unwrap_or_default()
 }
 
-/// 아직 안 정한 축. 빈칸으로 두면 "정하지 않았다"가 "값이 없다"와 섞인다.
+/// 아직 설정하지 않은 축. 빈칸으로 두면 "설정하지 않았다"가 "값이 없다"와 섞인다.
 fn axis_label(label: Option<&str>) -> String {
     label.unwrap_or("미정").to_string()
 }
@@ -188,7 +188,7 @@ pub(crate) fn phrase_patterns(
     Ok(rows)
 }
 
-/// 그 구간의 문구 초안. 두 축이 다 정해졌을 때만 만든다 —
+/// 그 구간의 문구 초안. 두 축이 다 결정되었을 때만 만든다 —
 /// 미완성 기록에서 억지로 문장을 만들면 나이스에 그대로 올라간다.
 pub(crate) fn phrase_of(
     span: &SpanItem,
@@ -341,7 +341,7 @@ const UNTAGGED_HEADER: &[&str] = &[
 /// 한도 표. 규정 하나에 대해 학생 한 명이 한 행이다.
 ///
 /// 태그가 빠져 세지 못한 건은 조용히 넘기지 않는다. 표 아래에 빈 줄을 하나 두고
-/// `태그 없는 기록` 표를 이어 붙인다 — 세지 않았다는 사실이 파일에도 남아야 한다.
+/// `태그 없는 기록` 표를 덧붙인다 — 세지 않았다는 사실이 파일에도 남아야 한다.
 pub fn build_quota_csv(
     report: &QuotaReport,
 ) -> String {
@@ -431,7 +431,7 @@ pub fn export_spans_csv_impl(
     if start > end {
         return Err(format!("기간의 앞뒤가 바뀌었습니다: {from} ~ {to}"));
     }
-    // 다시 찍어낸 ISO로 질의한다. chrono는 `2026-9-10`도 받아들이는데 저장된 값은
+    // 다시 구성한 ISO로 질의한다. chrono는 `2026-9-10`도 받아들이는데 저장된 값은
     // 언제나 자리를 채운 형식이라, 그대로 넣으면 아무것도 걸리지 않는다.
     let (from, to) = (format_date(start), format_date(end));
     let scope: ClassScope = homeroom_scope(conn, class_id)?;

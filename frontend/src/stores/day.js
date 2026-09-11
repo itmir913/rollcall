@@ -5,7 +5,7 @@ import {useAppStore} from './app'
 /**
  * 오늘의 출결 — 격자와 그날의 구간들.
  *
- * `draft`는 **지금 찍을 조합**이다. 학생 번호를 누르면 그대로 저장되고, 같은 조합을
+ * `draft`는 **지금 입력할 조합**이다. 학생 번호를 누르면 그대로 저장되고, 같은 조합을
  * 다시 누르면 취소된다. 그 판단은 Rust가 한다 — 화면은 결과를 다시 그릴 뿐이다.
  */
 export const useDayStore = defineStore('day', {
@@ -57,7 +57,7 @@ export const useDayStore = defineStore('day', {
         },
 
         /**
-         * 학생 하나에게 지금 조합을 찍는다.
+         * 학생 하나에게 지금 조합을 입력한다.
          * 같은 조합이 이미 있으면 Rust가 그 건을 지운다(무르기).
          *
          * **무르기가 거부되는 경우가 있다.** 그 구간에 태그 · 사유 · 서류 · 나이스 표시 중
@@ -136,7 +136,7 @@ export const useDayStore = defineStore('day', {
             }
         },
 
-        /** 여러 날에 같은 조합을 찍기 전에 대상 날짜를 미리 본다. */
+        /** 여러 날에 같은 조합을 입력하기 전에 대상 날짜를 미리 본다. */
         async previewBulk(from, to) {
             const app = useAppStore()
             this.error = ''

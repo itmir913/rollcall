@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 여러 날에 같은 조합을 찍는다.
+ * 여러 날에 같은 조합을 입력한다.
  *
  * **화면(탭)으로 만들지 않는다.** 기간은 화면이 아니라 입력의 한 축이라, 오늘의 출결에서
  * 열리는 창이어야 한다. 탭으로 만들면 "어제 것도 여기서 넣나"를 매번 되묻게 된다.
@@ -69,7 +69,7 @@ function toggle(date) {
 <template>
     <UiModal :open="open"
              :subtitle="student ? `${student.number}번 ${student.name} · ${phrase}` : ''"
-             size="wide" title="여러 날에 같은 출결 찍기" @close="emit('close')">
+             size="wide" title="여러 날에 같은 출결 입력하기" @close="emit('close')">
         <div class="filters">
             <span class="filters__label">기간</span>
             <input v-model="from" class="field num" type="date"/>
@@ -96,12 +96,12 @@ function toggle(date) {
 
         <template #foot>
             <p v-if="chosen.length" class="modal__note focus__note">
-                <b class="num">{{ chosen.length }}</b>일에 찍습니다.
+                <b class="num">{{ chosen.length }}</b>일에 입력합니다.
             </p>
             <UiButton size="wide" @click="emit('close')">취소</UiButton>
             <UiButton :disabled="chosen.length === 0" size="wide" variant="primary"
                       @click="emit('apply', {from, to, days: chosen.map((d) => d.date)})">
-                찍기
+                입력
             </UiButton>
         </template>
     </UiModal>

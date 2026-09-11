@@ -61,13 +61,13 @@ describe('오늘의 출결', () => {
         })
     })
 
-    it('학급이 정해지기 전에는 부르지 않는다 — 빈 인자로 물어봐야 답이 없다', async () => {
+    it('학급이 결정되기 전에는 부르지 않는다 — 빈 인자로 물어봐야 답이 없다', async () => {
         const day = useDayStore()
         await day.fetchGrid()
         expect(invoke).not.toHaveBeenCalled()
     })
 
-    it('찍을 때 지금 고른 조합을 그대로 넘긴다', async () => {
+    it('입력할 때 지금 고른 조합을 그대로 넘긴다', async () => {
         readyApp()
         const day = useDayStore()
         day.setDate('2026-09-10')
@@ -77,7 +77,7 @@ describe('오늘의 출결', () => {
         await day.stamp(77)
 
         // **classId가 빠지면 Rust가 통째로 거절한다**(`StampInput.class_id`는 필수다).
-        // 이 단언이 전에는 classId 없는 모양을 고정하고 있어, 찍기가 죽은 채로
+        // 이 단언이 전에는 classId 없는 모양을 고정하고 있어, 입력이 죽은 채로
         // 테스트가 초록이었다. 인자를 통째로 비교해 다시 그렇게 되지 않게 한다.
         expect(invoke).toHaveBeenCalledWith('stamp_span', {
             input: {
@@ -106,7 +106,7 @@ describe('오늘의 출결', () => {
         expect(day.error).toBe('')
     })
 
-    it('다음에 제대로 찍히면 그 이유를 지운다', async () => {
+    it('다음에 제대로 입력되면 그 이유를 지운다', async () => {
         readyApp()
         const day = useDayStore()
         day.setDate('2026-09-10')
@@ -119,7 +119,7 @@ describe('오늘의 출결', () => {
         expect(day.notice).toBe('')
     })
 
-    it('찍은 뒤 격자를 다시 읽는다 — 취소인지 추가인지는 Rust가 판단한다', async () => {
+    it('입력한 뒤 격자를 다시 읽는다 — 취소인지 추가인지는 Rust가 판단한다', async () => {
         readyApp()
         const day = useDayStore()
         day.setDate('2026-09-10')

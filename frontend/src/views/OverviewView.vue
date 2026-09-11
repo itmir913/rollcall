@@ -2,7 +2,7 @@
 /**
  * 개요 — 밀린 일을 보는 곳.
  *
- * **모드마다 다른 화면이다.** 담임에게는 오늘 찍으러 들어가는 큰 버튼 하나와 밀린 것
+ * **모드마다 다른 화면이다.** 담임에게는 오늘 출결을 입력하러 들어가는 큰 버튼 하나와 밀린 것
  * 두 종류가, 교과에게는 오늘의 차시와 이번 달 수업이 온다. 한쪽의 숫자가 다른 쪽에
  * 한 줄도 새지 않는다 — 비담임 교사는 담임 모드를 한 번도 쓰지 않고, 담임만 하는
  * 교사에게 교과 화면은 평생 빈 채로 남는다.
@@ -48,7 +48,7 @@ onMounted(async () => {
 <template>
     <!-- ── 교과 모드 ───────────────────────────────────────────
          담임 어휘가 한 줄도 오지 않는다. 서류 · NEIS · 구분 · 종류는 담임이 쓰는 말이라,
-         교과만 맡은 교사에게는 매일 남의 일을 보는 화면이 된다. -->
+         교과만 담당하는 교사에게는 매일 남의 일을 보는 화면이 된다. -->
     <UiPage v-if="!app.isHomeroom" :subtitle="app.currentClass?.name ?? ''" title="개요">
         <template v-if="app.ready" #actions>
             <UiButton variant="primary" @click="router.push('/subject/today')">
@@ -59,7 +59,7 @@ onMounted(async () => {
         <!-- 강좌를 하나도 등록하지 않았다. 무엇을 해야 하는지와 가는 길을 함께 둔다. -->
         <template v-if="app.subjectClasses.length === 0">
             <UiNotice kind="warn"
-                      text="아직 수업을 등록하지 않았습니다. 강좌를 만들면 교시를 추가하고 결석을 찍을 수 있습니다."/>
+                      text="아직 수업을 등록하지 않았습니다. 강좌를 만들면 교시를 추가하고 결석을 기록할 수 있습니다."/>
             <div class="lead">
                 <UiButton size="wide" variant="primary" @click="router.push('/settings')">
                     수업 등록하기
@@ -67,9 +67,9 @@ onMounted(async () => {
             </div>
         </template>
 
-        <!-- 맡은 강좌는 있는데 아직 고르지 않았다. -->
+        <!-- 담당 강좌는 있는데 아직 고르지 않았다. -->
         <template v-else-if="!app.ready">
-            <UiNotice kind="warn" text="보고 있는 수업이 없습니다. 맡은 강좌 중 하나를 고르세요."/>
+            <UiNotice kind="warn" text="보고 있는 수업이 없습니다. 담당 강좌 중 하나를 고르세요."/>
             <div class="lead">
                 <UiButton size="wide" variant="primary" @click="router.push('/move')">
                     수업 고르기
@@ -123,7 +123,7 @@ onMounted(async () => {
          보내 놓고 거기서 또 무엇을 해야 하는지 알려주지 않게 된다. -->
     <UiPage v-else-if="app.homeroomClasses.length === 0" title="개요">
         <UiNotice kind="warn"
-                  text="아직 담임 학급을 등록하지 않았습니다. 학급과 명렬표를 넣으면 출결을 찍을 수 있습니다."/>
+                  text="아직 담임 학급을 등록하지 않았습니다. 학급과 명렬표를 넣으면 출결을 입력할 수 있습니다."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/settings')">
                 담임 학급 등록하기
@@ -131,9 +131,9 @@ onMounted(async () => {
         </div>
     </UiPage>
 
-    <!-- 맡은 학급은 있는데 아직 고르지 않았다. -->
+    <!-- 담임 학급은 있는데 아직 고르지 않았다. -->
     <UiPage v-else-if="!app.ready" title="개요">
-        <UiNotice kind="warn" text="보고 있는 학급이 없습니다. 맡은 학급 중 하나를 고르세요."/>
+        <UiNotice kind="warn" text="보고 있는 학급이 없습니다. 담임 학급 중 하나를 고르세요."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/move')">
                 학급 고르기

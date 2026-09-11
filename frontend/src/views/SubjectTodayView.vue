@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 오늘 수업 — 교과 교사가 찍는 곳.
+ * 오늘 수업 — 교과 교사가 기록하는 곳.
  *
  * 기록하는 것은 **내 수업에 있었는가 하나뿐**이다. 구분 · 종류 · 기간 · 서류 · 나이스가
  * 여기 오지 않는다 — 그것은 담임이 쓰는 말이다.
@@ -14,7 +14,7 @@
  * 시간이 아니다.
  *
  * 담임으로 적어 둔 기록(`homeroomNote`)은 **읽기 전용 참고**로만 보인다. 아침에 담임이
- * 질병결석을 찍어 두었으면 그것을 보여주는 것이 기능이지만, 내가 이 화면에서 찍은 것과
+ * 질병결석을 입력해 두었으면 그것을 보여주는 것이 기능이지만, 내가 이 화면에서 기록한 것과
  * 눈에 띄게 구별되어야 한다 — 그래서 격자에서는 아래 띠로만 표시하고 문장은 별도 장부에 둔다.
  */
 import {computed, onMounted, ref, watch} from 'vue'
@@ -110,7 +110,7 @@ async function pickDate(iso) {
     })
 }
 
-/** 번호를 누르면 그 자리에서 찍힌다. 다시 누르면 취소이므로 묻지 않는다. */
+/** 번호를 누르면 그 자리에서 기록된다. 다시 누르면 취소이므로 묻지 않는다. */
 async function toggle(studentId) {
     await subject.toggle(studentId).catch(() => {
     })
@@ -159,7 +159,7 @@ onMounted(async () => {
     <!-- 강좌를 하나도 등록하지 않았다. 무엇을 해야 하는지와 가는 길을 함께 둔다. -->
     <UiPage v-if="app.subjectClasses.length === 0" title="오늘 수업">
         <UiNotice kind="warn"
-                  text="아직 수업을 등록하지 않았습니다. 강좌를 만들면 교시를 추가하고 결석을 찍을 수 있습니다."/>
+                  text="아직 수업을 등록하지 않았습니다. 강좌를 만들면 교시를 추가하고 결석을 기록할 수 있습니다."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/settings')">
                 수업 등록하기
@@ -167,9 +167,9 @@ onMounted(async () => {
         </div>
     </UiPage>
 
-    <!-- 맡은 강좌는 있는데 아직 고르지 않았다. 등록하라고 적으면 이미 한 일을 다시 시킨다. -->
+    <!-- 담당 강좌는 있는데 아직 고르지 않았다. 등록하라고 적으면 이미 한 일을 다시 시킨다. -->
     <UiPage v-else-if="!app.ready" title="오늘 수업">
-        <UiNotice kind="warn" text="보고 있는 수업이 없습니다. 맡은 강좌 중 하나를 고르세요."/>
+        <UiNotice kind="warn" text="보고 있는 수업이 없습니다. 담당 강좌 중 하나를 고르세요."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/move')">
                 수업 고르기
@@ -246,7 +246,7 @@ onMounted(async () => {
         </UiLedger>
 
         <UiLedger :hint="subject.current
-                      ? '번호를 누르면 결석이 찍힙니다 · 다시 누르면 취소됩니다'
+                      ? '번호를 누르면 결석이 기록됩니다 · 다시 누르면 취소됩니다'
                       : '위에서 교시를 고르면 그 칸의 명단이 열립니다'"
                   :note="subject.current ? `빠진 사람 ${subject.absentRows.length} / ${subject.roll.length}명` : ''"
                   :title="subject.current ? `${subject.current.slot}교시 명단` : '명단'">
@@ -269,7 +269,7 @@ onMounted(async () => {
                         </button>
                     </div>
                     <div class="legend">
-                        <span><i class="sw-ok"></i>내가 찍은 결석</span>
+                        <span><i class="sw-ok"></i>내가 기록한 결석</span>
                         <span><i class="sw-line"></i>출석</span>
                         <span><i class="sw-note"></i>담임 기록 있음 — 참고이지 내 기록이 아니다</span>
                     </div>
@@ -411,7 +411,7 @@ onMounted(async () => {
     gap: var(--s-md);
 }
 
-/* 담임이 적은 문장은 점선 안에 둔다. 내가 이 화면에서 찍은 줄과 눈으로 구별된다. */
+/* 담임이 적은 문장은 점선 안에 둔다. 내가 이 화면에서 기록한 줄과 눈으로 구별된다. */
 .note {
     padding-left: var(--s-md);
     border-left: 2px dashed var(--c-line);

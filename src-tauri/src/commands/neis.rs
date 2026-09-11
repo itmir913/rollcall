@@ -25,7 +25,7 @@ use rusqlite::{params, Connection, ToSql};
 use std::collections::{HashMap, HashSet};
 use tauri::State;
 
-/// 학급과 기간으로 내 기록을 불러오는 조건. 별칭은 `load_spans`가 정한다.
+/// 학급과 기간으로 내 기록을 불러오는 조건. 별칭은 `load_spans`가 결정한다.
 ///
 /// **구간이 가리키는 학급으로 거른다.** 학적(학년 · 반)으로 거르면 반이 다른 전학생의
 /// 기록이 빠지고, 같은 학생이 내 교과 강좌에도 있을 때 그쪽 기록이 섞인다.
@@ -235,8 +235,9 @@ fn resolve(
         // 파일이 적어 둔 축을 하나라도 못 옮겼으면 **읽지 못한 줄이다.**
         //
         // 한쪽만 맞은 줄을 "질병 미정"으로 넣으면 파일이 분명히 말한 절반을 앱이 버린
-        // 것이 되고, 교사는 무엇이 빠졌는지 화면에서 알 방법이 없다. 빈 축이 "아직 안
-        // 정했다"는 뜻인 것은 교사가 직접 찍을 때이고, 파일에서 온 줄은 그 뜻이 아니다.
+        // 것이 되고, 교사는 무엇이 빠졌는지 화면에서 알 방법이 없다. 빈 축이 "아직
+        // 설정하지 않았다"는 뜻인 것은 교사가 직접 입력할 때이고, 파일에서 온 줄은
+        // 그 뜻이 아니다.
         // 그래서 어느 쪽을 못 찾았는지 이름을 적어 미리보기로 돌려준다.
         let missed = [
             (reason_id, "구분", row.reason_label.as_deref()),
@@ -403,7 +404,7 @@ fn diff(
         // 순서대로만 연결하면 하루에 지각과 조퇴가 하나씩 있을 때 짝이 서로 바뀐다.
         // 교사가 둘 다 "나이스 것으로"를 고르면 메모 · 태그 · 마감이 엉뚱한 기록으로
         // 넘어가는데, 그 교환은 화면에 보이지 않는다. 앱이 못 보는 곳에서 짝을
-        // 정하는 것이 곧 판정이므로, 적어도 눈에 보이는 근거(종류 · 구분)를 먼저 쓴다.
+        // 결정하는 것이 곧 판정이므로, 적어도 눈에 보이는 근거(종류 · 구분)를 먼저 쓴다.
         let mut spare: Vec<&SpanItem> =
             ours.iter().filter(|m| !taken.contains(&m.id)).copied().collect();
         for row in leftovers {
@@ -489,7 +490,7 @@ pub fn apply_neis_import_impl(
             match item.verdict.as_str() {
                 "add" if picked_add.contains(&item.key) => {
                     // 마감 계산은 `attendance.rs`의 것을 그대로 쓴다. 같은 규칙을 두
-                    // 벌 두면 한쪽만 고쳐져, 찍어 넣은 건과 가져온 건의 마감이 달라진다.
+                    // 벌 두면 한쪽만 고쳐져, 입력한 건과 가져온 건의 마감이 달라진다.
                     let due = due_for(parse_date(&hit.date)?, &settings, &off_days);
                     conn.execute(
                         "INSERT INTO absence_span

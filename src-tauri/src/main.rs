@@ -34,6 +34,7 @@ fn main() {
             get_years,
             create_year,
             update_year,
+            delete_year,
             // 학교 설정 — 최대 교시 · 제출 기한 · 휴업일 · 태그 · 한도 규정
             // 학교는 학년도 안에 있다. create_school이 기본 태그 · 한도 규정도 함께 넣는다
             get_schools,
@@ -52,7 +53,7 @@ fn main() {
             create_quota_rule,
             revise_quota_rule,
             retire_quota_rule,
-            // 내가 맡은 것 — 담임 학급 · 교과 강좌. 화면의 범위가 이 행의 id다
+            // 담당 학급 · 강좌 — 담임 학급과 교과 강좌. 화면의 범위가 이 행의 id다
             get_teaching_classes,
             create_teaching_class,
             update_teaching_class,

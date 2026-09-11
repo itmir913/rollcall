@@ -2,11 +2,11 @@
 //!
 //! 학생 이름은 전부 가짜다.
 //!
-//! 이 파일이 붙들고 있는 결정은 넷이다.
+//! 이 파일이 지키는 결정은 넷이다.
 //!   · **행이 있다는 것이 곧 그 교시를 불렀다는 뜻이다.** 결석자 행만으로는
 //!     "빠진 사람이 없는 날"과 "아직 안 부른 날"이 구별되지 않는다.
 //!   · **같은 칸을 두 번 만들지 않는다.** [교시 추가]를 두 번 누른 것은 실수다.
-//!   · **같은 학생을 다시 찍으면 취소다.** 담임 쪽 무르기와 같은 규칙이다.
+//!   · **같은 학생을 다시 누르면 취소다.** 담임 쪽 무르기와 같은 규칙이다.
 //!   · **담임 출결은 읽기 전용 참고로만 온다.** 내가 담임인 학급의 기록만 본다.
 
 use crate::commands::attendance::stamp_span_impl;
@@ -252,7 +252,7 @@ fn the_roll_lists_everyone_on_the_list_in_seat_order() {
     assert!(roll.iter().all(|r| r.homeroom_note.is_none()));
 }
 
-/// 찍으면 결석, 다시 찍으면 취소. **돌려주는 값이 찍은 뒤의 상태다.**
+/// 누르면 결석, 다시 누르면 취소. **돌려주는 값이 입력한 뒤의 상태다.**
 #[test]
 fn stamping_the_same_student_twice_cancels_it() {
     let f = fixture();
@@ -270,7 +270,7 @@ fn stamping_the_same_student_twice_cancels_it() {
     assert_eq!(roll.iter().filter(|r| r.absent).count(), 1);
 }
 
-/// 무르기는 **그 차시 안에서의 일이다.** 다른 칸에 찍어 둔 같은 학생이 함께 지워지면
+/// 무르기는 **그 차시 안에서의 일이다.** 다른 칸에 입력해 둔 같은 학생이 함께 지워지면
 /// 교사가 못 본 사이에 기록이 사라진다.
 #[test]
 fn cancelling_in_one_slot_leaves_the_other_slot_alone() {
@@ -364,7 +364,7 @@ fn stamp_homeroom(
 }
 
 /// **의도한 참고다.** 교과 수업에서 빈 자리를 보았는데 아침에 담임으로 질병결석을
-/// 찍어 두었으면 그것을 알려준다.
+/// 입력해 두었으면 그것을 알려준다.
 #[test]
 fn a_homeroom_record_shows_up_as_a_read_only_note() {
     let f = fixture();
@@ -378,7 +378,7 @@ fn a_homeroom_record_shows_up_as_a_read_only_note() {
     let row = roll.iter().find(|r| r.student_id == f.students[2]).unwrap();
 
     assert_eq!(row.homeroom_note.as_deref(), Some("질병결석 · 하루 종일"));
-    // **읽기 전용이다.** 담임 기록을 보여줬다고 교과 결석이 찍히지는 않는다.
+    // **읽기 전용이다.** 담임 기록을 보여줬다고 교과 결석이 기록되지는 않는다.
     assert!(!row.absent);
     assert_eq!(count(&f.conn, "subject_absence"), 0);
 

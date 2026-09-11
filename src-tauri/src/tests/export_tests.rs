@@ -359,7 +359,7 @@ fn untagged_records_are_not_dropped_silently() {
     assert!(csv.contains("정하윤"), "{csv}");
 
     let rows = body(&csv);
-    // 빈 줄 뒤에 제목 · 머리글 · 값이 이어진다.
+    // 빈 줄 뒤에 제목 · 머리글 · 값이 차례로 나온다.
     let marker = rows
         .iter()
         .position(|r| r.as_str() == "태그 없는 기록")
@@ -413,7 +413,7 @@ fn broken_date_is_rejected() {
 fn a_day_past_the_end_of_the_month_is_rejected() {
     // 달의 마지막 날을 모르는 채 `{달}-31`로 기간을 만들면 2 · 4 · 6 · 9 · 11월에서
     // 내보내기가 통째로 실패한다. 그 값을 앱이 마지막 날로 당겨 주지 않는다 —
-    // 기간을 정하는 것은 부르는 쪽의 일이다.
+    // 기간을 결정하는 것은 부르는 쪽의 일이다.
     let conn = setup_test_db();
     let school = school_id(&conn);
     let class = homeroom(&conn, school);
@@ -569,7 +569,7 @@ fn the_phrase_column_uses_the_pattern_of_that_code() {
 {csv}");
 }
 
-/// 두 축이 다 정해지지 않은 기록에는 문구를 만들지 않는다.
+/// 두 축이 다 결정되지 않은 기록에는 문구를 만들지 않는다.
 /// 억지로 만든 문장이 나이스에 그대로 올라가면 고치는 쪽이 더 번거롭다.
 #[test]
 fn an_unfinished_record_gets_no_phrase() {

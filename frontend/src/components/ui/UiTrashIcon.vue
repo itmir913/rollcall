@@ -6,7 +6,7 @@
  * 한쪽만 굵기나 획이 달라져 다른 버튼과 섞여 읽힌다. 되돌릴 수 없는 동작이므로
  * 어느 화면에서나 같은 것으로 보여야 한다.
  *
- * 색은 이 아이콘을 감싸는 `UiButton variant="danger"`가 정한다 — `currentColor`를 따른다.
+ * 색은 이 아이콘을 감싸는 `UiButton variant="danger"`가 결정한다 — `currentColor`를 따른다.
  */
 </script>
 

@@ -99,7 +99,7 @@ fn a_pair_is_found_only_when_both_axes_are_set() {
     let found = find_code_impl(&conn, Some(r), Some(t), None).unwrap();
     assert_eq!(found.unwrap().label, "질병조퇴");
 
-    // 한쪽만 정해진 상태는 정상이고, 그때는 코드가 없다.
+    // 한쪽만 설정된 상태는 정상이고, 그때는 코드가 없다.
     assert!(find_code_impl(&conn, Some(r), None, None).unwrap().is_none());
     assert!(find_code_impl(&conn, None, Some(t), None).unwrap().is_none());
     assert!(find_code_impl(&conn, None, None, None).unwrap().is_none());

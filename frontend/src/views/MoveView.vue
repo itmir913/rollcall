@@ -5,9 +5,9 @@
  * 사이드바 구석의 드롭다운이 아니라 **한 화면**인 이유는, 옮기는 순간 명단도 기록도
  * 전부 바뀌기 때문이다. 모르고 지나갈 수 있는 변화가 아니라 눌렀다는 사실이 남아야 한다.
  *
- * **계층 그대로 보여준다 — 학년도 → 학교 → 맡은 것.** 순회 교사는 하루에 학교를
- * 옮겨 다니고, 학교가 정해져야 맡은 것이 정해진다. 학년도는 여기서 바꾸지 않는다 —
- * 해가 바뀌면 학교부터 다시 정하는 일이라 설정이 맡는다.
+ * **계층 그대로 보여준다 — 학년도 → 학교 → 담당 학급 · 강좌.** 순회 교사는 하루에
+ * 학교를 옮겨 다니고, 학교가 결정되어야 담당 학급 · 강좌가 결정된다. 학년도는 여기서
+ * 바꾸지 않는다 — 해가 바뀌면 학교부터 다시 골라야 하므로 설정이 담당한다.
  *
  * **현재 모드의 것만 나열한다.** 담임 학급과 교과 강좌를 한 목록에 두면 잘못 누른 줄
  * 하나로 화면 절반이 다른 모드의 것으로 바뀐다. 모드를 넘나드는 길은 사이드바의
@@ -21,7 +21,7 @@ import {UiButton, UiLedger, UiNotice, UiPage} from '../components/ui'
 const app = useAppStore()
 const router = useRouter()
 
-/** 지금 모드에서 맡은 것. 스토어가 이미 역할로 구분해 둔 것을 고르기만 한다. */
+/** 지금 모드의 담당 학급 · 강좌. 스토어가 이미 역할로 구분해 둔 것을 고르기만 한다. */
 const classes = computed(() => (app.isHomeroom ? app.homeroomClasses : app.subjectClasses))
 
 /**
@@ -58,15 +58,15 @@ const groups = computed(() => {
 const showGroups = computed(() => groups.value.length > 1)
 
 /**
- * 맡은 것이 하나뿐이면 이 화면에서 할 일이 없다. 빈손으로 돌려보내지 않고
+ * 담당 학급 · 강좌가 하나뿐이면 이 화면에서 할 일이 없다. 빈손으로 돌려보내지 않고
  * 어디로 가야 하는지 적는다. 여럿이면 빈 문자열이라 아무것도 그리지 않는다.
  *
  * **없는 것과 하나뿐인 것을 구분한다.** 0개일 때 "하나뿐입니다"라고 적으면 화면이
- * 사실과 다른 말을 하고, 바로 아래의 "맡은 것이 없습니다"와도 어긋난다.
+ * 사실과 다른 말을 하고, 바로 아래의 "담당하는 학급이나 강좌가 없습니다"와도 어긋난다.
  */
 const note = computed(() => {
     if (classes.value.length === 0) return '설정에서 만들 수 있습니다.'
-    if (classes.value.length === 1) return '맡은 것이 하나뿐입니다. 설정에서 더할 수 있습니다.'
+    if (classes.value.length === 1) return '담당 학급 · 강좌가 하나뿐입니다. 설정에서 더할 수 있습니다.'
     return ''
 })
 
@@ -80,7 +80,7 @@ function schoolName(item) {
 }
 
 /**
- * 명단 인원. 아직 맡은 것 목록이 인원을 세어 주지 않으므로 없으면 `—`로 둔다 —
+ * 명단 인원. 아직 담당 학급 · 강좌 목록이 인원을 세어 주지 않으므로 없으면 `—`로 둔다 —
  * 0으로 적으면 명단이 비었다는 뜻으로 읽힌다.
  */
 function sizeText(item) {
@@ -98,8 +98,8 @@ async function move(item) {
 }
 
 /**
- * 학교를 옮긴다. **맡은 것 목록이 그 학교의 것으로 통째로 바뀐다** —
- * 맡은 것은 학교에 소속되어 있고, 순회 교사는 학교마다 다른 것을 맡는다.
+ * 학교를 옮긴다. **담당 학급 · 강좌 목록이 그 학교의 것으로 통째로 바뀐다** —
+ * 학급과 강좌는 학교에 소속되어 있고, 순회 교사는 학교마다 다른 것을 담당한다.
  */
 async function moveSchool(schoolId) {
     if (schoolId === app.schoolId) return
@@ -117,13 +117,13 @@ async function moveSchool(schoolId) {
             <UiButton @click="router.push('/settings')">설정에서 더하기</UiButton>
         </template>
 
-        <UiLedger hint="학년도 → 학교 → 맡은 것 · 위에서 고른 것이 아래의 범위다" title="어디에서">
+        <UiLedger hint="학년도 → 학교 → 학급과 강좌 · 위에서 고른 것이 아래의 범위다" title="어디에서">
             <div class="set__row">
                 <span class="set__label">학년도</span>
                 <span class="set__value">
                     <span class="num">{{ app.currentYear?.year ?? '—' }}</span>학년도
                     <span class="set__hint">
-                        학년도를 옮기면 학교부터 다시 정하는 일이라 설정에서 바꿉니다
+                        학년도를 옮기면 학교부터 다시 골라야 하므로 설정에서 바꿉니다
                     </span>
                 </span>
             </div>
@@ -145,9 +145,9 @@ async function moveSchool(schoolId) {
         </UiLedger>
 
         <UiLedger :empty="classes.length === 0" :note="note"
-                  empty-text="이 모드에서 맡은 것이 없습니다."
+                  empty-text="이 모드에서 담당하는 학급이나 강좌가 없습니다."
                   hint="누르면 그 학급으로 옮긴다 · 명단도 기록도 함께 바뀐다"
-                  title="맡은 것">
+                  title="담당 학급 · 강좌">
             <template v-for="group in groups" :key="group.key">
                 <!-- 묶음 머리글. 이름표일 뿐이라 누르는 것이 아니다. -->
                 <div v-if="showGroups && group.name" class="movegrp">

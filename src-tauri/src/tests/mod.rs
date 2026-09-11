@@ -18,6 +18,7 @@ pub mod slots_tests;
 pub mod stats_tests;
 pub mod student_tests;
 pub mod subject_tests;
+pub mod terms_tests;
 pub mod year_tests;
 
 /// 그 해의 학교를 만들 때 쓰는 이름. 시드가 더는 학교를 만들지 않으므로
@@ -88,7 +89,7 @@ pub fn insert_school(conn: &Connection, year_id: i64, name: &str) -> i64 {
 /// 학적 하나. 3학년 6반이고 `homeroom`이 만드는 학급과 짝이다.
 ///
 /// **학년도가 아니라 학교를 받는다.** 학교가 이미 학년도를 안다 —
-/// 이 저장소의 계층이 학년도 → 학교 → 맡은 것이다.
+/// 이 저장소의 계층이 학년도 → 학교 → 담당 학급 · 강좌다.
 pub fn insert_student(conn: &Connection, school_id: i64, number: i64, name: &str) -> i64 {
     insert_student_at(conn, school_id, 3, 6, number, name)
 }
@@ -138,7 +139,7 @@ pub fn quota_rule_id(conn: &Connection, name: &str) -> i64 {
     .unwrap()
 }
 
-/// 맡은 것 하나. role은 homeroom · subject다. **학교에 연결한다.**
+/// 담당 학급 · 강좌 하나. role은 homeroom · subject다. **학교에 연결한다.**
 pub fn insert_class(
     conn: &Connection,
     school_id: i64,

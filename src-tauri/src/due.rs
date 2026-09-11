@@ -1,6 +1,6 @@
 //! 마감일 계산과 날짜 유틸. 순수 함수다. DB를 모른다.
 //!
-//! 제출 기한은 학교 설정의 두 값으로 정해진다 — `due_days`(며칠)와
+//! 제출 기한은 학교 설정의 두 값으로 결정된다 — `due_days`(며칠)와
 //! `due_skip_offdays`(주말·휴업일을 셀 것인가).
 //!
 //! **공휴일 API를 부르지 않는다.** 앱은 서버를 쓰지 않고, 개교기념일·재량휴업일은
@@ -36,7 +36,7 @@ pub fn is_off_day(d: NaiveDate, off_days: &HashSet<NaiveDate>) -> bool {
 ///
 /// `skip_off_days`가 true면 주말과 휴업일을 세지 않는다.
 /// `due_days == 0`이면 기준일이 곧 마감일이다 — 주말이어도 옮기지 않는다.
-/// 교사가 정한 값을 프로그램이 조정하지 않는다.
+/// 교사가 설정한 값을 프로그램이 조정하지 않는다.
 pub fn due_date(
     base: NaiveDate,
     due_days: i64,

@@ -3,7 +3,7 @@
  *
  * 빌드는 템플릿을 컴파일할 뿐 그리지는 않는다. 여기서 지키는 것은 셋이다.
  *   1. 기록하는 것은 **있었는가 하나뿐**이다 — 구분 · 종류 · 기간 · 서류 · 나이스가 없다.
- *   2. 담임으로 적어 둔 기록은 **읽기 전용 참고**이고, 내가 찍은 결석과 눈에 띄게 구별된다.
+ *   2. 담임으로 적어 둔 기록은 **읽기 전용 참고**이고, 내가 기록한 결석과 눈에 띄게 구별된다.
  *   3. 개요에 담임의 숫자가 한 줄도 새지 않고, 고정 문구 대신 **실제로 센 값**이 온다.
  *
  * 데이터는 스토어에 직접 넣는다. invoke는 가짜다 — 커맨드 호출은 스토어 테스트가 본다.
@@ -39,7 +39,7 @@ function render(view) {
     return mount(view, {global: {plugins: [router]}})
 }
 
-/** 교과 강좌 하나를 맡은 교사. 모드는 고른 학급의 역할이 정한다. */
+/** 교과 강좌 하나를 담당하는 교사. 모드는 고른 학급의 역할이 결정한다. */
 function subjectTeacher() {
     const app = useAppStore()
     app.booted = true
@@ -108,7 +108,7 @@ describe('오늘 수업', () => {
         expect(add).toHaveBeenCalledWith([3, 4])
     })
 
-    it('번호를 누르면 그 자리에서 찍는다 — 확인을 묻지 않는다', async () => {
+    it('번호를 누르면 그 자리에서 기록한다 — 확인을 묻지 않는다', async () => {
         const subject = openSession([ROLL(), ROLL({studentId: 12, number: 6, name: '박서연'})])
         const toggle = vi.spyOn(subject, 'toggle').mockResolvedValue(true)
 
@@ -121,7 +121,7 @@ describe('오늘 수업', () => {
         expect(document.querySelector('.modal')).toBeNull()
     })
 
-    it('찍은 학생만 칸에 색이 들고 빠진 목록에 오른다', () => {
+    it('기록한 학생만 칸에 색이 들고 빠진 목록에 오른다', () => {
         openSession([
             ROLL({absent: true, memo: '병원'}),
             ROLL({studentId: 12, number: 6, name: '박서연'}),
@@ -138,6 +138,20 @@ describe('오늘 수업', () => {
         expect(absent[0].text()).toContain('병원')
     })
 
+    /**
+     * 화면에 쓰는 말을 고정한다. `찍다`는 실무 표현이라고 여겨 두었던 말인데 현직
+     * 교사가 어색하다고 확인했다 — 교과 화면이 남기는 것은 `기록`이다. 범례는 내
+     * 기록과 담임 참고를 구별하는 문장이라 여기서 갈라지면 그 구별부터 흐려진다.
+     */
+    it('출결을 찍는다고 말하지 않는다 — 내가 기록한 결석이라고 적는다', () => {
+        openSession([ROLL({absent: true}), ROLL({studentId: 12, number: 6, name: '박서연'})])
+        const text = render(SubjectTodayView).text()
+
+        expect(text).toContain('내가 기록한 결석')
+        expect(text).toContain('번호를 누르면 결석이 기록됩니다')
+        expect(text).not.toContain('찍')
+    })
+
     it('기록하는 것은 있었는가 하나뿐이다 — 담임의 말이 오지 않는다', () => {
         openSession([ROLL({absent: true})])
         const text = render(SubjectTodayView).text()
@@ -147,7 +161,7 @@ describe('오늘 수업', () => {
         }
     })
 
-    it('담임 기록은 읽기 전용 참고로만 보인다 — 내가 찍은 결석과 구별된다', () => {
+    it('담임 기록은 읽기 전용 참고로만 보인다 — 내가 기록한 결석과 구별된다', () => {
         openSession([
             ROLL({homeroomNote: '질병결석 · 하루 종일'}),
             ROLL({studentId: 12, number: 6, name: '박서연', absent: true}),
@@ -161,13 +175,13 @@ describe('오늘 수업', () => {
         expect(note[0].text()).toContain('읽기 전용')
         expect(note[0].findAll('button')).toHaveLength(0)
 
-        // 내가 찍은 결석 목록에는 담임의 문장이 섞이지 않는다.
+        // 내가 기록한 결석 목록에는 담임의 문장이 섞이지 않는다.
         const mine = wrapper.findAll('.list--roll .row')
         expect(mine).toHaveLength(1)
         expect(mine[0].text()).toContain('박서연')
         expect(mine[0].text()).not.toContain('질병결석')
 
-        // 격자에서는 아래 띠로만 말한다. 담임 기록이 있다고 결석이 찍히지는 않는다.
+        // 격자에서는 아래 띠로만 말한다. 담임 기록이 있다고 결석이 기록되지는 않는다.
         const seats = wrapper.findAll('.seat')
         expect(seats[0].find('.seat__note').classes()).toContain('is-on')
         expect(seats[0].classes()).not.toContain('is-marked')
@@ -396,7 +410,7 @@ describe('교과 화면의 빈 상태', () => {
         }
     })
 
-    it('맡은 강좌는 있는데 고르지 않았으면 고르러 가는 길을 준다', async () => {
+    it('담당 강좌는 있는데 고르지 않았으면 고르러 가는 길을 준다', async () => {
         const app = useAppStore()
         app.classId = null      // 강좌 목록은 그대로 있다
         app.lastMode = 'subject'

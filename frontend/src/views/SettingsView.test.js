@@ -6,7 +6,7 @@
  *      없어, 거기에만 두면 2027년 3월이 와도 새 학년도로 넘어갈 방법이 없다.
  *   2. **새 학년도에 학교가 없는 것은 정상이다.** 그 사실을 화면이 말하고, 만드는 길이
  *      그 자리에 있다. 학교는 `createSchool`을 거쳐야 기본 태그 · 한도 규정이 함께 들어간다.
- *   3. **학교를 고르면 아래가 전부 그 학교의 것이다.** 순회 교사는 학교마다 다른 것을 맡는다.
+ *   3. **학교를 고르면 아래가 전부 그 학교의 것이다.** 순회 교사는 학교마다 다른 것을 담당한다.
  *   4. **강좌는 묶음별로 모인다.** 묶음이 없는 강좌도 사라지지 않고 맨 뒤에 모인다.
  *   5. **교과 명렬표는 담임과 같은 자리다.** 잠긴 단추를 남겨 두면 두 화면이 같은 것을
  *      다르게 말한다.
@@ -275,7 +275,7 @@ describe('설정 — 한도 규정', () => {
     })
 })
 
-describe('설정 — 맡은 것과 강좌 묶음', () => {
+describe('설정 — 담당 학급 · 강좌와 강좌 묶음', () => {
     /** 교과 강좌 줄. 이름표가 '교과'인 줄이 그것이다. */
     function subjectRows(wrapper) {
         return wrapper.findAll('.set__row').filter((r) => r.find('.set__label').text() === '교과')
@@ -367,6 +367,32 @@ describe('설정 — 맡은 것과 강좌 묶음', () => {
         await flushPromises()
 
         expect(drop).toHaveBeenCalledWith(5)
+        wrapper.unmount()
+    })
+
+    /**
+     * 통칭을 새로 만들지 않는다. `맡은 것`은 담임 학급과 교과 강좌를 한 낱말로 묶으려다
+     * 나온 말인데, 교사는 그 둘을 묶어 부르지 않는다. 이 화면은 그 목록을 들고 있는
+     * 유일한 화면이라 여기서 갈라지면 다른 화면이 그것을 보고 따라 쓴다.
+     */
+    it('담당 학급 · 강좌라고 적는다 — `맡은 것`이라는 통칭을 쓰지 않는다', async () => {
+        const wrapper = await render()
+
+        const heads = wrapper.findAll('.ledger__head h4').map((h) => h.text())
+        expect(heads).toContain('담당 학급 · 강좌')
+        expect(wrapper.text()).not.toContain('맡은 것')
+    })
+
+    /** 마감 확인 모달도 같은 말을 쓴다. 모달만 옛말이 남으면 두 화면이 갈라진다. */
+    it('마감 확인 모달에도 `맡은 것`이 남지 않는다', async () => {
+        const wrapper = await render()
+
+        await button(subjectRows(wrapper)[0], '마감').trigger('click')
+        await flushPromises()
+
+        const modal = document.querySelector('.modal').textContent
+        expect(modal).toContain('교과 강좌')
+        expect(modal).not.toContain('맡은 것')
         wrapper.unmount()
     })
 

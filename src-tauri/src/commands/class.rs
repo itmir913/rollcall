@@ -1,9 +1,9 @@
-//! 내가 맡은 것 — 담임 학급과 교과 강좌, 그리고 그 명단.
+//! 담임 학급과 교과 강좌, 그리고 그 명단.
 //!
 //! **범위는 `classId` 하나다.** 예전에는 학교 · 학년도 · 학년 · 반 네 값으로 "우리 반"을
 //! 걸러냈다. 그 방식으로는 두 화면을 구별할 수 없다 — 같은 학생이 내 담임 반에도
-//! 내 교과 강좌에도 있을 수 있어서, 학적으로 거르면 교과 화면에 담임 출결이 샌다.
-//! 그래서 맡은 것이 행(`teaching_class`)이 되고, 기록과 명단이 그 행을 가리킨다.
+//! 내 교과 강좌에도 있을 수 있어서, 학적으로 거르면 교과 화면에 담임 출결이 유출된다.
+//! 그래서 담당 학급 · 강좌가 행(`teaching_class`)이 되고, 기록과 명단이 그 행을 가리킨다.
 //!
 //! 학교 단위 설정(최대 교시 · 제출 기한 · 휴업일)이 필요한 곳은 여기 있는
 //! `homeroom_scope`로 학교를 얻는다. **같은 질의를 커맨드마다 따로 두지 않으려는 것이다** —
@@ -139,7 +139,7 @@ pub(crate) fn homeroom_seat(scope: &ClassScope) -> Result<HomeroomSeat, String> 
     match (scope.grade, scope.class_no) {
         (Some(grade), Some(class_no)) => Ok(HomeroomSeat { grade, class_no }),
         _ => Err(format!(
-            "{}의 학년 · 반이 정해져 있지 않습니다. 설정에서 먼저 채워주세요.",
+            "{}의 학년 · 반이 설정되어 있지 않습니다. 설정에서 먼저 채워주세요.",
             scope.name
         )),
     }
@@ -263,7 +263,7 @@ pub(crate) fn members_of(conn: &Connection, class_id: i64) -> Result<Vec<Student
     Ok(rows)
 }
 
-// ── 맡은 것 목록 ──────────────────────────────────────────────
+// ── 담당 학급 · 강좌 목록 ─────────────────────────────────────
 
 fn map_class(row: &rusqlite::Row) -> rusqlite::Result<TeachingClassItem> {
     Ok(TeachingClassItem {
@@ -291,7 +291,7 @@ const CLASS_SELECT: &str = "SELECT c.id, c.school_id, c.role, c.name, c.grade, c
                             FROM teaching_class c
                                      LEFT JOIN class_tag g ON g.id = c.group_tag_id";
 
-/// 그 학교에서 내가 맡은 것. `role`을 주면 담임만 · 교과만 골라 온다.
+/// 그 학교의 담당 학급 · 강좌. `role`을 주면 담임만 · 교과만 골라 온다.
 ///
 /// **범위가 학교다.** 학년도는 학교가 들고 있으므로 학년도로 다시 거르지 않는다 —
 /// 두 곳에서 거르면 조건이 어긋났을 때 어느 쪽이 맞는지 알 수 없다.
@@ -401,7 +401,7 @@ fn live_class_seat(conn: &Connection, class_id: i64) -> Result<(i64, String), St
     })
 }
 
-/// 맡은 것 하나를 만든다.
+/// 담당 학급 · 강좌 하나를 만든다.
 ///
 /// 담임 학급은 학년 · 반을 함께 받는다. 그 둘이 명렬표가 학생을 배치할 학적 자리이고,
 /// 나중에 채우게 두면 명렬표를 가져오는 자리에서야 빠진 것을 알게 된다.
@@ -444,7 +444,7 @@ pub fn create_teaching_class_impl(
     Ok(conn.last_insert_rowid())
 }
 
-/// 맡은 것의 이름 · 학년 · 반을 고친다. **UPDATE이고, 마감 후 추가가 아니다.**
+/// 담당 학급 · 강좌의 이름 · 학년 · 반을 고친다. **UPDATE이고, 마감 후 추가가 아니다.**
 ///
 /// "수정은 마감 후 추가"는 코드 · 태그처럼 과거 기록이 **뜻으로** 가리키는 것에 붙는
 /// 규칙이다. 학급 이름은 화면에 적히는 이름표일 뿐이고 기록은 `class_id`로 가리키므로,
@@ -476,7 +476,7 @@ pub fn update_teaching_class_impl(
     Ok(())
 }
 
-/// 맡은 것을 마감한다. **지우지 않는다.**
+/// 담당 학급 · 강좌를 마감한다. **지우지 않는다.**
 ///
 /// 지난 출결이 이 학급을 가리키고 있고 `absence_span.class_id`가 `ON DELETE CASCADE`라,
 /// 행을 지우면 그 학급의 기록이 함께 사라진다. 3월에 지난해 학급을 정리하는 동작이

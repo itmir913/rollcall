@@ -3,11 +3,13 @@
  *
  * 여기서 고정하는 것은 다섯이다.
  *   1. 단계를 눌러 앞뒤로 오간다. 되돌아갈 길이 없으면 잘못 적은 교사가 앱을 껐다 켠다.
- *   2. 맡은 것을 하나도 등록하지 않으면 완료로 갈 수 없다. **단추는 잠글 뿐 숨기지 않는다.**
+ *   2. 담당 학급 · 강좌를 하나도 등록하지 않으면 완료로 갈 수 없다. **단추는 잠글 뿐 숨기지 않는다.**
  *   3. 교과 강좌에는 학년 · 반 칸이 없다. 선택과목은 반이 섞여 가리킬 반이 없다.
  *   4. 담임과 교과가 **같은 명렬표 화면**을 쓴다. 다만 교과는 그 강좌를 고르지 않는다 —
  *      고르면 모드가 저장되어 다음 실행이 교과 모드로 열린다.
  *   5. 완료 단계의 요약은 **실제로 등록한 것**을 말한다. 고정 문구를 그리면 아무도 모른다.
+ *   6. 학년도 삭제는 **학교를 내리는 것과 다른 말을 쓴다.** 학교는 행이 남지만 학년도는
+ *      기록까지 지운다. 무엇이 함께 사라지는지 수로 먼저 보여주고 한 번 묻는다.
  *
  * 데이터는 스토어에 직접 넣는다. invoke는 가짜다 — 이 화면이 커맨드를 제대로 부르는지는
  * 스토어 테스트가 본다(`stores/app.test.js`).
@@ -38,13 +40,29 @@ const SUBJECT = {
     grade: null, classNo: null, validTo: null,
 }
 
+/**
+ * 학년도 한 줄. **뒤의 다섯 수는 "지우면 무엇이 함께 사라지는가"다** — 목록(`get_years`)에
+ * 실려 오므로 확인 대화상자가 묻기 전에 그대로 표시한다. 다섯을 모두 다른 값으로 둔다.
+ * 같은 값이면 화면이 엉뚱한 수를 그려도 시험이 통과한다.
+ */
+const YEAR_2026 = {
+    id: 2, year: 2026, startsOn: '2026-03-01', endsOn: '2027-02-28',
+    schoolCount: 1, classCount: 2, studentCount: 31, spanCount: 12, sessionCount: 40,
+}
+
+/** 만들기만 하고 아무것도 넣지 않은 학년도. 지워도 안전하다는 것을 말해야 하는 쪽이다. */
+const YEAR_2027 = {
+    id: 3, year: 2027, startsOn: '2027-03-01', endsOn: '2028-02-29',
+    schoolCount: 0, classCount: 0, studentCount: 0, spanCount: 0, sessionCount: 0,
+}
+
 /** 학급마다 인원을 다르게 둔다. 요약이 실제로 센 값인지 보려면 둘이 달라야 한다. */
 const STUDENTS = {
     10: [{id: 1, number: 1, name: '김하늘'}, {id: 2, number: 2, name: '박서연'}],
     21: [{id: 3, number: 4, name: '이도윤'}],
 }
 
-/** 학급 목록을 정해 두고 화면을 그린다. 읽기는 전부 멈춰 세운다. */
+/** 학급 목록을 설정해 두고 화면을 그린다. 읽기는 전부 가짜로 대체한다. */
 async function render(classes = []) {
     const app = useAppStore()
     app.classes = classes
@@ -85,7 +103,7 @@ beforeEach(() => {
     const app = useAppStore()
     app.booted = true
     app.today = '2026-09-10'
-    app.years = [{id: 2, year: 2026}]
+    app.years = [YEAR_2026]
     app.yearId = 2
     app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7, dueDays: 7, dueSkipOffdays: true}]
     app.classes = []
@@ -100,14 +118,14 @@ describe('첫 실행 — 단계 오가기', () => {
         const wrapper = await render()
 
         expect(steps(wrapper)).toHaveLength(5)
-        expect(wrapper.text()).toContain('정할 것은 세 가지입니다')
+        expect(wrapper.text()).toContain('설정할 것은 세 가지입니다')
 
         await goStep(wrapper, 3)
         expect(wrapper.text()).toContain('최대 교시')
-        expect(wrapper.text()).not.toContain('정할 것은 세 가지입니다')
+        expect(wrapper.text()).not.toContain('설정할 것은 세 가지입니다')
 
         await goStep(wrapper, 1)
-        expect(wrapper.text()).toContain('정할 것은 세 가지입니다')
+        expect(wrapper.text()).toContain('설정할 것은 세 가지입니다')
     })
 
     it('지난 단계는 체크로 표시한다', async () => {
@@ -133,7 +151,7 @@ describe('첫 실행 — 단계 오가기', () => {
 describe('첫 실행 — 학년도와 학교', () => {
     it('학년도를 고르면 스토어 액션을 거친다 — 상태에 직접 대입하지 않는다', async () => {
         const app = useAppStore()
-        app.years = [{id: 2, year: 2026}, {id: 3, year: 2027}]
+        app.years = [YEAR_2026, YEAR_2027]
         const select = vi.spyOn(app, 'selectYear').mockResolvedValue()
 
         const wrapper = await render()
@@ -143,7 +161,7 @@ describe('첫 실행 — 학년도와 학교', () => {
         await pick.trigger('click')
         await flushPromises()
 
-        // 직접 대입하면 학교 목록도 맡은 것 목록도 지난 학년도의 것으로 남는다.
+        // 직접 대입하면 학교 목록도 담당 학급 · 강좌 목록도 지난 학년도의 것으로 남는다.
         expect(select).toHaveBeenCalledWith(3)
         expect(app.yearId).toBe(2)
     })
@@ -239,7 +257,7 @@ describe('첫 실행 — 학년도와 학교', () => {
         await goStep(wrapper, 3)
 
         expect(wrapper.text()).toContain('아직 없습니다')
-        // 고칠 것이 없으면 빈 칸을 늘어놓지 않는다. 무엇을 고치는지 알 수 없기 때문이다.
+        // 고칠 것이 없으면 빈 칸을 나열하지 않는다. 무엇을 고치는지 알 수 없기 때문이다.
         expect(wrapper.findAll('.pick--slot')).toHaveLength(0)
         expect(wrapper.findAll('input[type="number"]')).toHaveLength(0)
 
@@ -286,7 +304,134 @@ describe('첫 실행 — 학년도와 학교', () => {
     })
 })
 
-describe('첫 실행 — 맡은 것', () => {
+/**
+ * 학년도 지우기. **학교를 내리는 것과 같은 모양의 휴지통이지만 하는 일이 다르다** —
+ * 학교는 행이 남고 목록에서만 내려가지만, 학년도는 행까지 지우고 그 아래가 CASCADE로
+ * 함께 사라진다. 문구와 수가 그 차이를 말하지 않으면 교사는 같은 정도의 일로 읽는다.
+ *
+ * 스토어의 `deleteYear`는 여기서 가로챈다 — 이 화면이 확인하는 것은 "무엇을 보여주고
+ * 무엇을 부르는가"까지이고, 커맨드를 제대로 부르는지는 스토어 시험이 본다.
+ */
+describe('첫 실행 — 학년도 지우기', () => {
+    /** 학년도 칩의 휴지통. 학년도 단계에서만 그려진다. */
+    const drops = (wrapper) => wrapper.findAll('.drop')
+
+    /**
+     * 두 학년도를 두고 학년도 단계를 연다. 하나뿐이면 휴지통이 잠긴다.
+     *
+     * **가짜를 끼우지 않고 스토어의 액션을 가로챈다** — 이름이 바뀌면 여기서 깨져야 한다.
+     */
+    async function openYearStep(remove = vi.fn().mockResolvedValue()) {
+        const app = useAppStore()
+        app.years = [YEAR_2026, YEAR_2027]
+        vi.spyOn(app, 'deleteYear').mockImplementation(remove)
+        const wrapper = await render()
+        await goStep(wrapper, 2)
+        return {app, wrapper}
+    }
+
+    it('묻기 전에 함께 사라지는 것을 수로 보여준다', async () => {
+        const {wrapper} = await openYearStep()
+        expect(drops(wrapper)).toHaveLength(2)
+
+        await drops(wrapper)[0].trigger('click')
+        await flushPromises()
+
+        // 수는 목록에 이미 실려 온다 — 대화상자를 여는 순간 다시 묻지 않는다.
+        const modal = document.querySelector('.modal')
+        expect(modal.textContent).toContain('2026학년도')
+        expect(modal.textContent).toContain('1개')
+        expect(modal.textContent).toContain('31명')
+        // 담임 출결과 교과 차시를 한 수로 합치지 않는다. 합치면 어느 쪽인지 알 수 없다.
+        expect(modal.textContent).toContain('담임 출결')
+        expect(modal.textContent).toContain('12건')
+        expect(modal.textContent).toContain('교과 차시')
+        expect(modal.textContent).toContain('40개')
+    })
+
+    it('학교를 내리는 것과 다른 말을 쓴다 — 학년도는 기록까지 지운다', async () => {
+        const {wrapper} = await openYearStep()
+        await drops(wrapper)[0].trigger('click')
+        await flushPromises()
+
+        const modal = document.querySelector('.modal')
+        expect(modal.textContent).toContain('지웁니다')
+        expect(modal.textContent).toContain('되돌릴 수 없습니다')
+        // 학교 대화상자의 말이다. 돌려 쓰면 같은 정도의 일로 읽힌다.
+        expect(modal.textContent).not.toContain('목록에서만 내립니다')
+    })
+
+    it('학교와 담당이 0개면 그 사실을 그대로 말한다 — 안전한 것을 알아야 망설이지 않는다', async () => {
+        const {wrapper} = await openYearStep()
+        await drops(wrapper)[1].trigger('click')
+        await flushPromises()
+
+        const modal = document.querySelector('.modal')
+        expect(modal.textContent).toContain('2027학년도')
+        expect(modal.textContent).toContain('0개')
+        expect(modal.textContent).toContain('아직 아무것도 등록하지 않은 학년도입니다')
+    })
+
+    it('확인을 누르면 스토어 액션을 거친다', async () => {
+        const remove = vi.fn().mockResolvedValue()
+        const {wrapper} = await openYearStep(remove)
+        await drops(wrapper)[1].trigger('click')
+        await flushPromises()
+
+        modalButton('지우기').click()
+        await flushPromises()
+
+        expect(remove).toHaveBeenCalledWith(3)
+        // 지운 뒤에는 학교 설정을 다시 읽는다. 지금 보던 학년도였으면 옮겨 가 있다.
+        expect(useSchoolStore().fetchAll).toHaveBeenCalled()
+    })
+
+    it('취소하면 아무것도 하지 않는다', async () => {
+        const remove = vi.fn().mockResolvedValue()
+        const {wrapper} = await openYearStep(remove)
+        await drops(wrapper)[1].trigger('click')
+        await flushPromises()
+
+        modalButton('취소').click()
+        await flushPromises()
+
+        expect(remove).not.toHaveBeenCalled()
+    })
+
+    it('마지막 학년도는 휴지통을 잠근다 — 숨기지 않는다', async () => {
+        // 학년도가 없으면 학교도 담당 학급 · 강좌도 만들 수 없다. 커맨드도 거절하지만,
+        // 언제나 거절로 끝나는 단추를 그려 두면 교사는 그것을 고장으로 읽는다.
+        const app = useAppStore()
+        vi.spyOn(app, 'deleteYear').mockResolvedValue()
+        const wrapper = await render()
+        await goStep(wrapper, 2)
+
+        const drop = wrapper.find('.drop')
+        expect(drop.exists()).toBe(true)
+        expect(drop.attributes('disabled')).toBeDefined()
+
+        await drop.trigger('click')
+        await flushPromises()
+        expect(document.querySelector('.modal')).toBeNull()
+
+        // 이유는 화면에 적혀 있다. 잠긴 단추만으로는 왜인지 알 수 없다.
+        expect(wrapper.text()).toContain('마지막 하나는 지울 수 없습니다')
+    })
+
+    it('지우지 못하면 이유를 화면에 적는다 — 조용히 넘기지 않는다', async () => {
+        const remove = vi.fn().mockRejectedValue(new Error('마지막 학년도는 지울 수 없습니다.'))
+        const {wrapper} = await openYearStep(remove)
+        await drops(wrapper)[0].trigger('click')
+        await flushPromises()
+
+        modalButton('지우기').click()
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('마지막 학년도는 지울 수 없습니다.')
+    })
+})
+
+describe('첫 실행 — 담당 학급 · 강좌', () => {
     it('하나도 등록하지 않으면 완료로 갈 수 없다 — 잠글 뿐 숨기지 않는다', async () => {
         const wrapper = await render()
         await goStep(wrapper, 4)
@@ -355,7 +500,7 @@ describe('첫 실행 — 맡은 것', () => {
         })
     })
 
-    it('명렬표를 펼치면 그 학급을 함께 고른다 — 명단이 붙는 곳이 어긋나면 안 된다', async () => {
+    it('명렬표를 열면 그 학급을 함께 고른다 — 명단이 붙는 곳이 어긋나면 안 된다', async () => {
         const wrapper = await render([HOMEROOM, SUBJECT])
         const select = vi.spyOn(useAppStore(), 'selectClass').mockResolvedValue()
         await goStep(wrapper, 4)
@@ -370,7 +515,7 @@ describe('첫 실행 — 맡은 것', () => {
         expect(wrapper.find('.mine--subject .mine__panel').exists()).toBe(false)
     })
 
-    it('교과 강좌도 명렬표를 펼친다 — 담임과 같은 화면이다', async () => {
+    it('교과 강좌도 명렬표를 연다 — 담임과 같은 화면이다', async () => {
         const wrapper = await render([HOMEROOM, SUBJECT])
         vi.spyOn(useAppStore(), 'selectClass').mockResolvedValue()
         await goStep(wrapper, 4)
@@ -385,10 +530,10 @@ describe('첫 실행 — 맡은 것', () => {
         expect(wrapper.find('.mine--subject .mine__panel').exists()).toBe(true)
     })
 
-    it('교과 명렬표를 펼쳐도 그 강좌를 고르지는 않는다 — 모드가 저장되면 안 된다', async () => {
+    it('교과 명렬표를 열어도 그 강좌를 고르지는 않는다 — 모드가 저장되면 안 된다', async () => {
         // selectClass는 app_config에 mode를 저장한다. 온보딩 끝에 교과 명렬표를 마지막으로
         // 만진 교사는 다음 실행이 교과 모드로 열리는데, 이 화면은 meta.bare라 그 전환이
-        // 눈에 보이지도 않는다. 명단이 붙는 곳은 넘기는 classId가 이미 정한다.
+        // 눈에 보이지도 않는다. 명단이 붙는 곳은 넘기는 classId가 이미 결정한다.
         const wrapper = await render([HOMEROOM, SUBJECT])
         const select = vi.spyOn(useAppStore(), 'selectClass').mockResolvedValue()
         await goStep(wrapper, 4)
@@ -417,11 +562,11 @@ describe('첫 실행 — 완료', () => {
         expect(text).toContain('3명')
     })
 
-    it('맡은 것이 한쪽뿐이면 반대쪽은 없다고 적는다 — 빈 자리로 두지 않는다', async () => {
+    it('한쪽만 등록했으면 반대쪽은 없다고 적는다 — 빈 자리로 두지 않는다', async () => {
         const wrapper = await render([HOMEROOM])
         await goStep(wrapper, 5)
 
-        expect(wrapper.text()).toContain('맡은 교과 강좌가 없습니다')
+        expect(wrapper.text()).toContain('등록한 교과 강좌가 없습니다')
         expect(wrapper.text()).toContain('3학년 6반')
     })
 

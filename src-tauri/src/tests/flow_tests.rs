@@ -4,7 +4,7 @@
 //! 실제로 이 앱에서 처음 난 결함도 그 이음매였다 — 목록 커맨드가 다른 모듈의
 //! 헬퍼를 부르면서 별칭 규약이 어긋나 SQL이 깨졌고, 각 모듈의 테스트는 전부 통과했다.
 //!
-//! 그래서 여기서는 명렬표 → 찍기 → 서류 → 나이스 → 통계를 한 흐름으로 확인한다.
+//! 그래서 여기서는 명렬표 → 입력 → 서류 → 나이스 → 통계를 한 흐름으로 확인한다.
 
 use crate::commands::attendance::{
     delete_span_impl, edit_span_impl, get_day_grid_impl, get_month_log_impl, set_span_memo_impl,
@@ -63,12 +63,12 @@ fn stamp(f: &Fixture, student: i64, reason: &str, r#type: &str, slots: &[&str]) 
     .span_ids
 }
 
-/// 하루를 통째로 수행한다. 찍고 · 고치고 · 서류를 받고 · 나이스에 넣는다.
+/// 하루를 통째로 수행한다. 입력하고 · 고치고 · 서류를 받고 · 나이스에 넣는다.
 #[test]
 fn a_whole_day_goes_through_every_screen() {
     let f = fixture();
 
-    // 1. 아침에 찍는다. 결석 하나, 지각 하나.
+    // 1. 아침에 입력한다. 결석 하나, 지각 하나.
     stamp(&f, f.students[0], "질병", "결석", &[]);
     stamp(&f, f.students[1], "미인정", "지각", &["2"]);
 
@@ -108,7 +108,7 @@ fn a_whole_day_goes_through_every_screen() {
     assert_eq!(log[0].enrolled, 3);
 }
 
-/// 같은 조합을 다시 찍으면 취소된다. 조합이 다르면 하루 2구간으로 쌓인다.
+/// 같은 조합을 다시 입력하면 취소된다. 조합이 다르면 하루 2구간으로 쌓인다.
 #[test]
 fn stamping_twice_cancels_but_a_different_combination_stacks() {
     let f = fixture();
@@ -193,7 +193,7 @@ fn an_off_day_pushes_the_due_date_of_records_made_after_it() {
         .doc_due
         .clone();
 
-    // 마감 구간 안에 휴업일을 넣고 다른 학생에게 같은 날짜로 찍는다.
+    // 마감 구간 안에 휴업일을 넣고 다른 학생에게 같은 날짜로 입력한다.
     add_off_day_impl(
         &f.conn,
         f.school,
@@ -310,7 +310,7 @@ fn another_school_never_leaks_into_this_class() {
 /// 담임 화면에 교과의 숫자가 한 줄도 나오면 안 되고, 반대도 마찬가지다 —
 /// 어떤 교사는 담임만, 어떤 교사는 교과만 한다.
 #[test]
-fn 담임_출결은_교과_강좌_화면으로_새지_않는다() {
+fn 담임_출결은_교과_강좌_화면으로_유출되지_않는다() {
     let f = fixture();
     let subject = insert_class(&f.conn, f.school, "subject", "지구과학Ⅰ", None, None);
     // 내 담임 반 학생이 내 강좌에도 들어온다. 학생 행은 하나, 소속이 둘이다.

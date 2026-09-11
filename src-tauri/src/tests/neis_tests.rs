@@ -463,7 +463,7 @@ fn 못_읽은_줄_하나가_나머지를_막지_않는다() {
 fn 하루_두_구간이_어긋나면_같은_종류끼리_짝짓는다() {
     let (conn, school, class) = fixture();
     let student = enroll(&conn, class, school, 5, "학생5");
-    // 조퇴를 먼저 찍어 id가 작다. 순서대로만 연결하면 조퇴에 지각이 붙는다.
+    // 조퇴를 먼저 입력해 id가 작다. 순서대로만 연결하면 조퇴에 지각이 붙는다.
     stamp(&conn, class, student, "질병", "조퇴", &["6"]);
     stamp(&conn, class, student, "질병", "지각", &["1"]);
     conn.execute("UPDATE absence_span SET memo = '병원' WHERE start_slot = '6'", [])
@@ -746,7 +746,7 @@ fn 결시교시가_비어_온_결석도_조회부터_종례까지_저장한다()
         .unwrap();
     assert_eq!((start.as_deref(), end.as_deref()), (Some("조회"), Some("종례")));
 
-    // NULL로 들어가면 같은 조합을 다시 찍어도 그 건을 찾지 못해 똑같은 기록이
+    // NULL로 들어가면 같은 조합을 다시 입력해도 그 건을 찾지 못해 똑같은 기록이
     // 하나 더 쌓인다. 찾았다면 추가가 아니다.
     //
     // 가져온 건에는 나이스의 사유가 메모로 들어가 있어 **지우지는 않는다**(`kept`) —

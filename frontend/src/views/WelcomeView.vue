@@ -3,11 +3,11 @@
  * 첫 실행 — 다섯 단계로 학년도 · 학교 · 담당을 설정하고 명렬표를 넣는다.
  *
  * ```
- * 1 시작하기   여기서 하는 일을 세 줄로 알린다
- * 2 학년도     오늘 날짜로 채워져 있다. 직접 만들 수도 있다
- * 3 학교       만들기 · 내리기 · 이름 · 최대 교시 · 서류 제출 기한
- * 4 맡은 것    담임 학급 · 교과 강좌를 더하고 각각 명렬표를 넣는다
- * 5 완료       등록한 것을 요약하고 개요로 보낸다
+ * 1 시작하기     여기서 하는 일을 세 줄로 알린다
+ * 2 학년도       오늘 날짜로 채워져 있다. 직접 만들거나 지울 수도 있다
+ * 3 학교         만들기 · 내리기 · 이름 · 최대 교시 · 서류 제출 기한
+ * 4 학급과 강좌   담임 학급 · 교과 강좌를 더하고 각각 명렬표를 넣는다
+ * 5 완료         등록한 것을 요약하고 개요로 보낸다
  * ```
  *
  * 이 화면은 **첫 실행에서만** 지나간다. 매일 열자마자 바로 입력할 수 있어야 하므로
@@ -19,13 +19,13 @@
  * 칸에 제목 · 한 줄 설명 · 입력만 둔다.
  *
  * **단계를 눌러 앞뒤로 오간다.** 앞 단계를 잠그면 학교 이름을 잘못 적은 교사가
- * 되돌아갈 길이 없어 앱을 껐다 켜게 된다. 잠그는 것은 하나뿐이다 — 맡은 것을 하나도
- * 등록하지 않으면 완료로 갈 수 없다. 그때도 **단추를 숨기지 않고 `disabled`로 둔다.**
+ * 되돌아갈 길이 없어 앱을 껐다 켜게 된다. 잠그는 것은 하나뿐이다 — 담당 학급 · 강좌를
+ * 하나도 등록하지 않으면 완료로 갈 수 없다. 그때도 **단추를 숨기지 않고 `disabled`로 둔다.**
  * 단추가 사라지면 화면이 움직이고, 교사는 자기가 무엇을 놓쳤는지 알 수 없다.
  *
  * **담임과 교과를 여기서는 함께 등록한다.** 화면이 분리되는 것은 등록을 마친 다음부터다 —
- * 맡은 것이 아직 하나도 없는 상태에서 모드를 먼저 고르게 하면, 교사는 자기가 무엇을
- * 고르는지 모르는 채 고르게 된다.
+ * 담당 학급 · 강좌가 아직 하나도 없는 상태에서 모드를 먼저 고르게 하면, 교사는 자기가
+ * 무엇을 고르는지 모르는 채 고르게 된다.
  */
 import {computed, nextTick, onMounted, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
@@ -42,7 +42,12 @@ const roster = useRosterStore()
 const school = useSchoolStore()
 const router = useRouter()
 
-const STEPS = ['시작하기', '학년도', '학교', '맡은 것', '완료']
+/**
+ * 단계 이름. 네 번째는 **담임 학급과 교과 강좌 둘**을 가리키는데, 단계 표시는 다섯 칸을
+ * 한 줄에 나열하는 좁은 자리라 `담당 학급 · 강좌`를 그대로 적으면 줄이 넘친다.
+ * 그래서 줄인 표현인 `학급과 강좌`를 쓴다 — **새 통칭을 지어내지 않는다.**
+ */
+const STEPS = ['시작하기', '학년도', '학교', '학급과 강좌', '완료']
 
 /**
  * 단계마다 제목 아래에 붙는 한 줄.
@@ -66,8 +71,8 @@ const LEADS = [
  */
 const INTRO = [
     ['학년도와 학교', '출결을 기록할 기준 연도와 근무하는 학교를 설정합니다.'],
-    ['맡은 것', '담임 학급과 교과 강좌를 등록합니다.'],
-    ['명렬표', '맡은 것마다 학생 명단을 파일로 가져옵니다.'],
+    ['학급과 강좌', '담임 학급과 교과 강좌를 등록합니다.'],
+    ['명렬표', '학급과 강좌마다 학생 명단을 파일로 가져옵니다.'],
 ]
 
 const step = ref(1)
@@ -82,6 +87,47 @@ const newYear = ref('')
 
 /** 내리려는 학교. 확인을 한 번 거친다 — 되돌리기 어려운 것은 삭제뿐이다. */
 const closingSchool = ref(null)
+
+/**
+ * 지우려는 학년도. **학교를 내리는 것과 다른 동작이다** — 학교는 행이 남고 목록에서만
+ * 내려가지만, 학년도는 행까지 지우고 `ON DELETE CASCADE`가 그 아래를 통째로 가져간다.
+ * 그래서 확인 대화상자의 문구도 따로 쓴다.
+ */
+const deletingYear = ref(null)
+
+/**
+ * 학년도를 지우면 함께 사라지는 것. **묻기 전에 수로 보여준다** — 무엇이 사라지는지
+ * 모르는 채 누르게 하면, 되돌릴 수 없는 쓰기를 짐작으로 승인하는 셈이 된다.
+ * 다섯 수는 목록(`get_years`)에 이미 실려 오므로 대화상자를 여는 순간 기다리지 않는다.
+ *
+ * **담임 출결과 교과 차시를 한 수로 합치지 않는다.** 두 기록은 표부터 다르고,
+ * 합친 수는 `출결 300건`이 어느 쪽인지 말해 주지 못한다.
+ */
+const GONE = [
+    ['schoolCount', '학교', '개'],
+    ['classCount', '담당 학급 · 강좌', '개'],
+    ['studentCount', '학생', '명'],
+    ['spanCount', '담임 출결', '건'],
+    ['sessionCount', '교과 차시', '개'],
+]
+
+const yearCounts = computed(() =>
+    GONE.map(([key, label, unit]) => ({label, unit, n: deletingYear.value?.[key] ?? 0})))
+
+/**
+ * 아직 아무것도 등록하지 않은 학년도인가.
+ *
+ * **0이라는 사실을 그대로 말한다.** 잘못 만든 학년도를 정리하는 일이 첫 실행에서
+ * 가장 흔한데, 안전하다는 것을 알리지 않으면 교사는 무엇이 사라질지 몰라 그대로 둔다.
+ */
+const yearIsEmpty = computed(() => yearCounts.value.every((row) => row.n === 0))
+
+/**
+ * 마지막 학년도는 지울 수 없다. 커맨드도 거절하지만 화면이 먼저 잠근다 —
+ * 누를 수 있는 단추가 언제나 거절로 끝나면 교사는 그것을 고장으로 읽는다.
+ * **숨기지 않고 잠근다.** 사라지면 다른 학년도에서는 왜 보였는지 알 수 없다.
+ */
+const canDeleteYear = computed(() => app.years.length > 1)
 
 /** 명렬표를 연 학급. 한 번에 하나만 연다 — 두 개가 열리면 어느 명단인지 흐려진다. */
 const openId = ref(null)
@@ -103,7 +149,7 @@ const hasClasses = computed(() => app.classes.length > 0)
 const totalStudents = computed(() =>
     app.classes.reduce((sum, cls) => sum + (counts.value[cls.id] ?? 0), 0))
 
-/** 완료로 갈 수 없는 단계. 맡은 것이 하나도 없으면 요약할 것도 없다. */
+/** 완료로 갈 수 없는 단계. 담당 학급 · 강좌가 하나도 없으면 요약할 것도 없다. */
 function blocked(n) {
     return n === STEPS.length && !hasClasses.value
 }
@@ -124,7 +170,7 @@ function next() {
 
 /**
  * 학년도를 고른다. **스토어 액션을 거친다** — 상태에 직접 대입하면 학교 목록도
- * 맡은 것 목록도 지난 학년도의 것으로 남는다. 학년도가 둘 이상이 되는 순간
+ * 담당 학급 · 강좌 목록도 지난 학년도의 것으로 남는다. 학년도가 둘 이상이 되는 순간
  * 다음 단계가 다른 학년도의 학교를 보여주게 된다.
  */
 async function pickYear(yearId) {
@@ -160,7 +206,31 @@ async function addYear() {
     }
 }
 
-/** 학교를 고른다. 아래의 최대 교시 · 제출 기한과 다음 단계의 맡은 것이 그 학교의 것이 된다. */
+/**
+ * 학년도를 지운다. **한 번 묻고 지운다** — 되돌릴 수 없는 쓰기는 삭제뿐이고,
+ * 이것이 그 하나다.
+ *
+ * 지우고 나면 학교 설정과 인원을 다시 읽는다. 지금 보고 있던 학년도를 지웠으면
+ * 스토어가 다른 학년도로 옮겨 놓으므로, 화면에 남은 값은 지워진 학년도의 것이다.
+ */
+async function confirmDeleteYear() {
+    const target = deletingYear.value
+    deletingYear.value = null
+    if (!target) return
+    error.value = ''
+    try {
+        // 마지막 학년도 거절 같은 판단은 커맨드가 한다. 여기서 문구를 다시 쓰면
+        // 두 곳이 곧 어긋난다 — 실패는 그대로 받아 위 알림에 표시한다.
+        await app.deleteYear(target.id)
+        await school.fetchAll()
+        dueDays.value = school.school?.dueDays ?? 7
+        await refreshCounts()
+    } catch (e) {
+        error.value = String(e)
+    }
+}
+
+/** 학교를 고른다. 아래의 최대 교시 · 제출 기한과 다음 단계의 담당 학급 · 강좌가 그 학교의 것이 된다. */
 async function pickSchool(schoolId) {
     if (schoolId === app.schoolId) return
     error.value = ''
@@ -282,7 +352,7 @@ async function addSubject() {
 /** 만들고, 인원을 다시 세고, 그 학급의 명렬표를 바로 연다. 다음에 할 일이 그것이다. */
 async function add(payload) {
     error.value = ''
-    // 맡은 것은 학교에 소속된다. 학교 없이 만들면 커맨드가 거절하는데, 그 문구는
+    // 담당 학급 · 강좌는 학교에 소속된다. 학교 없이 만들면 커맨드가 거절하는데, 그 문구는
     // 앞 단계로 돌아가라는 말을 하지 않는다.
     if (app.schoolId == null) {
         error.value = '학교를 먼저 만들어 주세요. 앞 단계에서 이름을 적으면 됩니다.'
@@ -411,11 +481,21 @@ onMounted(async () => {
                 <div class="field__group">
                     <span class="field__label">이번 학년도</span>
                     <div class="chips">
-                        <button v-for="year in app.years" :key="year.id"
-                                :class="['pick', 'pick--big', app.yearId === year.id ? 'is-on' : '']"
-                                type="button" @click="pickYear(year.id)">
-                            {{ year.year }}학년도
-                        </button>
+                        <!-- 학교와 같은 모양으로 고르기와 지우기를 한 덩어리로 둔다.
+                             휴지통이 칩 밖에 있으면 어느 학년도를 지우는지 눈으로 연결해야 한다. -->
+                        <span v-for="year in app.years" :key="year.id" class="chip">
+                            <button :class="['pick', 'pick--big', app.yearId === year.id ? 'is-on' : '']"
+                                    type="button" @click="pickYear(year.id)">
+                                {{ year.year }}학년도
+                            </button>
+                            <button :disabled="!canDeleteYear" class="drop"
+                                    :title="canDeleteYear
+                                        ? '이 학년도와 그 안의 모든 기록을 지웁니다'
+                                        : '마지막 학년도는 지울 수 없습니다'"
+                                    type="button" @click="deletingYear = year">
+                                <UiTrashIcon/>
+                            </button>
+                        </span>
                     </div>
                     <p class="field__hint">
                         3월에 열려 이듬해 2월에 닫힙니다 —
@@ -442,6 +522,8 @@ onMounted(async () => {
 
                 <p class="pane__note">
                     학교는 학년도에 속합니다. 다음 단계에서 만드는 학교가 이 학년도로 들어갑니다.
+                    학년도를 지우면 그 안의 학교 · 담당 학급 · 강좌 · 출결이 모두 함께 사라지고,
+                    마지막 하나는 지울 수 없습니다.
                 </p>
             </div>
 
@@ -451,7 +533,7 @@ onMounted(async () => {
                     <span class="field__label">{{ yearLabel }}의 학교</span>
                     <div class="chips">
                         <!-- 고르기와 내리기를 한 덩어리로 둔다. 휴지통이 칩 밖에 있으면
-                             어느 학교를 내리는지 눈으로 이어 붙여야 한다. -->
+                             어느 학교를 내리는지 눈으로 연결해야 한다. -->
                         <span v-for="s in app.schools" :key="s.id" class="chip">
                             <button :class="['pick', 'pick--big', app.schoolId === s.id ? 'is-on' : '']"
                                     type="button" @click="pickSchool(s.id)">
@@ -469,11 +551,11 @@ onMounted(async () => {
                         <UiButton variant="primary" @click="addSchool">학교 추가</UiButton>
                     </div>
                     <p class="field__hint">
-                        순회 교사는 둘 이상을 등록합니다. 선택한 학교에 아래 설정과 맡은 것이 속합니다
+                        순회 교사는 둘 이상을 등록합니다. 선택한 학교에 아래 설정과 담당 학급 · 강좌가 속합니다
                     </p>
                 </div>
 
-                <!-- 첫 실행의 정상 상태다. 빈 칸만 늘어놓으면 무엇을 고치는지 알 수 없다. -->
+                <!-- 첫 실행의 정상 상태다. 빈 칸만 나열하면 무엇을 고치는지 알 수 없다. -->
                 <p v-if="!school.school" class="pane__empty">
                     <b>아직 없습니다.</b>
                     위에 이름을 적어 학교를 만들면 최대 교시와 제출 기한을 설정할 수 있습니다.
@@ -512,7 +594,7 @@ onMounted(async () => {
                 </template>
             </div>
 
-            <!-- 4 맡은 것 ─ 담임 학급 · 교과 강좌 -->
+            <!-- 4 학급과 강좌 ─ 담임 학급 · 교과 강좌 -->
             <div v-if="step === 4" class="pane__body">
                 <div class="mine mine--homeroom">
                     <h3 class="pane__sub">담임 학급</h3>
@@ -598,7 +680,7 @@ onMounted(async () => {
                             {{ cls.name }} · <span class="num">{{ counts[cls.id] ?? 0 }}</span>명
                         </span>
                         <span v-if="!app.homeroomClasses.length" class="sum__hint">
-                            맡은 담임 학급이 없습니다
+                            등록한 담임 학급이 없습니다
                         </span>
                     </dd>
 
@@ -608,7 +690,7 @@ onMounted(async () => {
                             {{ cls.name }} · <span class="num">{{ counts[cls.id] ?? 0 }}</span>명
                         </span>
                         <span v-if="!app.subjectClasses.length" class="sum__hint">
-                            맡은 교과 강좌가 없습니다
+                            등록한 교과 강좌가 없습니다
                         </span>
                     </dd>
 
@@ -643,7 +725,7 @@ onMounted(async () => {
                 <span class="modal__val">{{ yearLabel }}</span>
             </div>
             <p class="modal__note">
-                지우지 않고 목록에서만 내립니다. 이 학교를 가리키는 맡은 것과 지난 출결은
+                지우지 않고 목록에서만 내립니다. 이 학교의 담당 학급 · 강좌와 지난 출결은
                 그대로 남습니다 — 다시 필요하면 설정에서 같은 이름으로 만들면 됩니다.
             </p>
 
@@ -651,6 +733,36 @@ onMounted(async () => {
                 <UiButton size="wide" @click="closingSchool = null">취소</UiButton>
                 <UiButton fill size="wide" variant="danger" @click="confirmRetireSchool">
                     내리기
+                </UiButton>
+            </template>
+        </UiModal>
+
+        <!-- 학교를 내리는 대화상자와 **다른 말을 쓴다.** 학교는 행이 남지만 학년도는
+             행까지 지우고, 그 안의 기록이 전부 함께 사라진다. 같은 문장을 돌려 쓰면
+             교사는 학교와 같은 정도의 일로 읽는다. -->
+        <UiModal :open="Boolean(deletingYear)"
+                 :subtitle="deletingYear ? `${deletingYear.year}학년도` : ''"
+                 title="이 학년도를 지웁니다" @close="deletingYear = null">
+            <dl class="gone">
+                <template v-for="row in yearCounts" :key="row.label">
+                    <dt class="gone__what">{{ row.label }}</dt>
+                    <dd class="gone__n"><b class="num">{{ row.n }}</b>{{ row.unit }}</dd>
+                </template>
+            </dl>
+            <p v-if="yearIsEmpty" class="modal__note">
+                <b>아직 아무것도 등록하지 않은 학년도입니다.</b>
+                지워도 사라지는 기록이 없습니다.
+            </p>
+            <p class="modal__note">
+                위의 것이 <b>모두 함께 사라집니다.</b> 학교를 목록에서 내리는 것과 달리
+                학년도는 기록까지 지우며, 되돌릴 수 없습니다. 서류 · NEIS 표시와 태그 ·
+                한도 규정도 이 학년도의 것은 함께 사라집니다.
+            </p>
+
+            <template #foot>
+                <UiButton size="wide" @click="deletingYear = null">취소</UiButton>
+                <UiButton fill size="wide" variant="danger" @click="confirmDeleteYear">
+                    지우기
                 </UiButton>
             </template>
         </UiModal>
@@ -689,7 +801,7 @@ onMounted(async () => {
     color: var(--c-ink-3);
 }
 
-/* 단계 표시. 모양은 style.css의 `.step`이 정하고(NEIS 검증과 같은 것을 쓴다),
+/* 단계 표시. 모양은 style.css의 `.step`이 결정하고(NEIS 검증과 같은 것을 쓴다),
  * 여기서는 버튼의 기본 상자를 지우고 고르게 벌려 놓는다. */
 .steps .step {
     flex: 1;
@@ -822,10 +934,17 @@ onMounted(async () => {
     cursor: pointer;
 }
 
-.drop:hover {
+.drop:hover:not(:disabled) {
     border-color: var(--c-danger);
     background: var(--c-danger-bg);
     color: var(--c-danger);
+}
+
+/* 마지막 학년도의 휴지통. **숨기지 않고 잠근다** — 사라지면 다른 줄에서는 왜 보였는지
+ * 알 수 없다. 잠긴 것은 `.pick:disabled`와 같은 방식으로 흐리게만 표시한다. */
+.drop:disabled {
+    opacity: .38;
+    cursor: default;
 }
 
 /* 이름표와 설명 한 쌍. 번호를 쓰지 않는 이유는 위 단계 표시가 이미 숫자를
@@ -847,7 +966,7 @@ onMounted(async () => {
     color: var(--c-ink-2);
 }
 
-/* 맡은 것 한 줄. 이름 · 학교 이름표 · 인원 · 단추. 학교가 하나면 두 번째 칸은
+/* 담당 학급 · 강좌 한 줄. 이름 · 학교 이름표 · 인원 · 단추. 학교가 하나면 두 번째 칸은
  * 비지만 자리는 지킨다 — 칸을 없애면 학교를 더하는 순간 줄 전체가 밀린다. */
 .mine {
     display: flex;
@@ -878,7 +997,7 @@ onMounted(async () => {
     border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 
-/* 요약. 라벨과 값을 두 칸으로 세우되 장부 테두리를 두르지 않는다. */
+/* 요약. 라벨과 값을 두 칸으로 배치하되 장부 테두리를 두르지 않는다. */
 .sum {
     display: grid;
     grid-template-columns: 140px 1fr;
@@ -912,9 +1031,51 @@ onMounted(async () => {
     color: var(--c-ink-2);
 }
 
+/* **화면 아래에 고정한다.** 단계마다 내용 길이가 달라서 문서 흐름에 두면 [다음]이
+ * 접힌 자리 아래로 밀린다 — 담당 학급 · 강좌를 여럿 등록하거나 명렬표를 열면 한참 스크롤해야
+ * 단추가 나온다. 다음으로 넘어가는 것은 이 화면에서 늘 할 수 있어야 하는 일이다.
+ *
+ * `sticky`가 아니라 `fixed`인 이유는, 이 화면이 `meta.bare`라 스크롤 상자가 문서
+ * 자신이기 때문이다. `sticky`는 넘치지 않는 단계에서 제자리에 머물러 화면 가운데
+ * 떠 있게 된다 — 단추가 단계마다 움직이면 교사는 매번 눈으로 찾는다. */
 .wiz__acts {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
     display: flex;
     justify-content: space-between;
     gap: var(--s-lg);
+    padding: var(--s-lg) var(--s-3xl);
+    border-top: 1px solid var(--c-line);
+    background: var(--c-surface);
+}
+
+/* 고정한 띠가 마지막 내용을 가리지 않게 그만큼 비워 둔다. */
+.wiz {
+    padding-bottom: var(--s-5xl);
+}
+
+/* 학년도를 지울 때 함께 사라지는 것. `.modal__what`을 쓰지 않는 이유는 그쪽 라벨 칸이
+ * 76px이라 `담당 학급 · 강좌`가 두 줄로 접히기 때문이다. 왼쪽의 경고색 띠는 같다. */
+.gone {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--s-md) var(--s-2xl);
+    margin: 0;
+    padding: var(--s-lg) var(--s-2xl);
+    border: 1px solid var(--c-line);
+    border-left: 3px solid var(--c-danger);
+    border-radius: var(--r-lg);
+}
+
+.gone__what {
+    color: var(--c-ink-3);
+}
+
+.gone__n {
+    margin: 0;
+    color: var(--c-ink);
 }
 </style>
