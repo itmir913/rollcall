@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 첫 실행 — 다섯 단계로 학년도 · 학교 · 맡은 것을 정하고 명렬표를 넣는다.
+ * 첫 실행 — 다섯 단계로 학년도 · 학교 · 담당을 설정하고 명렬표를 넣는다.
  *
  * ```
  * 1 시작하기   여기서 하는 일을 세 줄로 알린다
@@ -15,7 +15,7 @@
  *
  * **장부(`UiLedger`)를 쓰지 않는다.** 장부는 서른 행짜리 격자를 훑는 프리미티브라
  * 테두리 · 머리글 · 바닥글이 매 단계 반복되어 설정 화면과 똑같이 보인다. 온보딩은
- * 훑는 화면이 아니라 **한 번에 하나를 정하는 화면**이라, 가운데로 모은 한 단짜리
+ * 훑는 화면이 아니라 **한 번에 하나를 설정하는 화면**이라, 가운데로 모은 한 단짜리
  * 칸에 제목 · 한 줄 설명 · 입력만 둔다.
  *
  * **단계를 눌러 앞뒤로 오간다.** 앞 단계를 잠그면 학교 이름을 잘못 적은 교사가
@@ -44,20 +44,30 @@ const router = useRouter()
 
 const STEPS = ['시작하기', '학년도', '학교', '맡은 것', '완료']
 
-/** 단계마다 제목 아래에 붙는 한 줄. 무엇을 정하는 자리인지 먼저 말한다. */
+/**
+ * 단계마다 제목 아래에 붙는 한 줄.
+ *
+ * **아래 문장과 겹치지 않게 쓴다.** 한 화면에 같은 말이 두 번 나오면 교사는 두 번째를
+ * 읽지 않고, 그러면 정작 거기에만 있는 말도 함께 놓친다.
+ */
 const LEADS = [
-    '세 가지를 정하면 준비가 끝납니다. 전부 나중에 설정에서 바꿀 수 있습니다.',
+    '설정할 것은 세 가지입니다. 나중에 모두 수정할 수 있습니다.',
     '출결을 기록할 기준 연도입니다. 오늘 날짜로 채워 두었습니다.',
-    '최대 교시와 서류 제출 기한은 학교마다 다릅니다. 순회 교사는 둘 이상을 만듭니다.',
-    '담임 학급과 교과 강좌를 함께 등록합니다. 한쪽만 맡아도 됩니다.',
-    '이대로 시작합니다. 명렬표는 학기 중에도 다시 가져올 수 있습니다.',
+    '최대 교시와 서류 제출 기한은 학교마다 다릅니다.',
+    '담임 학급과 교과 강좌를 등록합니다. 한쪽만 맡아도 됩니다.',
+    '이대로 시작합니다.',
 ]
 
-/** 첫 단계에서 알리는 것. 세 줄을 넘기지 않는다 — 읽지 않는 안내는 없는 것과 같다. */
+/**
+ * 첫 단계에서 알리는 것. 세 줄을 넘기지 않는다 — 읽지 않는 안내는 없는 것과 같다.
+ *
+ * **번호를 붙이지 않는다.** 위 단계 표시가 이미 1~5를 쓰고 있어서, 여기에 1 · 2 · 3을
+ * 달면 뜻이 다른 두 숫자가 한 화면에서 같은 모양으로 나온다. 이름표를 붙인다.
+ */
 const INTRO = [
-    '학년도와 학교를 정합니다. 최대 교시와 서류 제출 기한은 학교마다 다릅니다.',
-    '맡은 것을 등록합니다. 담임 학급과 교과 강좌를 함께 넣을 수 있습니다.',
-    '맡은 것마다 명렬표를 파일에서 가져옵니다. 교과 강좌는 학년 · 반도 함께 필요합니다.',
+    ['학년도와 학교', '출결을 기록할 기준 연도와 근무하는 학교를 설정합니다.'],
+    ['맡은 것', '담임 학급과 교과 강좌를 등록합니다.'],
+    ['명렬표', '맡은 것마다 학생 명단을 파일로 가져옵니다.'],
 ]
 
 const step = ref(1)
@@ -301,7 +311,7 @@ async function add(payload) {
  * **교과 강좌에서는 고르지 않는다.** `selectClass`는 모드를 `app_config`에 저장하므로,
  * 온보딩 끝에 교과 명렬표를 마지막으로 만진 교사는 다음 실행이 교과 모드로 열린다.
  * 이 화면은 `meta.bare`라 그 전환이 눈에 보이지도 않는다. 명단이 붙는 곳은
- * `RosterPanel`에 넘기는 `classId`가 이미 정하므로 고르지 않아도 어긋나지 않는다.
+ * `RosterPanel`에 넘기는 `classId`가 이미 결정하므로 고르지 않아도 어긋나지 않는다.
  */
 async function toggleRoster(cls) {
     if (openId.value === cls.id) {
@@ -364,9 +374,7 @@ onMounted(async () => {
     <div class="wiz">
         <header class="wiz__head">
             <h1 class="wiz__title">출결관리를 시작합니다</h1>
-            <p class="wiz__sub">
-                학년도 · 학교 · 맡은 것을 한 번만 정하면, 다음부터는 개요가 바로 열립니다
-            </p>
+            <p class="wiz__sub">설정은 처음 한 번뿐입니다. 끝내면 바로 출결을 입력할 수 있습니다</p>
         </header>
 
         <!-- 단계 표시. 눌러서 앞뒤로 오간다 — 잘못 적은 교사가 되돌아갈 길이다. -->
@@ -390,14 +398,12 @@ onMounted(async () => {
 
             <!-- 1 시작하기 ─ 여기서 하는 일 -->
             <div v-if="step === 1" class="pane__body">
-                <h3 class="pane__sub">여기서 하는 일</h3>
-                <ol class="intro">
-                    <li v-for="(line, i) in INTRO" :key="i" class="intro__item">
-                        <span class="intro__no num">{{ i + 1 }}</span>
-                        <span>{{ line }}</span>
-                    </li>
-                </ol>
-                <p class="pane__note">여기서 정한 것은 전부 설정에서 다시 바꿀 수 있습니다.</p>
+                <dl class="intro">
+                    <template v-for="[name, line] in INTRO" :key="name">
+                        <dt class="intro__name">{{ name }}</dt>
+                        <dd class="intro__line">{{ line }}</dd>
+                    </template>
+                </dl>
             </div>
 
             <!-- 2 학년도 ─ 오늘 날짜로 채워 두고, 직접 만들 수도 있다 -->
@@ -412,10 +418,10 @@ onMounted(async () => {
                         </button>
                     </div>
                     <p class="field__hint">
-                        학년도는 3월에 열립니다 —
+                        3월에 열려 이듬해 2월에 닫힙니다 —
                         <span class="num">{{ span.startsOn }}</span> ~
                         <span class="num">{{ span.endsOn }}</span>.
-                        1 · 2월은 지난해에 열린 학년도의 끝자락입니다.
+                        1 · 2월은 지난 학년도에 속합니다
                     </p>
                 </div>
 
@@ -429,13 +435,13 @@ onMounted(async () => {
                         </UiButton>
                     </div>
                     <p class="field__hint">
-                        2월에 다음 학년도를 미리 준비하거나 지난해 기록을 옮겨 적을 때 씁니다.
-                        시작일과 종료일은 3월 규칙으로 채웁니다
+                        다음 학년도를 미리 준비하거나 지난 기록을 정리할 때 씁니다.
+                        시작일과 종료일은 위 규칙으로 채웁니다
                     </p>
                 </div>
 
                 <p class="pane__note">
-                    학교는 학년도 안에 있습니다. 다음 단계에서 만드는 학교가 이 학년도에 붙습니다.
+                    학교는 학년도에 속합니다. 다음 단계에서 만드는 학교가 이 학년도로 들어갑니다.
                 </p>
             </div>
 
@@ -463,14 +469,14 @@ onMounted(async () => {
                         <UiButton variant="primary" @click="addSchool">학교 추가</UiButton>
                     </div>
                     <p class="field__hint">
-                        순회 교사는 둘 이상을 맡습니다. 고른 학교에 아래 값과 맡은 것이 붙습니다
+                        순회 교사는 둘 이상을 등록합니다. 선택한 학교에 아래 설정과 맡은 것이 속합니다
                     </p>
                 </div>
 
                 <!-- 첫 실행의 정상 상태다. 빈 칸만 늘어놓으면 무엇을 고치는지 알 수 없다. -->
                 <p v-if="!school.school" class="pane__empty">
                     <b>아직 없습니다.</b>
-                    위에 학교 이름을 적어 만들면 최대 교시와 서류 제출 기한을 여기서 정합니다.
+                    위에 이름을 적어 학교를 만들면 최대 교시와 제출 기한을 설정할 수 있습니다.
                 </p>
 
                 <template v-else>
@@ -500,7 +506,7 @@ onMounted(async () => {
                             <span class="field__unit">일</span>
                         </div>
                         <p class="field__hint">
-                            결석일로부터 셉니다. 미제출자 명단의 마감이 이 값으로 계산됩니다
+                            결석일부터 셉니다. 미제출자 명단의 마감일이 이 값으로 계산됩니다
                         </p>
                     </div>
                 </template>
@@ -531,7 +537,7 @@ onMounted(async () => {
                         <span class="field__unit">반</span>
                         <UiButton variant="primary" @click="addHomeroom">추가</UiButton>
                     </div>
-                    <p class="field__hint">이름은 3학년 6반처럼 짓습니다</p>
+                    <p class="field__hint">이름은 3학년 6반처럼 자동으로 짓습니다</p>
                 </div>
 
                 <div class="mine mine--subject">
@@ -556,14 +562,12 @@ onMounted(async () => {
                         <UiButton variant="primary" @click="addSubject">추가</UiButton>
                     </div>
                     <p class="field__hint">
-                        반이 섞입니다 — 선택과목은 1반부터 n반까지 모이므로 학년 · 반을 묻지 않습니다.
-                        대신 명렬표 파일에 학년 · 반 열이 있어야 합니다
+                        반이 섞입니다. 선택과목은 여러 반에서 모이므로 학년 · 반을 묻지 않고,
+                        명렬표 파일의 학년 · 반 열로 학생을 구별합니다
                     </p>
                 </div>
 
-                <p class="pane__note">
-                    하나도 등록하지 않으면 완료로 갈 수 없습니다. 담임만, 교과만 맡아도 됩니다.
-                </p>
+                <p class="pane__note">하나도 등록하지 않으면 완료로 넘어갈 수 없습니다.</p>
             </div>
 
             <!-- 5 완료 ─ 등록한 것을 요약한다 -->
@@ -616,7 +620,7 @@ onMounted(async () => {
                 </dl>
                 <p class="pane__note">
                     명렬표는 학기 중에도 다시 가져올 수 있습니다. 명단에서 빠진 번호는 지우지 않고
-                    나간 날만 적습니다 — 지난 출결은 그대로 남습니다.
+                    나간 날짜만 기록하므로, 지난 출결은 그대로 남습니다.
                 </p>
             </div>
         </section>
@@ -654,7 +658,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* 가운데로 모은 한 단. 온보딩은 훑는 화면이 아니라 한 번에 하나를 정하는 화면이라,
+/* 가운데로 모은 한 단. 온보딩은 훑는 화면이 아니라 한 번에 하나를 설정하는 화면이라,
  * 화면 폭을 다 쓰면 눈이 좌우로 오간다. */
 .wiz {
     display: flex;
@@ -761,7 +765,7 @@ onMounted(async () => {
 }
 
 /* 라벨 · 입력 · 설명 한 덩어리. 설정 화면의 라벨/값 두 칸과 달리 세로로 쌓는다 —
- * 온보딩은 한 번에 하나만 정하므로 좌우로 나눌 이유가 없다. */
+ * 온보딩은 한 번에 하나만 설정하므로 좌우로 나눌 이유가 없다. */
 .field__group {
     display: flex;
     flex-direction: column;
@@ -824,32 +828,23 @@ onMounted(async () => {
     color: var(--c-danger);
 }
 
+/* 이름표와 설명 한 쌍. 번호를 쓰지 않는 이유는 위 단계 표시가 이미 숫자를
+ * 쓰고 있어서다 — 뜻이 다른 두 숫자가 같은 모양으로 나오면 서로를 가리킨다고 읽힌다. */
 .intro {
-    display: flex;
-    flex-direction: column;
-    gap: var(--s-lg);
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    gap: var(--s-xl) var(--s-2xl);
     margin: 0;
-    padding: 0;
-    list-style: none;
 }
 
-.intro__item {
-    display: grid;
-    grid-template-columns: 28px 1fr;
-    gap: var(--s-lg);
-    align-items: start;
-    color: var(--c-ink-2);
-}
-
-.intro__no {
-    display: grid;
-    place-items: center;
-    width: 28px;
-    height: 28px;
-    border-radius: var(--r-full);
-    background: var(--c-accent-soft);
-    color: var(--c-accent);
+.intro__name {
     font-weight: 700;
+    color: var(--c-accent);
+}
+
+.intro__line {
+    margin: 0;
+    color: var(--c-ink-2);
 }
 
 /* 맡은 것 한 줄. 이름 · 학교 이름표 · 인원 · 단추. 학교가 하나면 두 번째 칸은

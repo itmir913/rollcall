@@ -100,14 +100,14 @@ describe('첫 실행 — 단계 오가기', () => {
         const wrapper = await render()
 
         expect(steps(wrapper)).toHaveLength(5)
-        expect(wrapper.text()).toContain('여기서 하는 일')
+        expect(wrapper.text()).toContain('정할 것은 세 가지입니다')
 
         await goStep(wrapper, 3)
         expect(wrapper.text()).toContain('최대 교시')
-        expect(wrapper.text()).not.toContain('여기서 하는 일')
+        expect(wrapper.text()).not.toContain('정할 것은 세 가지입니다')
 
         await goStep(wrapper, 1)
-        expect(wrapper.text()).toContain('여기서 하는 일')
+        expect(wrapper.text()).toContain('정할 것은 세 가지입니다')
     })
 
     it('지난 단계는 체크로 표시한다', async () => {
