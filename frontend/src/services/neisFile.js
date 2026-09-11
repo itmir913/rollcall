@@ -31,9 +31,19 @@
  */
 import ExcelJS from 'exceljs'
 import * as XLSX from 'xlsx'
-import {matchNeisColumn} from '../data/columnAliases'
 import {CLOSING, HOMEROOM} from './slots'
 import {spanTextOf} from './phrase'
+// **서식은 데이터다.** 열 이름 · 정규식은 `data/neisFormats.json`에 있고 이 모듈은
+// 그것을 읽는 통로만 부른다. 나이스가 서식을 바꾸면 JSON 한 장만 갈아 끼운다.
+import {
+    captionCellText,
+    classInCaption,
+    dateInText,
+    looksLikePeriod,
+    matchNeisColumn,
+    neisSlotToken,
+    splitSlotText as splitBySeparator,
+} from './neisFormat'
 
 const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04]
 
@@ -48,15 +58,8 @@ export function toIso(value) {
         const pad = (n) => String(n).padStart(2, '0')
         return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`
     }
-    const text = String(value ?? '').trim()
-    const dotted = text.match(/(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})/)
-    if (dotted) {
-        const [, y, m, d] = dotted
-        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
-    }
-    const packed = text.match(/^(\d{4})(\d{2})(\d{2})$/)
-    if (packed) return `${packed[1]}-${packed[2]}-${packed[3]}`
-    return null
+    // 날짜 표기는 **서식이 정한다.** 나이스가 표기를 바꾸면 JSON 한 줄이 바뀐다.
+    return dateInText(value)
 }
 
 /**
@@ -68,17 +71,13 @@ export function toIso(value) {
  * `unsupportedSlotText`가 이유를 붙여 교사에게 알린다.
  */
 export function slotTokenOf(text) {
-    const s = String(text ?? '').replace(/\s/g, '')
-    if (s === HOMEROOM) return HOMEROOM
-    if (s === CLOSING) return CLOSING
-    const m = s.match(/^(\d{1,2})교시$/)
-    return m && Number(m[1]) >= 1 ? String(Number(m[1])) : null
+    return neisSlotToken(text, {homeroom: HOMEROOM, closing: CLOSING})
 }
 
 /** 교시 표기이긴 한데 이 앱의 하루에 자리가 없는 것(`0교시`). 아니면 null. */
 export function unsupportedSlotText(text) {
     const s = String(text ?? '').replace(/\s/g, '')
-    return /^\d{1,2}교시$/.test(s) && slotTokenOf(s) === null ? s : null
+    return looksLikePeriod(s) && slotTokenOf(s) === null ? s : null
 }
 
 /** `조회,1교시,2교시,종례,` → `['조회','1','2','종례']`. 꼬리 쉼표는 나이스가 늘 붙인다. */
@@ -96,7 +95,7 @@ export function unsupportedSlotsIn(text) {
 }
 
 function splitSlotText(text) {
-    return String(text ?? '').split(/[,·]/)
+    return splitBySeparator(text)
 }
 
 /**
@@ -234,14 +233,14 @@ export function mapNeisColumns(row) {
  */
 export function captionOf(row) {
     for (const cell of row) {
-        const text = String(cell ?? '').trim()
-        if (!text.startsWith('※')) continue
-        const cls = text.match(/(\d+)\s*학년\s*(\d+)\s*반/)
+        const text = captionCellText(cell)
+        if (text === null) continue
+        const cls = classInCaption(text)
         const date = toIso(text)
         if (!cls && !date) continue
         return {
-            grade: cls ? Number(cls[1]) : null,
-            classNo: cls ? Number(cls[2]) : null,
+            grade: cls ? cls.grade : null,
+            classNo: cls ? cls.classNo : null,
             date,
         }
     }

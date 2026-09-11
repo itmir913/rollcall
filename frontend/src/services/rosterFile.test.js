@@ -2,6 +2,8 @@ import {describe, expect, it} from 'vitest'
 import {Workbook} from 'exceljs'
 import * as XLSX from 'xlsx'
 import {
+    buildRosterWorkbook,
+    rosterRowsOf,
     buildSampleWorkbook,
     bufferToBase64,
     cellText,
@@ -522,5 +524,47 @@ describe('샘플 양식', () => {
         expect(new Set(seats).size).toBeGreaterThan(1)
         const numbers = SAMPLE_ROWS.map(([, , number]) => number)
         expect(new Set(numbers).size).toBeLessThan(numbers.length)
+    })
+})
+
+describe('자체 양식 — 내보낸 것을 그대로 다시 읽는다', () => {
+    /**
+     * **이 양식이 바닥이라는 주장의 증거다.** 나이스 엑셀 가져오기는 그 위에 얹는
+     * 어댑터이고, 나이스가 서식을 바꿔도 이 왕복은 그대로여야 한다. 내보낸 파일을
+     * 자기가 못 읽으면 교사의 명단이 이 앱 안에 갇힌다.
+     */
+    const STUDENTS = [
+        {grade: 3, classNo: 1, number: 4, name: '김하늘'},
+        {grade: 3, classNo: 6, number: 4, name: '박서연'},
+        {grade: 3, classNo: 6, number: 11, name: '이도윤'},
+    ]
+
+    it('학적 자리와 이름이 한 글자도 달라지지 않는다', async () => {
+        const bytes = await buildRosterWorkbook(rosterRowsOf(STUDENTS))
+        const {entries, skipped, missing} = await readRosterFile(fileOf('내보낸.xlsx', bytes))
+
+        expect(skipped).toEqual([])
+        // 학년 · 반이 모두 실려 있어야 교과 강좌에도 그대로 들어간다.
+        expect(missing).toEqual([])
+        expect(entries.map(({grade, classNo, number, name}) => ({grade, classNo, number, name})))
+            .toEqual(STUDENTS)
+    })
+
+    it('같은 번호가 두 반에 있어도 섞이지 않는다', async () => {
+        const bytes = await buildRosterWorkbook(rosterRowsOf(STUDENTS))
+        const {entries} = await readRosterFile(fileOf('내보낸.xlsx', bytes))
+
+        const 사번 = entries.filter((e) => e.number === 4)
+        expect(사번).toHaveLength(2)
+        expect(사번.map((e) => e.classNo)).toEqual([1, 6])
+    })
+
+    it('양식 내려받기와 내보내기가 같은 머리글을 쓴다', async () => {
+        // 갈라지면 내보낸 파일을 자기가 못 읽는다.
+        const sample = await readRosterFile(fileOf('양식.xlsx', await buildSampleWorkbook()))
+        const mine = await readRosterFile(fileOf('내보낸.xlsx',
+            await buildRosterWorkbook(rosterRowsOf(STUDENTS))))
+        expect(mine.columns).toEqual(sample.columns)
+        expect(mine.headerLine).toBe(sample.headerLine)
     })
 })

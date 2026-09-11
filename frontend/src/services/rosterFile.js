@@ -417,15 +417,34 @@ export const SAMPLE_ROWS = [
     [3, 6, 11, '박민수'],
 ]
 
-/** 샘플 명렬표를 xlsx 바이트로 만든다. 저장은 호출한 쪽이 한다. */
-export async function buildSampleWorkbook() {
+/**
+ * 명단을 **자체 양식** xlsx 바이트로 만든다. 저장은 호출한 쪽이 한다.
+ *
+ * **이 양식이 바닥이다.** 나이스 엑셀 가져오기는 그 위에 얹는 어댑터이고, 이 앱이
+ * 언제나 읽고 쓸 수 있는 것은 이 양식 하나다. 그래서 내보낸 파일은 `readRosterFile`이
+ * 그대로 다시 읽는다 — 학교를 옮기든 컴퓨터를 바꾸든 명단은 이 파일로 따라간다.
+ *
+ * 머리글을 `SAMPLE_HEADERS` 하나에서 가져오는 이유가 그것이다. 내보내기와 양식
+ * 내려받기가 각각 머리글을 적으면 한쪽만 고쳐져 **내보낸 파일을 자기가 못 읽는다.**
+ */
+export async function buildRosterWorkbook(rows) {
     const workbook = new Workbook()
     const sheet = workbook.addWorksheet('명렬표')
     sheet.addRow(SAMPLE_HEADERS)
-    SAMPLE_ROWS.forEach((row) => sheet.addRow(row))
+    rows.forEach((row) => sheet.addRow(row))
     sheet.getRow(1).font = {bold: true}
     sheet.columns = SAMPLE_HEADERS.map(() => ({width: 12}))
     return await workbook.xlsx.writeBuffer()
+}
+
+/** 학생 목록을 자체 양식의 줄로. `StudentItem`이 들고 오는 학적 자리를 그대로 적는다. */
+export function rosterRowsOf(students) {
+    return (students ?? []).map((s) => [s.grade, s.classNo, s.number, s.name])
+}
+
+/** 샘플 명렬표를 xlsx 바이트로 만든다. 내보내기와 **같은 양식**이다. */
+export async function buildSampleWorkbook() {
+    return await buildRosterWorkbook(SAMPLE_ROWS)
 }
 
 /** Rust의 `write_bytes_file`이 base64를 받는다. 큰 파일에서도 스택이 터지지 않게 끊어 넘긴다. */

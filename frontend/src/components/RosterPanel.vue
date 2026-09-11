@@ -25,7 +25,12 @@ import {save} from '@tauri-apps/plugin-dialog'
 import {useAppStore} from '../stores/app'
 import {useDownloadStore} from '../stores/download'
 import {useRosterStore} from '../stores/roster'
-import {bufferToBase64, buildSampleWorkbook} from '../services/rosterFile'
+import {
+    bufferToBase64,
+    buildRosterWorkbook,
+    buildSampleWorkbook,
+    rosterRowsOf,
+} from '../services/rosterFile'
 import RosterImport from './RosterImport.vue'
 import {UiButton, UiLedger, UiNotice} from './ui'
 
@@ -329,6 +334,33 @@ async function downloadSample() {
 }
 
 /**
+ * 지금 명단을 **자체 양식**으로 내보낸다.
+ *
+ * 이 앱이 언제나 읽고 쓸 수 있는 것은 이 양식 하나다 — 나이스 엑셀 가져오기는 그 위에
+ * 얹는 어댑터다. 그래서 여기서 내보낸 파일은 위의 [명렬표 파일] 자리에 그대로 다시 넣을
+ * 수 있다. 학교를 옮기든 컴퓨터를 바꾸든 명단은 이 파일로 따라간다.
+ */
+async function exportRoster() {
+    error.value = ''
+    message.value = ''
+    try {
+        const name = target.value?.name ?? '명단'
+        const path = await save({
+            title: '명렬표 내보내기',
+            defaultPath: `${name} 명렬표.xlsx`,
+            filters: [{name: '엑셀 파일', extensions: ['xlsx']}],
+        })
+        // 취소는 실패가 아니다. 아무 말도 하지 않는다.
+        if (!path) return
+        const buffer = await buildRosterWorkbook(rosterRowsOf(students.value))
+        await download.saveBytes(path, bufferToBase64(buffer))
+        message.value = `명렬표를 내보냈습니다 — ${path}`
+    } catch (e) {
+        error.value = `명렬표를 내보내지 못했습니다: ${e}`
+    }
+}
+
+/**
  * 그 학급의 지금 명단을 읽는다. **늦게 온 응답은 버린다** — 학급을 옮긴 뒤에 앞의
  * 응답이 도착하면 머리글과 명단이 서로 다른 학급을 가리킨 채로 남는다.
  */
@@ -418,6 +450,9 @@ onMounted(reload)
         <UiLedger v-else-if="students.length"
                   :note="`재학 ${students.length}명`"
                   :title="target ? `${target.name} 명단` : '지금 명단'">
+            <template #actions>
+                <UiButton @click="exportRoster">명렬표 내보내기</UiButton>
+            </template>
             <div v-for="student in students" :key="student.id" class="row is-calm">
                 <span v-if="isSubject" class="row__seat num">{{ seatOf(student) }}</span>
                 <span class="row__no num">{{ student.number }}</span>
