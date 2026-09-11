@@ -1,9 +1,9 @@
 /**
  * 앱 스토어 — 범위와 부팅.
  *
- * 범위는 **학년도 → 학교 → 담당 학급 · 강좌**다. 학급을 고르면 학교가 역산되던 때에는
+ * 범위는 **학년도 → 학교 → 담당 학급 · 강좌**다. 학급을 선택하면 학교가 역산되던 때에는
  * 그 학년도에 아직 담당 학급 · 강좌가 없는 학교를 가리킬 수 없었다 — 순회 교사가 B학교를
- * 등록하고 강좌를 아직 안 넣은 하루가 그 상태다.
+ * 추가하고 강좌를 아직 안 넣은 하루가 그 상태다.
  *
  * 이 파일이 지키는 결정이 셋 더 있다.
  *   · **모드와 학급이 어긋나지 않는다.** 담임 화면에 교과 강좌가 걸리면 DB 트리거가
@@ -12,7 +12,7 @@
  *     고장이 아니다. 말없이 교과로 돌리지 않고, Welcome으로 튕기지도 않는다.
  *   · **첫 실행은 한 번뿐이다.** 담당 학급 · 강좌를 한 번이라도 만들었으면, 지금 0개여도
  *     시작하지 않은 것이 아니다 — 새 학년도로 옮긴 날과 지난해 학급을 전부 마감한
- *     날이 그 상태다. 부팅 실패도 그 모습을 하고 오므로 따로 구분한다.
+ *     날이 그 상태다. 부팅 실패도 그 모습을 하고 오므로 따로 구별한다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {createPinia, setActivePinia} from 'pinia'
@@ -159,7 +159,7 @@ describe('부팅', () => {
         expect(app.maxSlot).toBe(6)
     })
 
-    it('마지막에 본 학급을 복원한다 — 매일 아침 다시 고르지 않게 한다', async () => {
+    it('마지막에 본 학급을 복원한다 — 매일 아침 다시 선택하지 않게 한다', async () => {
         mockBoot(BOTH)
         const app = useAppStore()
 
@@ -180,7 +180,7 @@ describe('부팅', () => {
         expect(app.classId).toBe(9)
     })
 
-    it('실패는 error에 담고 다시 던진다 — 삼키면 빈 화면과 구분되지 않는다', async () => {
+    it('실패는 error에 담고 다시 던진다 — 삼키면 빈 화면과 구별되지 않는다', async () => {
         invoke.mockRejectedValue('데이터 파일이 열려 있지 않습니다.')
         const app = useAppStore()
 
@@ -232,7 +232,7 @@ describe('학년도 → 학교 → 담당 학급 · 강좌', () => {
         expect(app.subjectClasses.map((c) => c.id)).toEqual([31])
     })
 
-    it('학교를 옮기면 담당 학급 · 강좌도 그 학교 것으로 다시 고른다', async () => {
+    it('학교를 옮기면 담당 학급 · 강좌도 그 학교 것으로 다시 선택한다', async () => {
         mockBoot({
             schools: [A, B], classes: [HOMEROOM, SUBJECT, SUBJECT_B],
             config: {yearId: '2', schoolId: '1', mode: 'subject', subjectClassId: '21'},
@@ -249,17 +249,17 @@ describe('학년도 → 학교 → 담당 학급 · 강좌', () => {
         expect(savedConfig().schoolId).toBe('2')
     })
 
-    it('등록된 학교가 아니면 고를 수 없다', async () => {
+    it('등록된 학교가 아니면 선택할 수 없다', async () => {
         mockBoot(BOTH)
         const app = useAppStore()
         await app.boot()
 
         await expect(app.selectSchool(404)).rejects.toBeTruthy()
-        expect(app.error).toContain('등록된 학교가 아닙니다')
+        expect(app.error).toContain('없는 학교입니다')
         expect(app.schoolId).toBe(1)
     })
 
-    it('학년도를 바꾸면 학교부터 다시 고른다 — 2026=A학교, 2027=B·C학교', async () => {
+    it('학년도를 바꾸면 학교부터 다시 선택한다 — 2026=A학교, 2027=B·C학교', async () => {
         const NEXT = {...B, id: 5, yearId: 3, name: '새빛고등학교'}
         mockBoot({...BOTH, schools: [A, NEXT], years: [YEAR, NEXT_YEAR]})
         const app = useAppStore()
@@ -273,7 +273,7 @@ describe('학년도 → 학교 → 담당 학급 · 강좌', () => {
         expect(app.schoolId).toBe(5)
         // 그 학년도에 담당 학급 · 강좌가 아직 없다 — 학교 설정부터 처음부터 하는 자리다.
         expect(app.classes).toEqual([])
-        // **등록할 차례이지 첫 실행이 아니다.** 마법사는 사이드바가 없는 전체 화면이라,
+        // **추가할 차례이지 첫 실행이 아니다.** 마법사는 사이드바가 없는 전체 화면이라,
         // 3월에 학년도를 옮긴 교사가 거기로 튕기면 설정으로 돌아갈 길이 막힌다.
         expect(app.needsWelcome).toBe(false)
         expect(savedConfig().yearId).toBe('3')
@@ -290,7 +290,7 @@ describe('학년도 → 학교 → 담당 학급 · 강좌', () => {
         expect(made.startsOn).toBe(yearSpanOf(made.year).startsOn)
         expect(app.yearId).toBe(90)
         // 부팅은 설정을 쓰지 않는다. 아직 학교도 담당 학급 · 강좌도 읽기 전이라,
-        // 여기서 적으면 교사가 고른 적 없는 자리가 설정에 남는다.
+        // 여기서 적으면 교사가 선택한 적 없는 자리가 설정에 남는다.
         expect(argsOf('set_config')).toEqual([])
     })
 
@@ -321,17 +321,17 @@ describe('학년도 → 학교 → 담당 학급 · 강좌', () => {
         expect(invoke.mock.calls.map((c) => c[0])).not.toContain('create_year')
     })
 
-    it('등록된 학년도가 아니면 고를 수 없다', async () => {
+    it('등록된 학년도가 아니면 선택할 수 없다', async () => {
         mockBoot(BOTH)
         const app = useAppStore()
         await app.boot()
 
         await expect(app.selectYear(99)).rejects.toBeTruthy()
-        expect(app.error).toContain('등록된 학년도가 아닙니다')
+        expect(app.error).toContain('없는 학년도입니다')
         expect(app.yearId).toBe(2)
     })
 
-    it('맡지 않은 학급은 고를 수 없다', async () => {
+    it('맡지 않은 학급은 선택할 수 없다', async () => {
         mockBoot(BOTH)
         const app = useAppStore()
         await app.boot()
@@ -384,7 +384,7 @@ describe('학년도 지우기', () => {
         expect(savedConfig().schoolId).toBe('5')
     })
 
-    it('남은 학년도에 학교가 없으면 범위를 비운 채로 연다 — 등록할 차례이지 첫 실행이 아니다', async () => {
+    it('남은 학년도에 학교가 없으면 범위를 비운 채로 연다 — 추가할 차례이지 첫 실행이 아니다', async () => {
         mockBoot(TWO_YEARS)
         const app = useAppStore()
         await app.boot()
@@ -474,7 +474,7 @@ describe('담당 학급 · 강좌가 없는 모드', () => {
         expect(app.hasClassIn('subject')).toBe(true)
     })
 
-    it('담당 학급 · 강좌가 있으면 Welcome으로 튕기지 않는다 — 고른 학급이 없어도', async () => {
+    it('담당 학급 · 강좌가 있으면 Welcome으로 튕기지 않는다 — 선택한 학급이 없어도', async () => {
         mockBoot({config: {mode: 'homeroom'}, classes: [SUBJECT]})
         const app = useAppStore()
 
@@ -499,7 +499,7 @@ describe('담당 학급 · 강좌가 없는 모드', () => {
 })
 
 describe('모드와 학급', () => {
-    it('학급을 고르면 모드가 그 학급의 역할로 따라온다 — 어긋나지 않는다', async () => {
+    it('학급을 선택하면 모드가 그 학급의 역할로 따라온다 — 어긋나지 않는다', async () => {
         mockBoot(BOTH)
         const app = useAppStore()
         await app.boot()
@@ -515,7 +515,7 @@ describe('모드와 학급', () => {
      * 모드를 따로 담으면 담임 화면에 교과 강좌가 걸린 상태가 만들어지고, 그때는
      * DB 트리거가 거절할 때까지 아무도 모른다. 그래서 모드는 담지 않고 읽는다.
      */
-    it('모드는 담아 두는 값이 아니라 고른 학급이 말하는 값이다', async () => {
+    it('모드는 담아 두는 값이 아니라 선택한 학급이 말하는 값이다', async () => {
         mockBoot(BOTH)
         const app = useAppStore()
         await app.boot()
@@ -540,7 +540,7 @@ describe('모드와 학급', () => {
     })
 
     it('교과에서 다른 강좌를 보고 돌아와도 담임 학급은 그대로다', async () => {
-        // 오가며 쓰는 값이라 한쪽에서 고른 것이 다른 쪽을 덮으면 매번 다시 골라야 한다.
+        // 오가며 쓰는 값이라 한쪽에서 선택한 것이 다른 쪽을 덮으면 매번 다시 선택해야 한다.
         const 둘째강좌 = {...SUBJECT, id: 22, name: '지구과학Ⅱ'}
         mockBoot({...BOTH, classes: [HOMEROOM, SUBJECT, 둘째강좌]})
         const app = useAppStore()
@@ -563,7 +563,7 @@ describe('모드와 학급', () => {
         expect(app.mode).toBe('homeroom')
     })
 
-    it('다른 학교의 강좌를 고르면 학교도 함께 옮긴다', async () => {
+    it('다른 학교의 강좌를 선택하면 학교도 함께 옮긴다', async () => {
         // 학교가 뒤에 남으면 그 학교의 최대 교시로 다른 학교의 출결을 입력하게 된다.
         mockBoot({
             schools: [A, B], classes: [HOMEROOM, SUBJECT, SUBJECT_B],
@@ -596,7 +596,7 @@ describe('모드와 학급', () => {
         expect(saved.mode).toBe('subject')
         expect(saved.subjectClassId).toBe('21')
         // 모드마다 마지막 자리를 따로 적는다. 교과로 옮겼다고 담임 자리가 덮이면
-        // 돌아올 때마다 다시 골라야 한다.
+        // 돌아올 때마다 다시 선택해야 한다.
         expect(saved.homeroomClassId).toBe('9')
         expect(saved.schoolId).toBe('1')
     })
@@ -666,15 +666,15 @@ describe('담당 학급 · 강좌 만들기', () => {
 
         await expect(app.createClass({role: 'homeroom', name: '3학년 6반', grade: 3, classNo: 6}))
             .rejects.toBeTruthy()
-        expect(app.error).toContain('학교를 먼저 등록해야')
+        expect(app.error).toContain('학교를 먼저 추가해야')
     })
 })
 
 describe('기억해 둔 학급', () => {
-    it('고르지 않고 만든 첫 강좌도 그 모드의 자리에 기억한다', async () => {
+    it('선택하지 않고 만든 첫 강좌도 그 모드의 자리에 기억한다', async () => {
         // 설정에서 더한 강좌는 화면을 통째로 바꾸지 않는다(`select: false`). 그때 기억까지
         // 비워 두면 교과 스위치를 눌러도 학급이 없어, 사이드바는 열려 있는데 화면은
-        // "아직 수업을 등록하지 않았습니다"라고 잘못 말한다.
+        // "아직 교과 강좌를 추가하지 않았습니다"라고 잘못 말한다.
         mockBoot({config: {schoolId: '1', mode: 'homeroom', homeroomClassId: '9'}, classes: [HOMEROOM]})
         const app = useAppStore()
         await app.boot()
@@ -684,7 +684,7 @@ describe('기억해 둔 학급', () => {
         mockBoot({classes: [새강좌, HOMEROOM]})
         await app.createClass({role: 'subject', name: '지구과학Ⅰ', select: false})
 
-        // 고르는 것과 기억하는 것은 다른 일이다. 화면은 담임 그대로 남는다.
+        // 선택하는 것과 기억하는 것은 다른 일이다. 화면은 담임 그대로 남는다.
         expect(app.classId).toBe(9)
         expect(app.mode).toBe('homeroom')
         expect(app.lastClassId.subject).toBe(55)

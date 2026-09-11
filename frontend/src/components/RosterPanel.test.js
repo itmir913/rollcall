@@ -1,12 +1,12 @@
 /**
- * 명렬표 파일 열기 — **명단이 붙는 곳은 지금 고른 학급 하나다.**
+ * 명렬표 파일 열기 — **명단이 붙는 곳은 지금 선택한 학급 하나다.**
  *
  * 예전에는 파일이 말하는 학년 · 반이 그 자리를 결정했다. 학년 · 반 · 번호는 그 학생의
  * 학적이지 소속이 아니므로 지금은 `classId`가 결정하고, 파일이 가리키는 반은
  * **알리기만 한다** — 다른 반 학생이 우리 반 명단에 실리는 일이 실제로 있다.
  *
  * **열쇠는 역할이 결정한다.** 담임은 번호 하나이고, 교과 강좌는 (학년, 반, 번호) 자리
- * 전체다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 화면도 그만큼 구분된다:
+ * 전체다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 화면도 그만큼 구별된다:
  * 교과에서만 자리 칸과 반별 인원을 그리고, 학급 판단(`detectClass`)은 묻지 않는다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
@@ -78,7 +78,7 @@ function build({
     return {wrapper: mount(RosterPanel), roster}
 }
 
-/** 교과 강좌를 보고 있게 만든다. 화면이 구분되는 것은 학급의 역할 하나다. */
+/** 교과 강좌를 보고 있게 만든다. 화면이 구별되는 것은 학급의 역할 하나다. */
 function pickSubject() {
     const app = useAppStore()
     app.classes = [HOMEROOM, SUBJECT]
@@ -228,7 +228,7 @@ describe('명렬표 파일 열기 — 교과 강좌', () => {
         expect(roster.preview).not.toHaveBeenCalled()
         const stop = wrapper.find('.roster__stop')
         expect(stop.text()).toContain('학년 · 반 열이')
-        expect(stop.findAll('button').some((b) => b.text() === '명렬표 예시 저장')).toBe(true)
+        expect(stop.findAll('button').some((b) => b.text() === '예시 파일로 저장')).toBe(true)
     })
 
     it('담임은 학년 · 반 열이 없어도 그대로 간다 — 열쇠가 번호 하나다', async () => {
@@ -254,7 +254,7 @@ describe('명렬표 파일 열기 — 자리를 결정하지 못한 줄', () => 
             key: 0, grade: null, classNo: null, line: 5, number: 4,
             incomingName: '김하늘', currentName: null, studentId: 7, action: 'blocked',
             why: '학년 · 반이 비어 있어 어느 반의 4번인지 구별할 수 없습니다. '
-                + '파일에서 그 줄을 채운 뒤 다시 가져오세요.',
+                + '파일에서 그 줄을 채운 뒤 다시 열어주세요.',
         },
         {
             key: 1, grade: null, classNo: null, line: 6, number: 5,
@@ -295,14 +295,14 @@ describe('명렬표 파일 열기 — 자리를 결정하지 못한 줄', () => 
         expect(wrapper.text()).not.toContain('앉히')
     })
 
-    it('빠짐을 자동으로 표시하지 않았다는 것을 알린다', async () => {
+    it('제외를 자동으로 표시하지 않았다는 것을 알린다', async () => {
         // 읽지 못한 줄은 대조에 참여하지 못한다. 그 줄이 가리키던 학생이 대조되지 않아
-        // 명단에서 빠지면, 교사는 "한 줄만 못 넣었구나" 하고 저장을 누른다.
+        // 명단에서 제외되면, 교사는 "한 줄만 못 넣었구나" 하고 저장을 누른다.
         pickSubject()
         const {wrapper} = build({diff: blocked()})
         await load(wrapper)
 
-        expect(wrapper.text()).toContain('빠짐은 자동으로 표시하지 않았습니다')
+        expect(wrapper.text()).toContain('제외는 자동으로 표시하지 않았습니다')
     })
 
     it('학적이 있는 줄만 [명단에만 연결]로 순환한다 — 단추는 줄마다 하나다', async () => {
@@ -379,7 +379,7 @@ describe('명렬표 파일 열기 — 무엇으로 읽었는가', () => {
 })
 
 describe('명렬표 파일 열기 — 저장 결과', () => {
-    it('전출이라고 말하지 않는다 — 내 명단에서 빠지는 것과 학교를 떠나는 것은 다르다', async () => {
+    it('전출이라고 말하지 않는다 — 내 명단에서 제외되는 것과 학교를 떠나는 것은 다르다', async () => {
         const {wrapper} = build({
             diff: [{
                 key: 0, grade: 3, classNo: 6, line: null, number: 3,
@@ -388,7 +388,7 @@ describe('명렬표 파일 열기 — 저장 결과', () => {
         })
         await load(wrapper)
 
-        expect(wrapper.text()).toContain('내 명단에서 뺌')
+        expect(wrapper.text()).toContain('내 명단에서 제외')
         expect(wrapper.text()).not.toContain('전출로')
     })
 

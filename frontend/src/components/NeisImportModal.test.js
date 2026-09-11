@@ -111,7 +111,7 @@ describe('두 열', () => {
     })
 })
 
-describe('고르기', () => {
+describe('선택', () => {
     it('줄의 토글이 그 줄만 켠다', async () => {
         const {wrapper, store} = build()
         const toggle = rows('is-diff')[0].querySelector('.mark')
@@ -123,7 +123,7 @@ describe('고르기', () => {
         wrapper.unmount()
     })
 
-    it('전부 고르기가 그 갈래만 채운다', async () => {
+    it('전부 선택이 그 갈래만 채운다', async () => {
         const {wrapper, store} = build()
         const heads = [...document.querySelectorAll('.ledger__head')]
         const diffHead = heads.find((h) => h.textContent.includes('서로 다름'))

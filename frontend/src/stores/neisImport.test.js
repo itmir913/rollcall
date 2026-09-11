@@ -3,7 +3,7 @@
  *
  * 지키려는 것은 셋이다.
  *   · **일 · 월을 묻지 않는다** — 기간은 파일 안에 있으므로 넘기지 않는다.
- *   · 처음에 켜 두는 것은 **추가뿐**이다. 덮어쓰기는 교사가 스스로 고른다.
+ *   · 처음에 켜 두는 것은 **추가뿐**이다. 덮어쓰기는 교사가 스스로 선택한다.
  *   · 못 읽으면 던진다. 조용히 빈 결과를 내면 "결석 없는 달"과 구별되지 않는다.
  *
  * 학생 이름은 전부 가짜다.
@@ -80,7 +80,7 @@ describe('파일 읽기', () => {
         })
     })
 
-    it('추가만 미리 골라 둔다. 덮어쓰기는 교사가 고른다', async () => {
+    it('추가만 미리 선택해 둔다. 덮어쓰기는 교사가 선택한다', async () => {
         ready()
         const store = useNeisImportStore()
         await store.load(new Uint8Array([1]))
@@ -100,7 +100,7 @@ describe('파일 읽기', () => {
     })
 })
 
-describe('고르기', () => {
+describe('선택', () => {
     it('한 번 더 누르면 뺀다', async () => {
         ready()
         const store = useNeisImportStore()
@@ -112,7 +112,7 @@ describe('고르기', () => {
         expect(store.picked.add.has(0)).toBe(true)
     })
 
-    it('아무것도 안 골랐고 등재 표시도 껐으면 할 일이 없다', async () => {
+    it('아무것도 안 선택했고 등재 표시도 껐으면 할 일이 없다', async () => {
         ready()
         const store = useNeisImportStore()
         await store.load(new Uint8Array([1]))
@@ -133,7 +133,7 @@ describe('고르기', () => {
 })
 
 describe('적용', () => {
-    it('고른 것과 파일의 줄을 그대로 넘긴다', async () => {
+    it('선택한 것과 파일의 줄을 그대로 넘긴다', async () => {
         ready()
         const store = useNeisImportStore()
         await store.load(new Uint8Array([1]))

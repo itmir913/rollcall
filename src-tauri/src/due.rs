@@ -1,14 +1,14 @@
-//! 마감일 계산과 날짜 유틸. 순수 함수다. DB를 모른다.
+//! 기한일 계산과 날짜 유틸. 순수 함수다. DB를 모른다.
 //!
 //! 제출 기한은 학교 설정의 두 값으로 결정된다 — `due_days`(며칠)와
 //! `due_skip_offdays`(주말·휴업일을 셀 것인가).
 //!
 //! **공휴일 API를 부르지 않는다.** 앱은 서버를 쓰지 않고, 개교기념일·재량휴업일은
 //! 어차피 외부 달력에 없다. 대신 교사가 설정에서 휴업일을 직접 등록하고, 그 목록이
-//! 여기로 넘어온다. 학사일정 테이블이 아니라 **마감 계산에서 건너뛸 날짜 목록**이다.
+//! 여기로 넘어온다. 학사일정 테이블이 아니라 **기한 계산에서 건너뛸 날짜 목록**이다.
 //!
-//! 계산된 마감일은 `absence_span.doc_due`에 박아 둔다. 설정을 바꿔도 과거 기록의
-//! 마감이 소급 변경되지 않아야 하고, 교사가 개별로 고칠 수 있어야 하기 때문이다.
+//! 계산된 기한일은 `absence_span.doc_due`에 박아 둔다. 설정을 바꿔도 과거 기록의
+//! 기한이 소급 변경되지 않아야 하고, 교사가 개별로 고칠 수 있어야 하기 때문이다.
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use std::collections::HashSet;
@@ -32,10 +32,10 @@ pub fn is_off_day(d: NaiveDate, off_days: &HashSet<NaiveDate>) -> bool {
     is_weekend(d) || off_days.contains(&d)
 }
 
-/// 기준일로부터 마감일.
+/// 기준일로부터 기한일.
 ///
 /// `skip_off_days`가 true면 주말과 휴업일을 세지 않는다.
-/// `due_days == 0`이면 기준일이 곧 마감일이다 — 주말이어도 옮기지 않는다.
+/// `due_days == 0`이면 기준일이 곧 기한일이다 — 주말이어도 옮기지 않는다.
 /// 교사가 설정한 값을 프로그램이 조정하지 않는다.
 pub fn due_date(
     base: NaiveDate,
@@ -79,7 +79,7 @@ pub fn open_days_between(
     out
 }
 
-/// 마감일 기준 경과일. 음수면 아직 남았다.
+/// 기한일 기준 경과일. 음수면 아직 남았다.
 pub fn days_overdue(due: NaiveDate, today: NaiveDate) -> i64 {
     (today - due).num_days()
 }

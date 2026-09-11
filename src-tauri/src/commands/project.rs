@@ -37,7 +37,7 @@ fn db_path(app: &AppHandle) -> Result<PathBuf, String> {
 ///
 /// 마이그레이션 유무와 무관하게 매 실행마다 백업하는 것이 의도된 정책이다.
 /// 앱은 백업 파일을 스캔하지도 지우지도 않는다 — 파일명만으로는 그 파일이 앱이
-/// 만든 것인지 사용자가 보관 중인 것인지 구분할 수 없기 때문이다.
+/// 만든 것인지 사용자가 보관 중인 것인지 구별할 수 없기 때문이다.
 fn backup(path: &Path) -> Result<(), String> {
     if !path.exists() {
         return Ok(());
@@ -50,7 +50,7 @@ fn backup(path: &Path) -> Result<(), String> {
 
 /// 파일 하나를 열거나 만든다. 커넥션과 그 상태를 함께 돌려준다.
 ///
-/// `AppHandle`에서 경로를 얻는 일만 래퍼에 남긴다. 여기서 구분되는 것 — 새 파일인지,
+/// `AppHandle`에서 경로를 얻는 일만 래퍼에 남긴다. 여기서 구별되는 것 — 새 파일인지,
 /// 백업을 만들었는지, 마이그레이션이 필요한지 — 는 전부 이 함수가 결정한다.
 pub fn init_db_impl(path: &Path) -> Result<(Connection, DbStatus), String> {
     let exists = path.exists();
@@ -133,7 +133,7 @@ pub fn export_backup(db_path_state: State<DbPathState>, dest: String) -> Result<
 }
 
 /// 아직 파일을 열지 않았으면 `None`이다. 오류가 아니다 — 설정 화면이 첫 실행에서도
-/// 열리므로, 경로 칸이 비어 있는 것과 읽기 실패는 구분해야 한다.
+/// 열리므로, 경로 칸이 비어 있는 것과 읽기 실패는 구별해야 한다.
 pub fn get_db_path_impl(path: Option<&Path>) -> Option<String> {
     path.map(|p| p.to_string_lossy().to_string())
 }

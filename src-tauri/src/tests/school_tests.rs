@@ -30,7 +30,7 @@ fn new_rule(name: &str, tag: Option<i64>, period: &str, limit_n: i64, unit: &str
 }
 
 /// 마감된 행이 남아 있는지 직접 확인한다. 커맨드는 유효한 것만 돌려주므로
-/// 목록만 봐서는 "지웠다"와 "마감했다"를 구분할 수 없다.
+/// 목록만 봐서는 "지웠다"와 "마감했다"를 구별할 수 없다.
 fn tag_valid_to(conn: &rusqlite::Connection, tag_id: i64) -> Option<String> {
     conn.query_row(
         "SELECT valid_to FROM span_tag WHERE id = ?1",
@@ -91,7 +91,7 @@ fn a_school_belongs_to_one_academic_year() {
 }
 
 /// 같은 학년도에 같은 이름의 학교는 하나다. **내린 학교는 세지 않는다** —
-/// 잘못 만든 학교를 내리고 같은 이름으로 다시 만드는 일이 있다.
+/// 잘못 만든 학교를 마감하고 같은 이름으로 다시 만드는 일이 있다.
 #[test]
 fn one_year_holds_one_school_of_each_name() {
     let conn = setup_test_db();
@@ -152,8 +152,8 @@ fn updating_a_missing_school_is_reported_instead_of_passing_silently() {
 
 #[test]
 fn every_school_setting_survives_a_round_trip() {
-    // 제출 기한과 주말 건너뛰기는 마감일 계산으로 곧장 들어간다. 두 값이 서로 바뀐 채
-    // 저장돼도 화면에서는 한동안 티가 나지 않고, 그때는 이미 마감일이 박힌 기록이 쌓인 뒤다.
+    // 제출 기한과 주말 건너뛰기는 기한일 계산으로 곧장 들어간다. 두 값이 서로 바뀐 채
+    // 저장돼도 화면에서는 한동안 티가 나지 않고, 그때는 이미 기한일이 박힌 기록이 쌓인 뒤다.
     // SQLite는 열의 형을 강제하지 않으므로 자리가 어긋나도 오류가 나지 않는다.
     let conn = setup_test_db();
     let id = school_id(&conn);
@@ -271,7 +271,7 @@ fn a_retired_school_leaves_the_list_but_can_still_be_read() {
     // 지운 것이 아니다 — 그 학교의 기록이 그대로 남아야 한다.
     assert_eq!(count(&conn, "school"), 1);
 
-    // 두 번 내리지 않는다.
+    // 두 번 마감하지 않는다.
     assert!(retire_school_impl(&conn, id)
         .unwrap_err()
         .contains("유효한 학교를 찾을 수 없습니다"));

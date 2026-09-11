@@ -2,7 +2,7 @@
  * 대화상자.
  *
  * 가장 중요한 것은 **집중 등재가 ESC와 바깥 클릭으로 닫히지 않는다**는 것이다.
- * 나이스 저장이 실패하는 날이 있어, 저장인지 취소인지 반드시 고르게 해야 한다.
+ * 나이스 저장이 실패하는 날이 있어, 저장인지 취소인지 반드시 선택하게 해야 한다.
  */
 import {describe, expect, it} from 'vitest'
 import {mount} from '@vue/test-utils'

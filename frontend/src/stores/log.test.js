@@ -41,7 +41,7 @@ describe('fetchBetween', () => {
         })
     })
 
-    it('달을 고르지 않았어도 부를 수 있다 — 검증은 출결 기록을 거치지 않는다', async () => {
+    it('달을 선택하지 않았어도 부를 수 있다 — 검증은 출결 기록을 거치지 않는다', async () => {
         ready()
         const log = useLogStore()
         expect(log.month).toBeNull()

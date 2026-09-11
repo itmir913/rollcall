@@ -5,7 +5,7 @@
 //! 이 파일이 지키는 결정은 셋이다.
 //!   · **학생은 학급에 종속되지 않는다.** 학년 · 반 · 번호는 학적이고, 소속은 따로 있다.
 //!   · **담임 명렬표가 반으로 걸러지지 않는다.** 반이 다른 학생을 막지 않는다.
-//!   · **두 모드는 한 표에 있되 role로 구분된다.** 이동 · 설정을 두 벌 만들지 않으려는 것이다.
+//!   · **두 모드는 한 표에 있되 role로 구별된다.** 이동 · 설정을 두 벌 만들지 않으려는 것이다.
 
 use super::*;
 use crate::commands::class::*;
@@ -148,7 +148,7 @@ fn 학급을_지우면_소속도_함께_사라진다() {
 // ── 담당 학급 · 강좌 ──────────────────────────────────────────
 
 #[test]
-fn 두_모드는_한_표에_있되_role로_구분된다() {
+fn 두_모드는_한_표에_있되_role로_구별된다() {
     let conn = setup_test_db();
     let s = school_id(&conn);
     insert_class(&conn, s, "homeroom", "3학년 6반", Some(3), Some(6));
@@ -204,7 +204,7 @@ fn 이름_없는_학급은_들어가지_않는다() {
          VALUES (?1, 'subject', '', '2026-03-02')",
         rusqlite::params![s],
     );
-    assert!(bad.is_err(), "화면에 적을 이름이 없으면 고를 수도 없다");
+    assert!(bad.is_err(), "화면에 적을 이름이 없으면 선택할 수도 없다");
 }
 
 // ── 담당 학급 · 강좌를 더하고 고치고 마감한다 ─────────────────
@@ -245,7 +245,7 @@ fn 담당_학급과_강좌는_역할로_걸러_온다() {
 #[test]
 fn 담임_학급은_학년과_반이_있어야_들어간다() {
     // 그 둘이 명렬표가 학생을 배치할 학적 자리다. 나중에 채우게 두면 명렬표를
-    // 가져오는 자리에서야 빠진 것을 알게 된다.
+    // 여는 자리에서야 빠진 것을 알게 된다.
     let conn = setup_test_db();
     let s = school_id(&conn);
 
@@ -374,7 +374,7 @@ fn 학급을_마감해도_그_학급의_출결은_남는다() {
 }
 
 #[test]
-fn 마감일은_ISO여야_한다() {
+fn 기한일은_ISO여야_한다() {
     let conn = setup_test_db();
     let s = school_id(&conn);
     let class = insert_class(&conn, s, "homeroom", "3학년 6반", Some(3), Some(6));
@@ -628,12 +628,12 @@ fn 담당_학급과_강좌에_명단_인원이_함께_온다() {
     let conn = setup_test_db();
     let s = school_id(&conn);
     let class = insert_class(&conn, s, "subject", "인공지능기초A", None, None);
-    // 반이 섞인 강좌. 이름만으로는 어느 쪽인지 구분하지 못할 때 이 숫자가 구분한다.
+    // 반이 섞인 강좌. 이름만으로는 어느 쪽인지 구별하지 못할 때 이 숫자가 구별한다.
     for (grade, class_no, number) in [(3, 1, 4), (3, 6, 11), (2, 3, 20)] {
         let student = insert_student_at(&conn, s, grade, class_no, number, "학생");
         join_class(&conn, class, student);
     }
-    // 명단에서 빠진 학생은 세지 않는다. 줄은 남지만 지금 명단은 아니다.
+    // 명단에서 제외한 학생은 세지 않는다. 줄은 남지만 지금 명단은 아니다.
     let gone = insert_student_at(&conn, s, 3, 2, 7, "학생");
     join_class(&conn, class, gone);
     conn.execute(

@@ -3,10 +3,10 @@
  *
  * 여기서 고정하는 것은 다섯이다.
  *   1. 단계를 눌러 앞뒤로 오간다. 되돌아갈 길이 없으면 잘못 적은 교사가 앱을 껐다 켠다.
- *   2. 담당 학급 · 강좌를 하나도 등록하지 않으면 완료로 갈 수 없다. **단추는 잠글 뿐 숨기지 않는다.**
+ *   2. 담당 학급 · 강좌를 하나도 추가하지 않으면 완료로 갈 수 없다. **단추는 잠글 뿐 숨기지 않는다.**
  *   3. 교과 강좌에는 학년 · 반 칸이 없다. 선택과목은 반이 섞여 가리킬 반이 없다.
- *   4. 담임과 교과가 **같은 명렬표 화면**을 쓴다. 다만 교과는 그 강좌를 고르지 않는다 —
- *      고르면 모드가 저장되어 다음 실행이 교과 모드로 열린다.
+ *   4. 담임과 교과가 **같은 명렬표 화면**을 쓴다. 다만 교과는 그 강좌를 선택하지 않는다 —
+ *      선택하면 모드가 저장되어 다음 실행이 교과 모드로 열린다.
  *   5. 완료 단계의 요약은 **실제로 등록한 것**을 말한다. 고정 문구를 그리면 아무도 모른다.
  *   6. 학년도 삭제는 **학교를 내리는 것과 다른 말을 쓴다.** 학교는 행이 남지만 학년도는
  *      기록까지 지운다. 무엇이 함께 사라지는지 수로 먼저 보여주고 한 번 묻는다.
@@ -149,7 +149,7 @@ describe('첫 실행 — 단계 오가기', () => {
 })
 
 describe('첫 실행 — 학년도와 학교', () => {
-    it('학년도를 고르면 스토어 액션을 거친다 — 상태에 직접 대입하지 않는다', async () => {
+    it('학년도를 선택하면 스토어 액션을 거친다 — 상태에 직접 대입하지 않는다', async () => {
         const app = useAppStore()
         app.years = [YEAR_2026, YEAR_2027]
         const select = vi.spyOn(app, 'selectYear').mockResolvedValue()
@@ -166,7 +166,7 @@ describe('첫 실행 — 학년도와 학교', () => {
         expect(app.yearId).toBe(2)
     })
 
-    it('학년도를 직접 만든다 — 고르기만 되면 2월의 교사가 앱을 쓸 수 없다', async () => {
+    it('학년도를 직접 만든다 — 선택만 되면 2월의 교사가 앱을 쓸 수 없다', async () => {
         // 2월에 다음 학년도를 미리 준비하거나 지난해 기록을 옮겨 적는 교사가 있다.
         const app = useAppStore()
         const create = vi.spyOn(app, 'createYear').mockResolvedValue(9)
@@ -175,7 +175,7 @@ describe('첫 실행 — 학년도와 학교', () => {
         await goStep(wrapper, 2)
 
         await wrapper.find('input[placeholder="2027"]').setValue('2027')
-        await wrapper.findAll('button').find((b) => b.text() === '학년도 만들기').trigger('click')
+        await wrapper.findAll('button').find((b) => b.text() === '학년도 추가').trigger('click')
         await flushPromises()
 
         // 시작일 · 종료일은 묻지 않는다. 3월 규칙으로 채운다.
@@ -190,14 +190,14 @@ describe('첫 실행 — 학년도와 학교', () => {
         await goStep(wrapper, 2)
 
         await wrapper.find('input[placeholder="2027"]').setValue('19')
-        await wrapper.findAll('button').find((b) => b.text() === '학년도 만들기').trigger('click')
+        await wrapper.findAll('button').find((b) => b.text() === '학년도 추가').trigger('click')
         await flushPromises()
 
         expect(create).not.toHaveBeenCalled()
         expect(wrapper.text()).toContain('1900 이상')
     })
 
-    it('학교를 목록에서 내린다 — 한 번 묻고, 지운다고 말하지 않는다', async () => {
+    it('학교를 마감한다 — 한 번 묻고, 지운다고 말하지 않는다', async () => {
         // 되돌리기 어려운 것은 삭제뿐이라 거기에만 한 번 묻는다. 그런데 학교는
         // 지난 기록이 가리키므로 행은 남고 목록에서만 내려간다 — 문구가 그래야 한다.
         const app = useAppStore()
@@ -216,17 +216,17 @@ describe('첫 실행 — 학년도와 학교', () => {
 
         // UiModal은 body로 Teleport한다. 화면 나무가 아니라 문서에서 찾는다.
         const modal = document.querySelector('.modal')
-        expect(modal.textContent).toContain('목록에서 내립니다')
+        expect(modal.textContent).toContain('마감합니다')
         expect(modal.textContent).toContain('푸른중학교')
         expect(modal.textContent).not.toContain('지웁니다')
 
-        modalButton('내리기').click()
+        modalButton('마감').click()
         await flushPromises()
 
         expect(retire).toHaveBeenCalledWith(2)
     })
 
-    it('내리기를 취소하면 아무것도 하지 않는다', async () => {
+    it('마감을 취소하면 아무것도 하지 않는다', async () => {
         const app = useAppStore()
         app.schools = [{id: 1, name: '한빛고등학교'}]
         const retire = vi.spyOn(useSchoolStore(), 'retireSchool').mockResolvedValue()
@@ -286,7 +286,7 @@ describe('첫 실행 — 학년도와 학교', () => {
         expect(wrapper.text()).toContain('학교 이름을 적어주세요.')
     })
 
-    it('학교를 고르면 그 학교의 설정을 읽는다', async () => {
+    it('학교를 선택하면 그 학교의 설정을 읽는다', async () => {
         const app = useAppStore()
         app.schools = [
             {id: 1, name: '한빛고등학교', maxSlot: 7, dueDays: 7, dueSkipOffdays: true},
@@ -369,7 +369,7 @@ describe('첫 실행 — 학년도 지우기', () => {
         const modal = document.querySelector('.modal')
         expect(modal.textContent).toContain('2027학년도')
         expect(modal.textContent).toContain('0개')
-        expect(modal.textContent).toContain('아직 아무것도 등록하지 않은 학년도입니다')
+        expect(modal.textContent).toContain('아직 아무것도 추가하지 않은 학년도입니다')
     })
 
     it('확인을 누르면 스토어 액션을 거친다', async () => {
@@ -432,7 +432,7 @@ describe('첫 실행 — 학년도 지우기', () => {
 })
 
 describe('첫 실행 — 담당 학급 · 강좌', () => {
-    it('하나도 등록하지 않으면 완료로 갈 수 없다 — 잠글 뿐 숨기지 않는다', async () => {
+    it('하나도 추가하지 않으면 완료로 갈 수 없다 — 잠글 뿐 숨기지 않는다', async () => {
         const wrapper = await render()
         await goStep(wrapper, 4)
 
@@ -448,7 +448,7 @@ describe('첫 실행 — 담당 학급 · 강좌', () => {
 
         expect(acts(wrapper)[1].attributes('disabled')).toBeUndefined()
         await acts(wrapper)[1].trigger('click')
-        expect(wrapper.text()).toContain('등록한 것')
+        expect(wrapper.text()).toContain('추가한 것')
     })
 
     it('교과 강좌는 학년 · 반을 묻지 않는다 — 반이 섞이기 때문이다', async () => {
@@ -469,8 +469,8 @@ describe('첫 실행 — 담당 학급 · 강좌', () => {
         const create = vi.spyOn(app, 'createClass').mockImplementation(async ({role, select}) => {
             const cls = role === 'homeroom' ? HOMEROOM : SUBJECT
             app.classes = [...app.classes, cls]
-            // 진짜 `createClass`는 고를 때 `classId`를 함께 옮긴다. 가짜가 그것을
-            // 하지 않으면 "이미 고른 것이 있는가"를 보는 코드가 시험에서만 다르게 돈다.
+            // 진짜 `createClass`는 선택할 때 `classId`를 함께 옮긴다. 가짜가 그것을
+            // 하지 않으면 "이미 선택한 것이 있는가"를 보는 코드가 시험에서만 다르게 돈다.
             if (select) app.classId = cls.id
             return cls.id
         })
@@ -494,19 +494,19 @@ describe('첫 실행 — 담당 학급 · 강좌', () => {
 
         // **교과를 더했다고 모드가 넘어가지 않는다.** `selectClass`가 모드를 저장하므로,
         // 교과를 마지막으로 더한 교사는 다음 실행이 교과 모드로 열린다.
-        // 담임을 이미 골라 둔 뒤이므로 여기서는 고르지 않는다.
+        // 담임을 이미 선택해 둔 뒤이므로 여기서는 선택하지 않는다.
         expect(create).toHaveBeenLastCalledWith({
             role: 'subject', name: '인공지능기초A', grade: null, classNo: null, select: false,
         })
     })
 
-    it('명렬표를 열면 그 학급을 함께 고른다 — 명단이 붙는 곳이 어긋나면 안 된다', async () => {
+    it('명렬표를 열면 그 학급을 함께 선택한다 — 명단이 붙는 곳이 어긋나면 안 된다', async () => {
         const wrapper = await render([HOMEROOM, SUBJECT])
         const select = vi.spyOn(useAppStore(), 'selectClass').mockResolvedValue()
         await goStep(wrapper, 4)
 
         const open = wrapper.find('.mine--homeroom').findAll('button')
-            .find((b) => b.text() === '명렬표 넣기')
+            .find((b) => b.text() === '명렬표 열기')
         await open.trigger('click')
         await flushPromises()
 
@@ -530,7 +530,7 @@ describe('첫 실행 — 담당 학급 · 강좌', () => {
         expect(wrapper.find('.mine--subject .mine__panel').exists()).toBe(true)
     })
 
-    it('교과 명렬표를 열어도 그 강좌를 고르지는 않는다 — 모드가 저장되면 안 된다', async () => {
+    it('교과 명렬표를 열어도 그 강좌를 선택하지는 않는다 — 모드가 저장되면 안 된다', async () => {
         // selectClass는 app_config에 mode를 저장한다. 온보딩 끝에 교과 명렬표를 마지막으로
         // 만진 교사는 다음 실행이 교과 모드로 열리는데, 이 화면은 meta.bare라 그 전환이
         // 눈에 보이지도 않는다. 명단이 붙는 곳은 넘기는 classId가 이미 결정한다.
@@ -566,7 +566,7 @@ describe('첫 실행 — 완료', () => {
         const wrapper = await render([HOMEROOM])
         await goStep(wrapper, 5)
 
-        expect(wrapper.text()).toContain('등록한 교과 강좌가 없습니다')
+        expect(wrapper.text()).toContain('추가한 교과 강좌가 없습니다')
         expect(wrapper.text()).toContain('3학년 6반')
     })
 

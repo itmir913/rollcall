@@ -7,8 +7,8 @@ import {calendarYearOf} from '../services/academicYear'
  * 교과 차시 — **내 수업에 있었는가 하나만** 기록한다.
  *
  * 담임 기록과 표부터 다르다. 여기에는 구분 · 종류 · 기간 · 서류 · 나이스가 없다.
- * 수업을 시작할 때 [교시 추가]로 칸 하나를 만들고, 그 칸에서 빠진 학생만 적는다 —
- * **칸이 있다는 것이 곧 그 교시를 불렀다는 뜻이다.** 결석자 행만으로는 "빠진 사람이
+ * 수업을 시작할 때 [차시 추가]로 차시 하나를 만들고, 그 차시에 결석한 학생만 적는다 —
+ * **차시가 있다는 것이 곧 그 교시를 불렀다는 뜻이다.** 결석자 행만으로는 "결석이
  * 없는 날"과 "아직 안 부른 날"이 구별되지 않는다.
  *
  * **담임 모드에서는 아무것도 읽지 않는다.** 한쪽의 숫자가 다른 쪽 화면에 유출되면
@@ -27,9 +27,9 @@ export const useSubjectStore = defineStore('subject', {
         sessions: [],
         /** 마지막으로 읽은 강좌. 강좌를 옮기면 앞 강좌의 명단을 지운다. */
         classId: null,
-        /** 지금 선택한 차시. 그 칸의 명단만 화면에 뜬다. */
+        /** 지금 선택한 차시. 그 차시의 명단만 화면에 뜬다. */
         sessionId: null,
-        /** 그 차시의 명단 전원. 빠진 학생만 오지 않는다. */
+        /** 그 차시의 명단 전원. 결석한 학생만 오지 않는다. */
         roll: [],
         /** 수업 기록의 월 필터. */
         year: null,
@@ -39,7 +39,7 @@ export const useSubjectStore = defineStore('subject', {
     }),
 
     getters: {
-        /** 지금 보는 날짜의 차시. 기간을 넓게 읽어 두었어도 그날만 고른다. */
+        /** 지금 보는 날짜의 차시. 기간을 넓게 읽어 두었어도 그날만 선택한다. */
         daySessions: (s) => s.sessions.filter((x) => x.date === s.date),
 
         /**
@@ -67,7 +67,7 @@ export const useSubjectStore = defineStore('subject', {
         /** 지금 선택한 차시 한 행. */
         current: (s) => s.sessions.find((x) => x.id === s.sessionId) ?? null,
 
-        /** 이 차시에 빠진 학생. 출석은 저장하지 않으므로 나머지가 곧 출석이다. */
+        /** 이 차시에 결석한 학생. 출석은 저장하지 않으므로 나머지가 곧 출석이다. */
         absentRows: (s) => s.roll.filter((r) => r.absent),
 
         /**
@@ -88,7 +88,7 @@ export const useSubjectStore = defineStore('subject', {
                 .reduce((sum, x) => sum + (x.absentCount ?? 0), 0)
         },
 
-        /** 고른 달의 첫날과 끝날. 말일은 달마다 다르므로 여기서 계산한다. */
+        /** 선택한 달의 첫날과 끝날. 말일은 달마다 다르므로 여기서 계산한다. */
         monthRange(state) {
             if (!state.year || !state.month) return null
             const pad = (n) => String(n).padStart(2, '0')
@@ -102,9 +102,9 @@ export const useSubjectStore = defineStore('subject', {
 
     actions: {
         /**
-         * 고른 차시와 그 명단을 함께 비운다. **둘은 한 쌍이다** —
-         * 차시만 비우고 명단을 남기면 화면에 아무 칸에도 속하지 않는 번호가 뜨고,
-         * 명단만 비우면 그 뒤의 입력이 보이지 않는 칸으로 들어간다.
+         * 선택한 차시와 그 명단을 함께 비운다. **둘은 한 쌍이다** —
+         * 차시만 비우고 명단을 남기면 화면에 아무 차시에도 속하지 않는 번호가 뜨고,
+         * 명단만 비우면 그 뒤의 입력이 보이지 않는 차시로 들어간다.
          */
         clearPick() {
             this.sessionId = null
@@ -112,13 +112,13 @@ export const useSubjectStore = defineStore('subject', {
         },
 
         /**
-         * 보는 날짜를 옮긴다. **날짜가 실제로 바뀌면 고른 차시와 명단을 비운다.**
+         * 보는 날짜를 옮긴다. **날짜가 실제로 바뀌면 선택한 차시와 명단을 비운다.**
          *
          * 비우지 않으면 9월 11일 차시를 열어 둔 채 9월 12일로 옮겼을 때, 번호를 누른
          * 결석이 화면에 표시된 9월 12일이 아니라 **9월 11일 차시에** 들어간다.
          * 교사는 보이지 않는 날의 기록이 바뀐 것을 확인할 방법이 없다.
          *
-         * 같은 날짜를 다시 고른 것은 옮긴 것이 아니므로 열어 둔 칸을 그대로 둔다.
+         * 같은 날짜를 다시 선택한 것은 옮긴 것이 아니므로 열어 둔 칸을 그대로 둔다.
          */
         setDate(iso) {
             if (iso === this.date) return
@@ -135,7 +135,7 @@ export const useSubjectStore = defineStore('subject', {
             await this.fetchDay()
         },
 
-        /** 달을 고른다. 1월과 2월은 학년도의 이듬해다. */
+        /** 달을 선택한다. 1월과 2월은 학년도의 이듬해다. */
         setMonth(month, academicYear) {
             this.month = month
             this.year = calendarYearOf(academicYear, month)
@@ -181,7 +181,7 @@ export const useSubjectStore = defineStore('subject', {
             return await this.fetchRange(this.date, this.date)
         },
 
-        /** 고른 달 한 달치. */
+        /** 선택한 달 한 달치. */
         async fetchMonth() {
             const range = this.monthRange
             if (!range) return []
@@ -195,11 +195,11 @@ export const useSubjectStore = defineStore('subject', {
         },
 
         /**
-         * 고른 교시들로 차시를 만든다. **연강(3 · 4교시)도 두 칸이다** —
-         * 중간에 나간 학생이 실제로 있다. 누르는 수고는 교시를 여럿 고르게 해 줄인다.
+         * 선택한 교시들로 차시를 만든다. **연강(3 · 4교시)도 두 차시다** —
+         * 중간에 나간 학생이 실제로 있다. 누르는 수고는 교시를 여럿 선택하게 해 줄인다.
          *
-         * 같은 칸이 이미 있으면 Rust가 그 id를 돌려주므로 두 번 눌러도 칸이 분리되지 않는다.
-         * 만든 뒤에는 **첫 칸 하나만** 선택한다 — 화면이 스스로 옮겨 다니면 어디를 보고
+         * 같은 차시가 이미 있으면 Rust가 그 id를 돌려주므로 두 번 눌러도 차시가 분리되지 않는다.
+         * 만든 뒤에는 **첫 차시 하나만** 선택한다 — 화면이 스스로 옮겨 다니면 어디를 보고
          * 있었는지 매번 다시 찾게 된다.
          */
         async addSessions(slots) {
@@ -226,7 +226,7 @@ export const useSubjectStore = defineStore('subject', {
             }
         },
 
-        /** 차시를 지운다. 그 칸의 결석 기록도 함께 사라진다. */
+        /** 차시를 지운다. 그 차시의 결석 기록도 함께 사라진다. */
         async removeSession(sessionId) {
             this.error = ''
             try {
@@ -251,7 +251,7 @@ export const useSubjectStore = defineStore('subject', {
             }
         },
 
-        /** 차시 하나를 선택한다. 그 칸의 명단이 뒤따라온다. */
+        /** 차시 하나를 선택한다. 그 차시의 명단이 뒤따라온다. */
         async select(sessionId) {
             this.sessionId = sessionId
             await this.fetchRoll()
@@ -277,12 +277,12 @@ export const useSubjectStore = defineStore('subject', {
          * 담임 쪽 "같은 조합을 다시 누르면 취소"와 같은 규칙이라 확인을 묻지 않는다.
          * 돌려주는 값이 **입력한 뒤의** 결석 여부다.
          *
-         * **고른 차시가 없으면 입력하지 않는다.** 화면이 명단을 그리지 않으니 닿을 일이
-         * 없어 보이지만, 닿는 순간 어느 칸에 들어갔는지 아무도 모르는 기록이 된다.
+         * **선택한 차시가 없으면 입력하지 않는다.** 화면이 명단을 그리지 않으니 닿을 일이
+         * 없어 보이지만, 닿는 순간 어느 차시에 들어갔는지 아무도 모르는 기록이 된다.
          */
         async toggle(studentId) {
             if (this.sessionId == null) {
-                this.error = '먼저 교시를 고르세요.'
+                this.error = '먼저 교시를 선택하세요.'
                 throw new Error(this.error)
             }
             this.error = ''
@@ -304,12 +304,12 @@ export const useSubjectStore = defineStore('subject', {
         },
 
         /**
-         * 빠진 학생 한 줄의 메모. **결석을 먼저 입력해야 한다** — 메모는 결석에 붙는
-         * 말이라, 빠지지 않은 학생에게 메모만 남으면 그 줄이 결석인지 아닌지 알 수 없다.
+         * 결석한 학생 한 줄의 메모. **결석을 먼저 입력해야 한다** — 메모는 결석에 붙는
+         * 말이라, 결석하지 않은 학생에게 메모만 남으면 그 줄이 결석인지 아닌지 알 수 없다.
          */
         async setAbsenceMemo(studentId, memo) {
             if (this.sessionId == null) {
-                this.error = '먼저 교시를 고르세요.'
+                this.error = '먼저 교시를 선택하세요.'
                 throw new Error(this.error)
             }
             this.error = ''

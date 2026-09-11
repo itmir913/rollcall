@@ -30,7 +30,7 @@ pub(crate) struct ClassScope {
     pub id: i64,
     pub school_id: i64,
     pub year_id: i64,
-    /// homeroom | subject. **명렬표의 열쇠가 이 값으로 구분된다** —
+    /// homeroom | subject. **명렬표의 열쇠가 이 값으로 구별된다** —
     /// 담임은 번호 하나, 교과는 학적 자리(학년 · 반 · 번호) 전체다.
     pub role: String,
     pub name: String,
@@ -41,7 +41,7 @@ pub(crate) struct ClassScope {
 /// 역할을 가리지 않는 범위. **명단은 두 모드가 함께 쓰는 개념이다.**
 ///
 /// `class_member`에는 역할이 없다 — 담임 학급이든 교과 강좌든 "누가 내 명단에 있는가"는
-/// 같은 물음이고, 교과 강좌도 명렬표를 받아야 한다. 구분되는 것은 **기록**이지 명단이 아니다.
+/// 같은 물음이고, 교과 강좌도 명렬표를 받아야 한다. 구별되는 것은 **기록**이지 명단이 아니다.
 pub(crate) fn class_scope(conn: &Connection, class_id: i64) -> Result<ClassScope, String> {
     scope_of(conn, class_id, None)
 }
@@ -291,13 +291,13 @@ const CLASS_SELECT: &str = "SELECT c.id, c.school_id, c.role, c.name, c.grade, c
                             FROM teaching_class c
                                      LEFT JOIN class_tag g ON g.id = c.group_tag_id";
 
-/// 그 학교의 담당 학급 · 강좌. `role`을 주면 담임만 · 교과만 골라 온다.
+/// 그 학교의 담당 학급 · 강좌. `role`을 주면 담임만 · 교과만 선택해 온다.
 ///
 /// **범위가 학교다.** 학년도는 학교가 들고 있으므로 학년도로 다시 거르지 않는다 —
 /// 두 곳에서 거르면 조건이 어긋났을 때 어느 쪽이 맞는지 알 수 없다.
 ///
 /// 마감된 줄(`valid_to`)은 빼고 돌려준다. 3월이 되면 지난해 줄을 마감하고 새로 넣으므로,
-/// 마감된 것까지 목록에 나오면 학급 고르개에 작년 반이 함께 뜬다.
+/// 마감된 것까지 목록에 나오면 학급 선택 목록에 작년 반이 함께 뜬다.
 pub fn get_teaching_classes_impl(
     conn: &Connection,
     school_id: i64,
@@ -377,7 +377,7 @@ fn check_role_seat(role: &str, grade: Option<i64>, class_no: Option<i64>) -> Res
     Ok(())
 }
 
-/// 이름 칸을 다듬고 비어 있으면 거절한다. 화면에 적을 이름이 없으면 고를 수도 없다.
+/// 이름 칸을 다듬고 비어 있으면 거절한다. 화면에 적을 이름이 없으면 선택할 수도 없다.
 fn check_class_name(name: &str) -> Result<&str, String> {
     let name = name.trim();
     if name.is_empty() {
@@ -404,7 +404,7 @@ fn live_class_seat(conn: &Connection, class_id: i64) -> Result<(i64, String), St
 /// 담당 학급 · 강좌 하나를 만든다.
 ///
 /// 담임 학급은 학년 · 반을 함께 받는다. 그 둘이 명렬표가 학생을 배치할 학적 자리이고,
-/// 나중에 채우게 두면 명렬표를 가져오는 자리에서야 빠진 것을 알게 된다.
+/// 나중에 채우게 두면 명렬표를 여는 자리에서야 빠진 것을 알게 된다.
 /// 교과 강좌는 반이 섞이므로 비워 둔다 — 채워 오면 거절한다.
 ///
 /// **학년도를 받지 않는다.** 학교가 이미 안다.
@@ -481,7 +481,7 @@ pub fn update_teaching_class_impl(
 /// 지난 출결이 이 학급을 가리키고 있고 `absence_span.class_id`가 `ON DELETE CASCADE`라,
 /// 행을 지우면 그 학급의 기록이 함께 사라진다. 3월에 지난해 학급을 정리하는 동작이
 /// 지난해 출결을 지우는 동작이어서는 안 된다. 마감한 학급은 `get_teaching_classes`가
-/// 빼고 돌려주므로 학급 고르개에도 나오지 않는다.
+/// 빼고 돌려주므로 학급 선택 목록에도 나오지 않는다.
 pub fn retire_teaching_class_impl(
     conn: &Connection,
     class_id: i64,

@@ -6,7 +6,7 @@
  *      없어, 거기에만 두면 2027년 3월이 와도 새 학년도로 넘어갈 방법이 없다.
  *   2. **새 학년도에 학교가 없는 것은 정상이다.** 그 사실을 화면이 말하고, 만드는 길이
  *      그 자리에 있다. 학교는 `createSchool`을 거쳐야 기본 태그 · 한도 규정이 함께 들어간다.
- *   3. **학교를 고르면 아래가 전부 그 학교의 것이다.** 순회 교사는 학교마다 다른 것을 담당한다.
+ *   3. **학교를 선택하면 아래가 전부 그 학교의 것이다.** 순회 교사는 학교마다 다른 것을 담당한다.
  *   4. **강좌는 묶음별로 모인다.** 묶음이 없는 강좌도 사라지지 않고 맨 뒤에 모인다.
  *   5. **교과 명렬표는 담임과 같은 자리다.** 잠긴 단추를 남겨 두면 두 화면이 같은 것을
  *      다르게 말한다.
@@ -104,7 +104,7 @@ beforeEach(() => {
 })
 
 describe('설정 — 학년도', () => {
-    it('학년도를 나열하고, 고르면 스토어 액션을 거친다', async () => {
+    it('학년도를 나열하고, 선택하면 스토어 액션을 거친다', async () => {
         const app = useAppStore()
         const select = vi.spyOn(app, 'selectYear').mockResolvedValue()
         const wrapper = await render()
@@ -118,7 +118,7 @@ describe('설정 — 학년도', () => {
         expect(select).toHaveBeenCalledWith(3)
     })
 
-    it('이미 보고 있는 학년도는 다시 고르지 않는다', async () => {
+    it('이미 보고 있는 학년도는 다시 선택하지 않는다', async () => {
         const select = vi.spyOn(useAppStore(), 'selectYear').mockResolvedValue()
         const wrapper = await render()
 
@@ -137,7 +137,7 @@ describe('설정 — 학년도', () => {
         // 3월에 열린다는 것을 화면이 그대로 말한다.
         expect(adding.text()).toContain('2027-03-01')
 
-        await button(adding, '만들기').trigger('click')
+        await button(adding, '추가').trigger('click')
         await flushPromises()
 
         expect(app.createYear).toHaveBeenCalledWith(2027)
@@ -159,7 +159,7 @@ describe('설정 — 학교', () => {
         const select = vi.spyOn(app, 'selectSchool').mockResolvedValue()
 
         const wrapper = await render()
-        expect(wrapper.text()).toContain('2026학년도에 등록한 학교가 없습니다')
+        expect(wrapper.text()).toContain('2026학년도에 추가한 학교가 없습니다')
         // 학교가 없으면 고칠 것도 없다. 빈 칸을 늘어놓지 않는다.
         expect(row(wrapper, '최대 교시')).toBeUndefined()
 
@@ -174,7 +174,7 @@ describe('설정 — 학교', () => {
         expect(select).toHaveBeenCalledWith(1)
     })
 
-    it('학교를 고르면 그 학교로 옮긴다', async () => {
+    it('학교를 선택하면 그 학교로 옮긴다', async () => {
         const app = useAppStore()
         app.schools = [SCHOOL, OTHER_SCHOOL]
         const select = vi.spyOn(app, 'selectSchool').mockResolvedValue()
@@ -236,7 +236,7 @@ describe('설정 — 한도 규정', () => {
         expect(button(adding(wrapper), '달')).toBeDefined()
     })
 
-    it('고른 기간을 그대로 보낸다', async () => {
+    it('선택한 기간을 그대로 보낸다', async () => {
         const create = vi.spyOn(useSchoolStore(), 'createRule').mockResolvedValue()
         const wrapper = await render()
 
@@ -321,7 +321,7 @@ describe('설정 — 담당 학급 · 강좌와 강좌 묶음', () => {
         })
     })
 
-    it('새 묶음을 그 자리에서 만들고, 만든 묶음이 곧바로 골라진다', async () => {
+    it('새 묶음을 그 자리에서 만들고, 만든 묶음이 곧바로 선택된다', async () => {
         const school = useSchoolStore()
         const create = vi.spyOn(school, 'createClassTag').mockImplementation(async (name) => {
             school.classTags = [...school.classTags, {id: 9, name, sortOrder: 1, classCount: 0}]
@@ -339,7 +339,7 @@ describe('설정 — 담당 학급 · 강좌와 강좌 묶음', () => {
         expect(button(row(wrapper, '교과 추가'), '인공지능').classes()).toContain('is-on')
     })
 
-    it('교과를 더할 때 고른 묶음이 함께 간다', async () => {
+    it('교과를 더할 때 선택한 묶음이 함께 간다', async () => {
         const create = vi.spyOn(useSchoolStore(), 'createClass').mockResolvedValue(30)
         const wrapper = await render()
 
@@ -404,6 +404,6 @@ describe('설정 — 담당 학급 · 강좌와 강좌 묶음', () => {
         expect(wrapper.text()).not.toContain('명렬표는 아직')
 
         await roster.trigger('click')
-        expect(wrapper.text()).toContain('프로그래밍A 명단에 넣습니다')
+        expect(wrapper.text()).toContain('프로그래밍A 명단에 등록합니다')
     })
 })

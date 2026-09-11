@@ -157,7 +157,7 @@ pub fn insert_class(
     conn.last_insert_rowid()
 }
 
-/// 학생을 그 명단에 넣는다. **학적과 무관하다** — 소속은 이 표가 말한다.
+/// 학생을 그 명단에 등록한다. **학적과 무관하다** — 소속은 이 표가 말한다.
 pub fn join_class(conn: &Connection, class_id: i64, student_id: i64) -> i64 {
     conn.execute(
         "INSERT INTO class_member (class_id, student_id, joined_on) VALUES (?1, ?2, '2026-03-02')",
@@ -177,7 +177,7 @@ pub fn subject(conn: &Connection, school_id: i64, name: &str) -> i64 {
     insert_class(conn, school_id, "subject", name, None, None)
 }
 
-/// 학생을 만들고 그 명단에 넣는다. 화면이 보는 상태가 이것이다 —
+/// 학생을 만들고 그 명단에 등록한다. 화면이 보는 상태가 이것이다 —
 /// `insert_student`는 학적만 만들므로 명단이 비어 있다.
 pub fn enroll(conn: &Connection, class_id: i64, school_id: i64, number: i64, name: &str) -> i64 {
     let id = insert_student(conn, school_id, number, name);

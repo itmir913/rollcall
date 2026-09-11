@@ -5,9 +5,9 @@
  * ```
  * 1 시작하기     여기서 하는 일을 세 줄로 알린다
  * 2 학년도       오늘 날짜로 채워져 있다. 직접 만들거나 지울 수도 있다
- * 3 학교         만들기 · 내리기 · 이름 · 최대 교시 · 서류 제출 기한
+ * 3 학교         추가 · 마감 · 이름 · 최대 교시 · 서류 제출 기한
  * 4 학급과 강좌   담임 학급 · 교과 강좌를 더하고 각각 명렬표를 넣는다
- * 5 완료         등록한 것을 요약하고 개요로 보낸다
+ * 5 완료         추가한 것을 요약하고 개요로 보낸다
  * ```
  *
  * 이 화면은 **첫 실행에서만** 지나간다. 매일 열자마자 바로 입력할 수 있어야 하므로
@@ -20,12 +20,12 @@
  *
  * **단계를 눌러 앞뒤로 오간다.** 앞 단계를 잠그면 학교 이름을 잘못 적은 교사가
  * 되돌아갈 길이 없어 앱을 껐다 켜게 된다. 잠그는 것은 하나뿐이다 — 담당 학급 · 강좌를
- * 하나도 등록하지 않으면 완료로 갈 수 없다. 그때도 **단추를 숨기지 않고 `disabled`로 둔다.**
+ * 하나도 추가하지 않으면 완료로 갈 수 없다. 그때도 **단추를 숨기지 않고 `disabled`로 둔다.**
  * 단추가 사라지면 화면이 움직이고, 교사는 자기가 무엇을 놓쳤는지 알 수 없다.
  *
- * **담임과 교과를 여기서는 함께 등록한다.** 화면이 분리되는 것은 등록을 마친 다음부터다 —
- * 담당 학급 · 강좌가 아직 하나도 없는 상태에서 모드를 먼저 고르게 하면, 교사는 자기가
- * 무엇을 고르는지 모르는 채 고르게 된다.
+ * **담임과 교과를 여기서는 함께 추가한다.** 화면이 분리되는 것은 추가를 마친 다음부터다 —
+ * 담당 학급 · 강좌가 아직 하나도 없는 상태에서 모드를 먼저 선택하게 하면, 교사는 자기가
+ * 무엇을 선택하는지 모르는 채 선택하게 된다.
  */
 import {computed, nextTick, onMounted, ref, watch} from 'vue'
 import {useRouter} from 'vue-router'
@@ -59,7 +59,7 @@ const LEADS = [
     '설정할 것은 세 가지입니다. 나중에 모두 수정할 수 있습니다.',
     '출결을 기록할 기준 연도입니다. 오늘 날짜로 채워 두었습니다.',
     '최대 교시와 서류 제출 기한은 학교마다 다릅니다.',
-    '담임 학급과 교과 강좌를 등록합니다. 한쪽만 맡아도 됩니다.',
+    '담임 학급과 교과 강좌를 추가합니다. 한쪽만 맡아도 됩니다.',
     '이대로 시작합니다.',
 ]
 
@@ -71,8 +71,8 @@ const LEADS = [
  */
 const INTRO = [
     ['학년도와 학교', '출결을 기록할 기준 연도와 근무하는 학교를 설정합니다.'],
-    ['학급과 강좌', '담임 학급과 교과 강좌를 등록합니다.'],
-    ['명렬표', '학급과 강좌마다 학생 명단을 파일로 가져옵니다.'],
+    ['학급과 강좌', '담임 학급과 교과 강좌를 추가합니다.'],
+    ['명렬표', '학급과 강좌마다 학생 명단을 파일에서 읽어 등록합니다.'],
 ]
 
 const step = ref(1)
@@ -85,12 +85,12 @@ const newSchoolName = ref('')
 /** 직접 만들 학년도. 비워 두면 아래 단추가 잠긴다. */
 const newYear = ref('')
 
-/** 내리려는 학교. 확인을 한 번 거친다 — 되돌리기 어려운 것은 삭제뿐이다. */
+/** 마감하려는 학교. 확인을 한 번 거친다 — 되돌리기 어려운 것은 삭제뿐이다. */
 const closingSchool = ref(null)
 
 /**
- * 지우려는 학년도. **학교를 내리는 것과 다른 동작이다** — 학교는 행이 남고 목록에서만
- * 내려가지만, 학년도는 행까지 지우고 `ON DELETE CASCADE`가 그 아래를 통째로 가져간다.
+ * 지우려는 학년도. **학교를 마감하는 것과 다른 동작이다** — 학교는 행이 남고 목록에서만
+ * 사라지지만, 학년도는 행까지 지우고 `ON DELETE CASCADE`가 그 아래를 통째로 가져간다.
  * 그래서 확인 대화상자의 문구도 따로 쓴다.
  */
 const deletingYear = ref(null)
@@ -115,7 +115,7 @@ const yearCounts = computed(() =>
     GONE.map(([key, label, unit]) => ({label, unit, n: deletingYear.value?.[key] ?? 0})))
 
 /**
- * 아직 아무것도 등록하지 않은 학년도인가.
+ * 아직 아무것도 추가하지 않은 학년도인가.
  *
  * **0이라는 사실을 그대로 말한다.** 잘못 만든 학년도를 정리하는 일이 첫 실행에서
  * 가장 흔한데, 안전하다는 것을 알리지 않으면 교사는 무엇이 사라질지 몰라 그대로 둔다.
@@ -169,7 +169,7 @@ function next() {
 }
 
 /**
- * 학년도를 고른다. **스토어 액션을 거친다** — 상태에 직접 대입하면 학교 목록도
+ * 학년도를 선택한다. **스토어 액션을 거친다** — 상태에 직접 대입하면 학교 목록도
  * 담당 학급 · 강좌 목록도 지난 학년도의 것으로 남는다. 학년도가 둘 이상이 되는 순간
  * 다음 단계가 다른 학년도의 학교를 보여주게 된다.
  */
@@ -187,7 +187,7 @@ async function pickYear(yearId) {
  * 학년도를 직접 만든다.
  *
  * **오늘 날짜로 채워 둔 값이 늘 맞지는 않는다** — 2월에 다음 학년도를 미리 준비하거나,
- * 지난해 기록을 옮겨 적는 교사가 있다. 고르기만 되면 그 교사는 앱을 쓸 수 없다.
+ * 지난해 기록을 옮겨 적는 교사가 있다. 선택만 되면 그 교사는 앱을 쓸 수 없다.
  * 시작일 · 종료일은 묻지 않는다. 학년도는 3월에 열린다는 것이 규칙이고,
  * `yearSpanOf`가 그 규칙으로 채운다.
  */
@@ -230,7 +230,7 @@ async function confirmDeleteYear() {
     }
 }
 
-/** 학교를 고른다. 아래의 최대 교시 · 제출 기한과 다음 단계의 담당 학급 · 강좌가 그 학교의 것이 된다. */
+/** 학교를 선택한다. 아래의 최대 교시 · 제출 기한과 다음 단계의 담당 학급 · 강좌가 그 학교의 것이 된다. */
 async function pickSchool(schoolId) {
     if (schoolId === app.schoolId) return
     error.value = ''
@@ -244,8 +244,8 @@ async function pickSchool(schoolId) {
 }
 
 /**
- * 학교를 목록에서 내린다. **"지웁니다"라고 말하지 않는다** — 지난 기록이 이 학교를
- * 가리키므로 행은 그대로 남고 목록에서만 내려간다. 잘못 만든 학교를 정리하는 길이
+ * 학교를 마감한다. **"지웁니다"라고 말하지 않는다** — 지난 기록이 이 학교를
+ * 가리키므로 행은 그대로 남고 목록에서만 사라진다. 잘못 만든 학교를 정리하는 길이
  * 없으면 오타 하나가 첫 화면에 영원히 남는다.
  */
 async function confirmRetireSchool() {
@@ -355,13 +355,13 @@ async function add(payload) {
     // 담당 학급 · 강좌는 학교에 소속된다. 학교 없이 만들면 커맨드가 거절하는데, 그 문구는
     // 앞 단계로 돌아가라는 말을 하지 않는다.
     if (app.schoolId == null) {
-        error.value = '학교를 먼저 만들어 주세요. 앞 단계에서 이름을 적으면 됩니다.'
+        error.value = '학교를 먼저 추가해주세요. 앞 단계에서 이름을 적으면 됩니다.'
         return null
     }
     try {
         // **교과 강좌를 더했다고 모드가 넘어가지 않는다.** `selectClass`가 모드를
         // `app_config`에 저장하므로, 교과를 마지막으로 더한 교사는 다음 실행이
-        // 교과 모드로 열린다. 다만 **아직 아무것도 고르지 않았으면 고른다** —
+        // 교과 모드로 열린다. 다만 **아직 아무것도 선택하지 않았으면 선택한다** —
         // 교과만 맡은 비담임 교사에게는 그 강좌가 유일한 자리다.
         const select = payload.role === 'homeroom' || app.classId == null
         const id = await app.createClass({...payload, select})
@@ -375,13 +375,13 @@ async function add(payload) {
 }
 
 /**
- * 명렬표를 연다. **담임 학급이면 그 학급을 함께 고른다** — 명단이 붙는 곳은 지금
- * 고른 학급이라, 열린 줄과 고른 학급이 어긋나면 다른 반 명단에 들어간다.
+ * 명렬표를 연다. **담임 학급이면 그 학급을 함께 선택한다** — 명단이 붙는 곳은 지금
+ * 선택한 학급이라, 열린 줄과 선택한 학급이 어긋나면 다른 반 명단에 들어간다.
  *
- * **교과 강좌에서는 고르지 않는다.** `selectClass`는 모드를 `app_config`에 저장하므로,
+ * **교과 강좌에서는 선택하지 않는다.** `selectClass`는 모드를 `app_config`에 저장하므로,
  * 온보딩 끝에 교과 명렬표를 마지막으로 만진 교사는 다음 실행이 교과 모드로 열린다.
  * 이 화면은 `meta.bare`라 그 전환이 눈에 보이지도 않는다. 명단이 붙는 곳은
- * `RosterPanel`에 넘기는 `classId`가 이미 결정하므로 고르지 않아도 어긋나지 않는다.
+ * `RosterPanel`에 넘기는 `classId`가 이미 결정하므로 선택하지 않아도 어긋나지 않는다.
  */
 async function toggleRoster(cls) {
     if (openId.value === cls.id) {
@@ -481,7 +481,7 @@ onMounted(async () => {
                 <div class="field__group">
                     <span class="field__label">이번 학년도</span>
                     <div class="chips">
-                        <!-- 학교와 같은 모양으로 고르기와 지우기를 한 덩어리로 둔다.
+                        <!-- 학교와 같은 모양으로 선택과 지우기를 한 덩어리로 둔다.
                              휴지통이 칩 밖에 있으면 어느 학년도를 지우는지 눈으로 연결해야 한다. -->
                         <span v-for="year in app.years" :key="year.id" class="chip">
                             <button :class="['pick', 'pick--big', app.yearId === year.id ? 'is-on' : '']"
@@ -506,12 +506,12 @@ onMounted(async () => {
                 </div>
 
                 <div class="field__group">
-                    <span class="field__label">직접 만들기</span>
+                    <span class="field__label">직접 추가</span>
                     <div class="chips">
                         <input v-model="newYear" class="field num" max="2200" min="1900"
                                placeholder="2027" type="number" @keyup.enter="addYear"/>
                         <UiButton :disabled="!String(newYear).trim()" @click="addYear">
-                            학년도 만들기
+                            학년도 추가
                         </UiButton>
                     </div>
                     <p class="field__hint">
@@ -527,19 +527,19 @@ onMounted(async () => {
                 </p>
             </div>
 
-            <!-- 3 학교 ─ 만들기 · 내리기 · 이름 · 최대 교시 · 서류 제출 기한 -->
+            <!-- 3 학교 ─ 추가 · 마감 · 이름 · 최대 교시 · 서류 제출 기한 -->
             <div v-if="step === 3" class="pane__body">
                 <div class="field__group">
                     <span class="field__label">{{ yearLabel }}의 학교</span>
                     <div class="chips">
-                        <!-- 고르기와 내리기를 한 덩어리로 둔다. 휴지통이 칩 밖에 있으면
-                             어느 학교를 내리는지 눈으로 연결해야 한다. -->
+                        <!-- 선택과 마감을 한 덩어리로 둔다. 휴지통이 칩 밖에 있으면
+                             어느 학교를 마감하는지 눈으로 연결해야 한다. -->
                         <span v-for="s in app.schools" :key="s.id" class="chip">
                             <button :class="['pick', 'pick--big', app.schoolId === s.id ? 'is-on' : '']"
                                     type="button" @click="pickSchool(s.id)">
                                 {{ s.name }}
                             </button>
-                            <button class="drop" title="이 학교를 목록에서 내립니다" type="button"
+                            <button class="drop" title="이 학교를 마감합니다" type="button"
                                     @click="closingSchool = s">
                                 <UiTrashIcon/>
                             </button>
@@ -551,14 +551,14 @@ onMounted(async () => {
                         <UiButton variant="primary" @click="addSchool">학교 추가</UiButton>
                     </div>
                     <p class="field__hint">
-                        순회 교사는 둘 이상을 등록합니다. 선택한 학교에 아래 설정과 담당 학급 · 강좌가 속합니다
+                        순회 교사는 둘 이상을 추가합니다. 선택한 학교에 아래 설정과 담당 학급 · 강좌가 속합니다
                     </p>
                 </div>
 
                 <!-- 첫 실행의 정상 상태다. 빈 칸만 나열하면 무엇을 고치는지 알 수 없다. -->
                 <p v-if="!school.school" class="pane__empty">
                     <b>아직 없습니다.</b>
-                    위에 이름을 적어 학교를 만들면 최대 교시와 제출 기한을 설정할 수 있습니다.
+                    위에 이름을 적어 학교를 추가하면 최대 교시와 제출 기한을 설정할 수 있습니다.
                 </p>
 
                 <template v-else>
@@ -588,7 +588,7 @@ onMounted(async () => {
                             <span class="field__unit">일</span>
                         </div>
                         <p class="field__hint">
-                            결석일부터 셉니다. 미제출자 명단의 마감일이 이 값으로 계산됩니다
+                            결석일부터 셉니다. 미제출자 목록의 기한일이 이 값으로 계산됩니다
                         </p>
                     </div>
                 </template>
@@ -604,7 +604,7 @@ onMounted(async () => {
                             <span class="mine__where">{{ schoolLabel(cls) }}</span>
                             <span class="mine__count">{{ rosterLabel(cls.id) }}</span>
                             <UiButton size="tight" @click="toggleRoster(cls)">
-                                {{ openId === cls.id ? '명렬표 닫기' : '명렬표 넣기' }}
+                                {{ openId === cls.id ? '명렬표 닫기' : '명렬표 열기' }}
                             </UiButton>
                         </div>
                         <div v-if="openId === cls.id" class="mine__panel">
@@ -630,7 +630,7 @@ onMounted(async () => {
                             <span class="mine__where">{{ schoolLabel(cls) }}</span>
                             <span class="mine__count">{{ rosterLabel(cls.id) }}</span>
                             <UiButton size="tight" @click="toggleRoster(cls)">
-                                {{ openId === cls.id ? '명렬표 닫기' : '명렬표 넣기' }}
+                                {{ openId === cls.id ? '명렬표 닫기' : '명렬표 열기' }}
                             </UiButton>
                         </div>
                         <div v-if="openId === cls.id" class="mine__panel">
@@ -649,12 +649,12 @@ onMounted(async () => {
                     </p>
                 </div>
 
-                <p class="pane__note">하나도 등록하지 않으면 완료로 넘어갈 수 없습니다.</p>
+                <p class="pane__note">하나도 추가하지 않으면 완료로 넘어갈 수 없습니다.</p>
             </div>
 
-            <!-- 5 완료 ─ 등록한 것을 요약한다 -->
+            <!-- 5 완료 ─ 추가한 것을 요약한다 -->
             <div v-if="step === 5" class="pane__body">
-                <h3 class="pane__sub">등록한 것</h3>
+                <h3 class="pane__sub">추가한 것</h3>
                 <dl class="sum">
                     <dt class="sum__key">학년도</dt>
                     <dd class="sum__val">
@@ -680,7 +680,7 @@ onMounted(async () => {
                             {{ cls.name }} · <span class="num">{{ counts[cls.id] ?? 0 }}</span>명
                         </span>
                         <span v-if="!app.homeroomClasses.length" class="sum__hint">
-                            등록한 담임 학급이 없습니다
+                            추가한 담임 학급이 없습니다
                         </span>
                     </dd>
 
@@ -690,18 +690,18 @@ onMounted(async () => {
                             {{ cls.name }} · <span class="num">{{ counts[cls.id] ?? 0 }}</span>명
                         </span>
                         <span v-if="!app.subjectClasses.length" class="sum__hint">
-                            등록한 교과 강좌가 없습니다
+                            추가한 교과 강좌가 없습니다
                         </span>
                     </dd>
 
-                    <dt class="sum__key">명단에 올린 학생</dt>
+                    <dt class="sum__key">명단에 등록한 학생</dt>
                     <dd class="sum__val">
                         <b class="num">{{ totalStudents }}</b>명
                         <span class="sum__hint">담임과 교과에 함께 있는 학생은 두 번 셉니다</span>
                     </dd>
                 </dl>
                 <p class="pane__note">
-                    명렬표는 학기 중에도 다시 가져올 수 있습니다. 명단에서 빠진 번호는 지우지 않고
+                    명렬표는 학기 중에도 다시 열 수 있습니다. 명단에서 제외한 번호는 지우지 않고
                     나간 날짜만 기록하므로, 지난 출결은 그대로 남습니다.
                 </p>
             </div>
@@ -716,7 +716,7 @@ onMounted(async () => {
             </UiButton>
         </div>
 
-        <UiModal :open="Boolean(closingSchool)" title="이 학교를 목록에서 내립니다"
+        <UiModal :open="Boolean(closingSchool)" title="이 학교를 마감합니다"
                  @close="closingSchool = null">
             <div v-if="closingSchool" class="modal__what">
                 <span class="modal__key">학교</span>
@@ -725,19 +725,19 @@ onMounted(async () => {
                 <span class="modal__val">{{ yearLabel }}</span>
             </div>
             <p class="modal__note">
-                지우지 않고 목록에서만 내립니다. 이 학교의 담당 학급 · 강좌와 지난 출결은
+                지우지 않고 마감만 합니다. 이 학교의 담당 학급 · 강좌와 지난 출결은
                 그대로 남습니다 — 다시 필요하면 설정에서 같은 이름으로 만들면 됩니다.
             </p>
 
             <template #foot>
                 <UiButton size="wide" @click="closingSchool = null">취소</UiButton>
                 <UiButton fill size="wide" variant="danger" @click="confirmRetireSchool">
-                    내리기
+                    마감
                 </UiButton>
             </template>
         </UiModal>
 
-        <!-- 학교를 내리는 대화상자와 **다른 말을 쓴다.** 학교는 행이 남지만 학년도는
+        <!-- 학교를 마감하는 대화상자와 **다른 말을 쓴다.** 학교는 행이 남지만 학년도는
              행까지 지우고, 그 안의 기록이 전부 함께 사라진다. 같은 문장을 돌려 쓰면
              교사는 학교와 같은 정도의 일로 읽는다. -->
         <UiModal :open="Boolean(deletingYear)"
@@ -750,11 +750,11 @@ onMounted(async () => {
                 </template>
             </dl>
             <p v-if="yearIsEmpty" class="modal__note">
-                <b>아직 아무것도 등록하지 않은 학년도입니다.</b>
+                <b>아직 아무것도 추가하지 않은 학년도입니다.</b>
                 지워도 사라지는 기록이 없습니다.
             </p>
             <p class="modal__note">
-                위의 것이 <b>모두 함께 사라집니다.</b> 학교를 목록에서 내리는 것과 달리
+                위의 것이 <b>모두 함께 사라집니다.</b> 학교를 마감하는 것과 달리
                 학년도는 기록까지 지우며, 되돌릴 수 없습니다. 서류 · NEIS 표시와 태그 ·
                 한도 규정도 이 학년도의 것은 함께 사라집니다.
             </p>
@@ -802,7 +802,7 @@ onMounted(async () => {
 }
 
 /* 단계 표시. 모양은 style.css의 `.step`이 결정하고(NEIS 검증과 같은 것을 쓴다),
- * 여기서는 버튼의 기본 상자를 지우고 고르게 벌려 놓는다. */
+ * 여기서는 버튼의 기본 상자를 지우고 일정하게 벌려 놓는다. */
 .steps .step {
     flex: 1;
     background: transparent;
@@ -909,13 +909,13 @@ onMounted(async () => {
     flex-wrap: wrap;
 }
 
-/* 온보딩의 고르개는 매일 쓰는 격자보다 크다. 처음 한 번 누르는 단추라
+/* 온보딩의 선택 단추는 매일 쓰는 격자보다 크다. 처음 한 번 누르는 단추라
  * 작게 두면 무엇을 눌러야 하는지 찾게 된다. */
 .pick--big {
     padding: var(--s-md) var(--s-3xl);
 }
 
-/* 고르기와 내리기를 한 덩어리로 묶는다. */
+/* 선택과 마감을 한 덩어리로 묶는다. */
 .chip {
     display: inline-flex;
     align-items: center;
@@ -1032,7 +1032,7 @@ onMounted(async () => {
 }
 
 /* **화면 아래에 고정한다.** 단계마다 내용 길이가 달라서 문서 흐름에 두면 [다음]이
- * 접힌 자리 아래로 밀린다 — 담당 학급 · 강좌를 여럿 등록하거나 명렬표를 열면 한참 스크롤해야
+ * 접힌 자리 아래로 밀린다 — 담당 학급 · 강좌를 여럿 추가하거나 명렬표를 열면 한참 스크롤해야
  * 단추가 나온다. 다음으로 넘어가는 것은 이 화면에서 늘 할 수 있어야 하는 일이다.
  *
  * `sticky`가 아니라 `fixed`인 이유는, 이 화면이 `meta.bare`라 스크롤 상자가 문서

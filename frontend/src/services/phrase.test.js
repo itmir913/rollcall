@@ -1,7 +1,7 @@
 /**
  * 문구.
  *
- * `spanPhrase`(고른 교시 → 문장)와 `spanTextOf`(저장된 두 끝 → 문장)는 입력이 달라
+ * `spanPhrase`(선택한 교시 → 문장)와 `spanTextOf`(저장된 두 끝 → 문장)는 입력이 달라
  * 함수가 둘이지만 **같은 말을 써야 한다.** 그리고 그 말은 Rust `attendance.rs`의
  * `span_text`와도 같아야 한다 — 같은 기간이 화면마다 다르게 적히면 교사는 그것을
  * 다름으로 읽는다. 아래 경계값은 `attendance_tests.rs`의 것과 짝이다.

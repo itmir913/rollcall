@@ -7,7 +7,7 @@
  *
  * **계층 그대로 보여준다 — 학년도 → 학교 → 담당 학급 · 강좌.** 순회 교사는 하루에
  * 학교를 옮겨 다니고, 학교가 결정되어야 담당 학급 · 강좌가 결정된다. 학년도는 여기서
- * 바꾸지 않는다 — 해가 바뀌면 학교부터 다시 골라야 하므로 설정이 담당한다.
+ * 바꾸지 않는다 — 해가 바뀌면 학교부터 다시 선택해야 하므로 설정이 담당한다.
  *
  * **현재 모드의 것만 나열한다.** 담임 학급과 교과 강좌를 한 목록에 두면 잘못 누른 줄
  * 하나로 화면 절반이 다른 모드의 것으로 바뀐다. 모드를 넘나드는 길은 사이드바의
@@ -21,7 +21,7 @@ import {UiButton, UiLedger, UiNotice, UiPage} from '../components/ui'
 const app = useAppStore()
 const router = useRouter()
 
-/** 지금 모드의 담당 학급 · 강좌. 스토어가 이미 역할로 구분해 둔 것을 고르기만 한다. */
+/** 지금 모드의 담당 학급 · 강좌. 스토어가 이미 역할로 구별해 둔 것을 선택만 한다. */
 const classes = computed(() => (app.isHomeroom ? app.homeroomClasses : app.subjectClasses))
 
 /**
@@ -32,8 +32,8 @@ const manySchools = computed(() => app.schools.length > 1)
 
 /**
  * 교과 강좌를 묶음별로 모은다. `프로그래밍A · B · C`가 흩어져 있으면 그중 하나를
- * 고르려고 목록 전체를 훑게 된다. **묶음은 이름표일 뿐 분반 표가 아니다** —
- * 강좌는 저마다 독립된 줄이고 고르는 것도 줄 하나다.
+ * 선택하려고 목록 전체를 훑게 된다. **묶음은 이름표일 뿐 분반 표가 아니다** —
+ * 강좌는 저마다 독립된 줄이고 선택하는 것도 줄 하나다.
  *
  * 담임 학급은 묶지 않는다. 묶을 것이 없고, 머리글만 하나 더 생긴다.
  */
@@ -61,12 +61,12 @@ const showGroups = computed(() => groups.value.length > 1)
  * 담당 학급 · 강좌가 하나뿐이면 이 화면에서 할 일이 없다. 빈손으로 돌려보내지 않고
  * 어디로 가야 하는지 적는다. 여럿이면 빈 문자열이라 아무것도 그리지 않는다.
  *
- * **없는 것과 하나뿐인 것을 구분한다.** 0개일 때 "하나뿐입니다"라고 적으면 화면이
+ * **없는 것과 하나뿐인 것을 구별한다.** 0개일 때 "하나뿐입니다"라고 적으면 화면이
  * 사실과 다른 말을 하고, 바로 아래의 "담당하는 학급이나 강좌가 없습니다"와도 어긋난다.
  */
 const note = computed(() => {
-    if (classes.value.length === 0) return '설정에서 만들 수 있습니다.'
-    if (classes.value.length === 1) return '담당 학급 · 강좌가 하나뿐입니다. 설정에서 더할 수 있습니다.'
+    if (classes.value.length === 0) return '설정에서 추가할 수 있습니다.'
+    if (classes.value.length === 1) return '담당 학급 · 강좌가 하나뿐입니다. 설정에서 추가할 수 있습니다.'
     return ''
 })
 
@@ -114,16 +114,16 @@ async function moveSchool(schoolId) {
 <template>
     <UiPage :subtitle="app.isHomeroom ? '담임 학급' : '교과 강좌'" title="이동">
         <template #actions>
-            <UiButton @click="router.push('/settings')">설정에서 더하기</UiButton>
+            <UiButton @click="router.push('/settings')">설정에서 추가</UiButton>
         </template>
 
-        <UiLedger hint="학년도 → 학교 → 학급과 강좌 · 위에서 고른 것이 아래의 범위다" title="어디에서">
+        <UiLedger hint="학년도 → 학교 → 학급과 강좌 · 위에서 선택한 것이 아래의 범위다" title="어디에서">
             <div class="set__row">
                 <span class="set__label">학년도</span>
                 <span class="set__value">
                     <span class="num">{{ app.currentYear?.year ?? '—' }}</span>학년도
                     <span class="set__hint">
-                        학년도를 옮기면 학교부터 다시 골라야 하므로 설정에서 바꿉니다
+                        학년도를 옮기면 학교부터 다시 선택해야 하므로 설정에서 바꿉니다
                     </span>
                 </span>
             </div>
@@ -137,7 +137,7 @@ async function moveSchool(schoolId) {
                         {{ item.name }}
                     </button>
                     <span v-if="!app.schools.length" class="set__hint">
-                        이 학년도에 등록한 학교가 없습니다. 설정에서 만들어 주세요
+                        이 학년도에 추가한 학교가 없습니다. 설정에서 추가해주세요
                     </span>
                     <span v-else class="set__hint">누르면 아래 목록이 그 학교의 것으로 바뀝니다</span>
                 </span>

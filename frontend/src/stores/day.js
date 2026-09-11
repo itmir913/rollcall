@@ -43,7 +43,7 @@ export const useDayStore = defineStore('day', {
 
         async fetchGrid() {
             const app = useAppStore()
-            // 날짜를 고르는 화면은 오늘의 출결뿐이다. 출결 기록 · 서류 미제출자에서
+            // 날짜를 선택하는 화면은 오늘의 출결뿐이다. 출결 기록 · 서류 미제출자에서
             // 수정하면 여기 날짜가 비어 있는데, 그대로 부르면 커맨드가 늘 실패해
             // `error`가 오염되고 진짜 저장 실패와 구별되지 않는다.
             if (!app.ready || !this.date) return

@@ -131,7 +131,7 @@ describe('학교 설정', () => {
         expect(school.rules).toEqual([])
         expect(school.offDays).toEqual([])
         expect(school.classTags).toEqual([])
-        // 학교가 없는 것은 고장이 아니다. 읽기 실패와 구분되어야 한다.
+        // 학교가 없는 것은 고장이 아니다. 읽기 실패와 구별되어야 한다.
         expect(school.error).toBe('')
     })
 
@@ -146,7 +146,7 @@ describe('학교 설정', () => {
 
         expect(school.school).toBe(null)
         expect(school.tags).toEqual([])
-        // 비어 있는 까닭은 error가 말한다 — 학교가 없는 것과 읽지 못한 것이 구분된다.
+        // 비어 있는 까닭은 error가 말한다 — 학교가 없는 것과 읽지 못한 것이 구별된다.
         expect(school.error).toContain('학교를 찾을 수 없습니다')
     })
 

@@ -50,7 +50,7 @@ fn objects(conn: &Connection) -> Vec<String> {
     rows.collect::<Result<Vec<String>, _>>().unwrap()
 }
 
-/// 시드가 들어갔는지 확인하는 값. 비어 있으면 첫 화면에서 구분을 고를 수 없다.
+/// 시드가 들어갔는지 확인하는 값. 비어 있으면 첫 화면에서 구분을 선택할 수 없다.
 fn reason_count(conn: &Connection) -> i64 {
     conn.query_row("SELECT COUNT(*) FROM attendance_reason", [], |r| r.get(0))
         .unwrap()
@@ -232,7 +232,7 @@ fn base64_goes_in_and_the_same_bytes_come_out() {
 #[test]
 fn a_folder_that_does_not_exist_is_refused_instead_of_being_created() {
     // 다이얼로그를 거쳤어도 그 사이에 USB가 빠질 수 있다. 폴더를 대신 만들면
-    // 교사가 고른 적 없는 자리에 파일이 생긴다.
+    // 교사가 선택한 적 없는 자리에 파일이 생긴다.
     let dir = temp_dir();
     let missing = dir.join("없는 폴더");
     let path = missing.join("샘플 명렬표.xlsx");

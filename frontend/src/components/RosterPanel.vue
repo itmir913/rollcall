@@ -2,12 +2,12 @@
 /**
  * 명렬표 파일 열기 — 파일에서 읽고, 차분을 보여주고, 확정본만 저장한다.
  *
- * **명렬표를 다시 여는 것은 교체가 아니라 차분이다.** 명단에서 빠진 번호는 지우지 않고 나간 날만
+ * **명렬표를 다시 여는 것은 교체가 아니라 차분이다.** 명단에서 제외한 번호는 지우지 않고 나간 날만
  * 적는다 — 지워 버리면 그 학생의 지난 출결이 함께 사라진다. 그것은 학교를 떠난 것
  * (전출)과 다른 일이라, 화면도 그렇게 적는다.
  *
  * **버린 줄은 조용히 넘기지 않는다.** 서른 명 중 스물아홉 명만 들어왔는데 아무 말이
- * 없으면 교사는 알 방법이 없다. 몇 번째 줄이 왜 빠졌는지 함께 보여준다.
+ * 없으면 교사는 알 방법이 없다. 몇 번째 줄이 왜 버려졌는지 함께 보여준다.
  *
  * **명단이 붙는 곳은 `classId`가 결정한다.** 비우면 지금 보고 있는 학급이다 — 설정은
  * 줄마다 다른 학급을 가리키고, 첫 실행은 방금 만든 학급에 차례로 넣는다. 파일이
@@ -47,7 +47,7 @@ const download = useDownloadStore()
 const targetId = computed(() => props.classId ?? app.classId)
 const target = computed(() => app.classes.find((c) => c.id === targetId.value) ?? null)
 
-/** 교과 강좌인가. 열쇠도 화면도 이 하나로 구분된다. */
+/** 교과 강좌인가. 열쇠도 화면도 이 하나로 구별된다. */
 const isSubject = computed(() => target.value?.role === 'subject')
 
 /**
@@ -73,14 +73,14 @@ const error = ref('')
 /**
  * 줄마다 적히는 처리. **단추 글자가 곧 이 말이다.**
  *
- * `withdrawn`은 전출이 아니다 — 내 명단에서 빠지는 것과 학교를 떠나는 것은 다른 일이고,
+ * `withdrawn`은 전출이 아니다 — 내 명단에서 제외되는 것과 학교를 떠나는 것은 다른 일이고,
  * 저장은 명단의 나간 날만 적는다.
  */
 const ACTION_LABEL = {
     added: '새로 들어옴',
     unchanged: '그대로',
     renamed: '이름이 다름',
-    withdrawn: '내 명단에서 뺌',
+    withdrawn: '내 명단에서 제외',
     linked: '명단에만 연결',
     blocked: '넘김',
 }
@@ -95,7 +95,7 @@ const ACTION_TONE = {
     blocked: 'is-warn',
 }
 
-/** 파일에서 온 줄. 빠진 줄(`withdrawn`)은 파일에 없으므로 인원에 세지 않는다. */
+/** 파일에서 온 줄. 제외된 줄(`withdrawn`)은 파일에 없으므로 인원에 세지 않는다. */
 const FROM_FILE = ['added', 'unchanged', 'renamed', 'linked', 'blocked']
 
 const counts = computed(() => {
@@ -111,7 +111,7 @@ const countNote = computed(() => {
         `새로 ${c.added}`,
         `그대로 ${c.unchanged}`,
         `이름 다름 ${c.renamed}`,
-        `빠짐 ${c.withdrawn}`,
+        `제외 ${c.withdrawn}`,
     ]
     if (c.linked) parts.push(`연결 ${c.linked}`)
     if (c.blocked) parts.push(`넘김 ${c.blocked}`)
@@ -157,14 +157,14 @@ const seatSummary = computed(() => {
 
 /**
  * 자리를 읽지 못한 줄이 있다는 것. **그 줄은 대조에 참여하지 못한다** —
- * 그러면 그 줄이 가리키던 학생이 파일에 없는 것으로 판단되어 빠진 것으로 잡히므로,
- * 저장이 한 줄 때문에 명단에서 사람을 빼지 않도록 빠짐을 자동으로 표시하지 않는다.
+ * 그러면 그 줄이 가리키던 학생이 파일에 없는 것으로 판단되어 제외로 잡히므로,
+ * 저장이 한 줄 때문에 명단에서 사람을 빼지 않도록 제외를 자동으로 표시하지 않는다.
  */
 const blockedNote = computed(() => {
     const n = counts.value.blocked
     if (!n) return ''
     return `자리를 읽지 못한 줄이 ${n}개 있습니다. 그 줄이 가리키던 학생이 대조되지 않아 ` +
-        '명단에서 빠지는 것을 막으려고, 빠짐은 자동으로 표시하지 않았습니다 — ' +
+        '명단에서 제외되는 것을 막으려고, 제외는 자동으로 표시하지 않았습니다 — ' +
         '필요하면 그 줄의 단추를 눌러주세요.'
 })
 
@@ -185,7 +185,7 @@ const encodingNote = computed(() => (encoding.value ? `${encoding.value}로 해�
 const encodingWarning = computed(() =>
     encoding.value === '알 수 없음'
         ? 'CSV의 인코딩을 판별하지 못해 UTF-8로 읽었습니다. 이름이 깨져 보이면 파일을 ' +
-        'UTF-8이나 CP949(euc-kr)로 다시 저장한 뒤 가져와 주세요.'
+        'UTF-8이나 CP949(euc-kr)로 다시 저장한 뒤 열어주세요.'
         : '')
 
 /** 위 줄에서 학년 · 반을 이어받은 줄. 파일을 고친 값이므로 알린다. */
@@ -218,7 +218,7 @@ const foreign = computed(() => {
     if (!outsiders && !says) return ''
 
     const who = outsiders ? `${cls.name}이 아닌 학생 ${outsiders}명이 함께 들어왔습니다. ` : ''
-    return `${says}${who}막지 않고 그대로 「${cls.name}」 명단에 넣습니다.`
+    return `${says}${who}막지 않고 그대로 「${cls.name}」 명단에 등록합니다.`
 })
 
 /**
@@ -296,7 +296,7 @@ function toggleAction(row) {
     else if (row.action === 'unchanged') row.action = row.studentId ? 'withdrawn' : 'added'
 }
 
-/** 더 고를 것이 없는 줄. 학적이 없는 `blocked`는 넘기는 것 말고 할 일이 없다. */
+/** 더 선택할 것이 없는 줄. 학적이 없는 `blocked`는 넘기는 것 말고 할 일이 없다. */
 function locked(row) {
     return row.action === 'blocked' && !row.studentId
 }
@@ -314,7 +314,7 @@ async function apply() {
         const parts = [
             `명단에 새로 ${added}명`,
             `이름 고침 ${result.renamed ?? 0}명`,
-            `내 명단에서 뺌 ${result.withdrawn ?? 0}명`,
+            `내 명단에서 제외 ${result.withdrawn ?? 0}명`,
         ]
         // 학적을 새로 만든 수는 파일이 맞는지 알려주는 값이라 생겼을 때 반드시 적는다.
         if (created) parts.push(`학적을 새로 만든 것 ${created}명`)
@@ -351,15 +351,15 @@ async function downloadSample() {
     error.value = ''
     try {
         const path = await save({
-            title: '명렬표 예시 저장',
+            title: '명렬표 예시 파일로 저장',
             defaultPath: '명렬표_양식.xlsx',
             filters: [{name: '엑셀 파일', extensions: ['xlsx']}],
         })
         if (!path) return
         await download.saveBytes(path, bufferToBase64(await buildSampleWorkbook()))
-        message.value = `명렬표 예시를 저장했습니다: ${path}`
+        message.value = `명렬표 예시를 파일로 저장했습니다: ${path}`
     } catch (e) {
-        error.value = `명렬표 예시를 저장하지 못했습니다: ${e}`
+        error.value = `명렬표 예시를 파일로 저장하지 못했습니다: ${e}`
     }
 }
 
@@ -439,15 +439,15 @@ onMounted(reload)
         <div v-if="seatless" class="roster__stop">
             <span>
                 교과 강좌는 학년 · 반 · 번호로 학생을 구별하는데 이 파일에는 학년 · 반 열이
-                없습니다 — 머리글에 학년과 반을 넣어 다시 가져와 주세요.
+                없습니다 — 머리글에 학년과 반을 넣어 다시 열어주세요.
             </span>
-            <UiButton @click="downloadSample">명렬표 예시 저장</UiButton>
+            <UiButton @click="downloadSample">예시 파일로 저장</UiButton>
         </div>
 
         <UiLedger v-if="rows.length"
                   :hint="readNote"
                   :note="countNote"
-                  :title="target ? `${target.name}에 가져올 내용` : '가져올 내용'">
+                  :title="target ? `${target.name}에 넣을 내용` : '넣을 내용'">
             <template #actions>
                 <input v-model="effectiveDate" class="field num" type="date"/>
                 <UiButton variant="primary" @click="apply">저장</UiButton>
@@ -474,7 +474,7 @@ onMounted(reload)
 
             <template #foot>
                 <span>
-                    명단에서 빠진 번호는 지우지 않고 나간 날만 적습니다 — 학적과 지난 출결은
+                    명단에서 제외한 번호는 지우지 않고 나간 날만 적습니다 — 학적과 지난 출결은
                     그대로 남습니다. 학교를 떠난 것(전출)은 이것과 다른 일입니다.
                 </span>
             </template>
@@ -532,7 +532,7 @@ onMounted(reload)
     color: var(--c-ink-3);
 }
 
-/* 멈춘 자리. 고칠 수단(명렬표 예시 저장)이 이 상자 안에 함께 있다. */
+/* 멈춘 자리. 고칠 수단(예시 파일로 저장)이 이 상자 안에 함께 있다. */
 .roster__stop {
     display: flex;
     align-items: center;

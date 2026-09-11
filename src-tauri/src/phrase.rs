@@ -51,7 +51,7 @@ pub fn apply_josa(text: &str) -> String {
     let mut rest = text;
 
     while !rest.is_empty() {
-        // **가장 앞선 표기**를 고른다. 표기 목록의 차례대로 찾으면, 뒤쪽 표기가 먼저
+        // **가장 앞선 표기**를 선택한다. 표기 목록의 차례대로 찾으면, 뒤쪽 표기가 먼저
         // 걸릴 때 그 앞의 표기가 그대로 옮겨져 `서류(을)를 몸살로`가 된다.
         let next = JOSA
             .iter()

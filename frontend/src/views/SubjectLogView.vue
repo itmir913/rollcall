@@ -58,23 +58,23 @@ onMounted(async () => {
 </script>
 
 <template>
-    <!-- 강좌를 하나도 등록하지 않았다. 무엇을 해야 하는지와 가는 길을 함께 둔다. -->
+    <!-- 강좌를 하나도 추가하지 않았다. 무엇을 해야 하는지와 가는 길을 함께 둔다. -->
     <UiPage v-if="app.subjectClasses.length === 0" title="수업 기록">
         <UiNotice kind="warn"
-                  text="아직 수업을 등록하지 않았습니다. 강좌를 만들면 차시가 날짜별로 쌓입니다."/>
+                  text="아직 교과 강좌를 추가하지 않았습니다. 강좌를 추가하면 차시가 날짜별로 쌓입니다."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/settings')">
-                수업 등록하기
+                강좌 추가
             </UiButton>
         </div>
     </UiPage>
 
-    <!-- 담당 강좌는 있는데 아직 고르지 않았다. 등록하라고 적으면 이미 한 일을 다시 시킨다. -->
+    <!-- 담당 강좌는 있는데 아직 선택하지 않았다. 추가하라고 적으면 이미 한 일을 다시 시킨다. -->
     <UiPage v-else-if="!app.ready" title="수업 기록">
-        <UiNotice kind="warn" text="보고 있는 수업이 없습니다. 담당 강좌 중 하나를 고르세요."/>
+        <UiNotice kind="warn" text="보고 있는 강좌가 없습니다. 담당 강좌 중 하나를 선택하세요."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/move')">
-                수업 고르기
+                강좌 선택
             </UiButton>
         </div>
     </UiPage>
@@ -101,7 +101,7 @@ onMounted(async () => {
                 <b class="num">{{ subject.dayCount }}</b><span>수업한 날</span>
             </div>
             <div class="strip__cell is-ok">
-                <b class="num">{{ subject.absentTotal }}</b><span>빠진 사람</span>
+                <b class="num">{{ subject.absentTotal }}</b><span>결석</span>
             </div>
         </div>
 
@@ -117,7 +117,7 @@ onMounted(async () => {
                     <span class="row__no num">이 달 {{ session.nth }}번째</span>
                     <span class="row__what"><b class="num">{{ session.slot }}교시</b></span>
                     <span class="row__when num">
-                        빠진 사람 {{ session.absentCount }} / {{ session.total }}명
+                        결석 {{ session.absentCount }} / {{ session.total }}명
                     </span>
                     <span class="row__memo">{{ session.memo || '—' }}</span>
                     <span class="row__acts">
@@ -132,7 +132,7 @@ onMounted(async () => {
 </template>
 
 <style scoped>
-/* 차례 · 교시 · 빠진 사람 · 메모 · 열기 */
+/* 차례 · 교시 · 결석 · 메모 · 열기 */
 .list--sesslog .row {
     grid-template-columns: 132px 92px 190px 1fr 76px;
 }

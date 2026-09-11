@@ -5,8 +5,8 @@
  * 기록하는 것은 **내 수업에 있었는가 하나뿐**이다. 구분 · 종류 · 기간 · 서류 · 나이스가
  * 여기 오지 않는다 — 그것은 담임이 쓰는 말이다.
  *
- * 수업을 시작할 때 [교시 추가]로 칸을 만들고, 그 칸에서 빠진 학생만 번호를 눌러 적는다.
- * **칸이 있다는 것이 곧 그 교시를 불렀다는 뜻이다.** 결석자 행만으로는 "빠진 사람이
+ * 수업을 시작할 때 [차시 추가]로 차시를 만들고, 그 차시에 결석한 학생만 번호를 눌러 적는다.
+ * **차시가 있다는 것이 곧 그 교시를 불렀다는 뜻이다.** 결석자 행만으로는 "결석이
  * 없는 날"과 "아직 안 부른 날"이 구별되지 않는다.
  *
  * 교시는 버튼으로 표시한다. 드롭다운은 열기 전까지 후보가 보이지 않아 클릭이 한 번 더 든다.
@@ -27,9 +27,9 @@ const app = useAppStore()
 const subject = useSubjectStore()
 const router = useRouter()
 
-/** 지금 고른 교시들. [교시 추가]를 누르면 한꺼번에 칸이 된다. */
+/** 지금 선택한 교시들. [차시 추가]를 누르면 한꺼번에 차시가 된다. */
 const picked = ref([])
-/** 메모를 연 줄. 차시 메모는 `session:<id>`, 결석 메모는 학생 번호로 구분한다. */
+/** 메모를 연 줄. 차시 메모는 `session:<id>`, 결석 메모는 학생 번호로 구별한다. */
 const expanded = ref(null)
 const draft = ref('')
 const dropping = ref(null)
@@ -39,14 +39,14 @@ const dateLabel = computed(() => formatKorean(subject.date))
 /** 교시 후보. 최대 교시는 학교가 들고 있는 값이라 앱 상수로 박아 두지 않는다. */
 const slots = computed(() => Array.from({length: app.maxSlot}, (_, i) => i + 1))
 
-/** 이미 만든 교시. 같은 칸을 또 누르지 않도록 눌러 둔다 — 칸은 그대로 남는다. */
+/** 이미 만든 차시. 같은 교시를 또 누르지 않도록 눌러 둔다 — 차시는 그대로 남는다. */
 const made = computed(() => new Set(subject.daySessions.map((s) => String(s.slot))))
 
 /**
- * 날짜를 옮기면 고르던 교시와 열어 둔 메모 칸을 함께 비운다.
+ * 날짜를 옮기면 선택하던 교시와 열어 둔 메모 칸을 함께 비운다.
  *
- * 고른 교시는 **그 날짜의 것**이다. 9월 11일에서 3 · 4교시를 고른 채 12일로 옮기면
- * 버튼이 눌린 그대로 남아, [교시 추가]가 교사가 고른 적 없는 칸을 12일에 만든다.
+ * 선택한 교시는 **그 날짜의 것**이다. 9월 11일에서 3 · 4교시를 선택한 채 12일로 옮기면
+ * 버튼이 눌린 그대로 남아, [차시 추가]가 교사가 선택한 적 없는 차시를 12일에 만든다.
  * 열어 둔 메모 칸도 앞 날짜의 차시 · 학생을 가리키므로 함께 닫는다.
  */
 watch(() => subject.date, () => {
@@ -75,21 +75,21 @@ function classShort(row) {
 }
 
 /**
- * 빈 명단에 적을 말. **`없다`와 `아직 고르지 않았다`는 다르다** —
- * 차시를 고르기 전에는 그 칸의 명단을 읽은 적조차 없으므로 없다고 단언할 수 없다.
+ * 빈 명단에 적을 말. **`없다`와 `아직 선택하지 않았다`는 다르다** —
+ * 차시를 선택하기 전에는 그 차시의 명단을 읽은 적조차 없으므로 없다고 단언할 수 없다.
  */
 const rollEmptyText = computed(() => (subject.current
-    ? '이 차시에 빠진 학생이 없습니다.'
-    : '아직 교시를 고르지 않았습니다. 위에서 교시를 고르면 그 칸의 명단이 열립니다.'))
+    ? '이 차시에 결석한 학생이 없습니다.'
+    : '아직 교시를 선택하지 않았습니다. 위에서 교시를 선택하면 그 차시의 명단이 열립니다.'))
 
 /**
- * 담임 참고에 적을 말. 같은 이유로 둘을 구분한다 — 조회한 적 없는 날에 대해
+ * 담임 참고에 적을 말. 같은 이유로 둘을 구별한다 — 조회한 적 없는 날에 대해
  * "기록이 없습니다"라고 적으면, 교과 교사가 빈 자리를 보고 담임이 아무것도 적지
  * 않았다고 확인한 셈이 된다.
  */
 const noteEmptyText = computed(() => (subject.current
     ? '그날 담임으로 적어 둔 기록이 없습니다.'
-    : '아직 교시를 고르지 않았습니다. 교시를 고르면 그날 담임으로 적어 둔 기록도 함께 표시합니다.'))
+    : '아직 교시를 선택하지 않았습니다. 교시를 선택하면 그날 담임으로 적어 둔 기록도 함께 표시합니다.'))
 
 function pick(slot) {
     picked.value = picked.value.includes(slot)
@@ -156,23 +156,23 @@ onMounted(async () => {
 </script>
 
 <template>
-    <!-- 강좌를 하나도 등록하지 않았다. 무엇을 해야 하는지와 가는 길을 함께 둔다. -->
+    <!-- 강좌를 하나도 추가하지 않았다. 무엇을 해야 하는지와 가는 길을 함께 둔다. -->
     <UiPage v-if="app.subjectClasses.length === 0" title="오늘 수업">
         <UiNotice kind="warn"
-                  text="아직 수업을 등록하지 않았습니다. 강좌를 만들면 교시를 추가하고 결석을 기록할 수 있습니다."/>
+                  text="아직 교과 강좌를 추가하지 않았습니다. 강좌를 추가하면 차시를 만들고 결석을 기록할 수 있습니다."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/settings')">
-                수업 등록하기
+                강좌 추가
             </UiButton>
         </div>
     </UiPage>
 
-    <!-- 담당 강좌는 있는데 아직 고르지 않았다. 등록하라고 적으면 이미 한 일을 다시 시킨다. -->
+    <!-- 담당 강좌는 있는데 아직 선택하지 않았다. 추가하라고 적으면 이미 한 일을 다시 시킨다. -->
     <UiPage v-else-if="!app.ready" title="오늘 수업">
-        <UiNotice kind="warn" text="보고 있는 수업이 없습니다. 담당 강좌 중 하나를 고르세요."/>
+        <UiNotice kind="warn" text="보고 있는 강좌가 없습니다. 담당 강좌 중 하나를 선택하세요."/>
         <div class="lead">
             <UiButton size="wide" variant="primary" @click="router.push('/move')">
-                수업 고르기
+                강좌 선택
             </UiButton>
         </div>
     </UiPage>
@@ -186,11 +186,11 @@ onMounted(async () => {
             <UiButton @click="subject.move(1)">내일 ▶</UiButton>
         </template>
 
-        <UiLedger hint="조회 · 종례는 교과 수업이 아니다 · 연강도 두 칸이다" title="교시 추가">
+        <UiLedger hint="조회 · 종례는 교과 수업이 아니다 · 연강도 두 차시다" title="차시 추가">
             <template #actions>
                 <UiButton :disabled="picked.length === 0 || subject.busy" variant="primary"
                           @click="add">
-                    교시 추가
+                    차시 추가
                 </UiButton>
             </template>
             <div class="filters pickline">
@@ -198,7 +198,7 @@ onMounted(async () => {
                 <button v-for="slot in slots" :key="slot"
                         :class="['pick', 'pick--slot', picked.includes(slot) ? 'is-on' : '']"
                         :disabled="made.has(String(slot))"
-                        :title="made.has(String(slot)) ? '이미 만든 교시입니다' : ''"
+                        :title="made.has(String(slot)) ? '이미 만든 차시입니다' : ''"
                         type="button" @click="pick(slot)">
                     {{ slot }}
                 </button>
@@ -206,10 +206,10 @@ onMounted(async () => {
         </UiLedger>
 
         <UiLedger :empty="subject.daySessions.length === 0"
-                  :note="`빠진 사람 ${subject.dayAbsentTotal}명`"
+                  :note="`결석 ${subject.dayAbsentTotal}명`"
                   class="list--sess"
-                  empty-text="아직 만든 교시가 없습니다. 위에서 교시를 골라 추가하세요."
-                  hint="칸을 만든 것이 곧 그 교시를 불렀다는 뜻이다" title="오늘의 차시">
+                  empty-text="아직 만든 차시가 없습니다. 위에서 교시를 선택해 추가하세요."
+                  hint="차시를 만든 것이 곧 그 교시를 불렀다는 뜻이다" title="오늘의 차시">
             <template v-for="session in subject.daySessions" :key="session.id">
                 <div :class="['row', session.id === subject.sessionId ? 'is-ok' : 'is-calm']">
                     <span class="row__what">
@@ -218,7 +218,7 @@ onMounted(async () => {
                             <b class="num">{{ session.slot }}교시</b>
                         </button>
                     </span>
-                    <span class="row__when num">빠진 사람 {{ session.absentCount }} / {{ session.total }}명</span>
+                    <span class="row__when num">결석 {{ session.absentCount }} / {{ session.total }}명</span>
                     <span class="row__memo">
                         <button :class="['cellbtn', session.memo ? 'has-value' : '']" type="button"
                                 @click="expand(`session:${session.id}`, session.memo)">
@@ -247,11 +247,11 @@ onMounted(async () => {
 
         <UiLedger :hint="subject.current
                       ? '번호를 누르면 결석이 기록됩니다 · 다시 누르면 취소됩니다'
-                      : '위에서 교시를 고르면 그 칸의 명단이 열립니다'"
-                  :note="subject.current ? `빠진 사람 ${subject.absentRows.length} / ${subject.roll.length}명` : ''"
+                      : '위에서 교시를 선택하면 그 차시의 명단이 열립니다'"
+                  :note="subject.current ? `결석 ${subject.absentRows.length} / ${subject.roll.length}명` : ''"
                   :title="subject.current ? `${subject.current.slot}교시 명단` : '명단'">
             <div class="roll">
-                <p v-if="!subject.current" class="muted">아직 교시를 고르지 않았습니다.</p>
+                <p v-if="!subject.current" class="muted">아직 교시를 선택하지 않았습니다.</p>
                 <template v-else>
                     <!-- 학년 · 반이 번호 위에 온다. 교과 강좌는 반이 섞이므로
                          3학년 1반 4번과 3학년 6반 4번이 같은 격자에 나란히 놓인다. -->
@@ -279,8 +279,8 @@ onMounted(async () => {
 
         <UiLedger :empty="subject.absentRows.length === 0" :empty-text="rollEmptyText"
                   class="list--roll"
-                  hint="빠진 사람이 없는 것과 아직 부르지 않은 것은 다르다"
-                  title="이 차시에 빠진 학생">
+                  hint="결석이 없는 것과 아직 부르지 않은 것은 다르다"
+                  title="이 차시에 결석한 학생">
             <template v-for="row in subject.absentRows" :key="row.studentId">
                 <div class="row is-ok">
                     <span class="row__cls num">{{ classLabel(row) }}</span>
@@ -332,7 +332,7 @@ onMounted(async () => {
                 <span class="modal__val num">{{ dateLabel }}</span>
                 <span class="modal__key">교시</span>
                 <span class="modal__val"><b class="num">{{ dropping.slot }}교시</b></span>
-                <span class="modal__key">빠진 사람</span>
+                <span class="modal__key">결석</span>
                 <span class="modal__val num">{{ dropping.absentCount }}명</span>
                 <span class="modal__key">메모</span>
                 <span class="modal__val">{{ dropping.memo || '—' }}</span>
@@ -354,7 +354,7 @@ onMounted(async () => {
     padding: var(--s-lg) var(--s-2xl);
 }
 
-/* 교시 · 빠진 사람 · 메모 · 지우기. 칸 순서는 어느 줄에서나 같다. */
+/* 교시 · 결석 · 메모 · 지우기. 칸 순서는 어느 줄에서나 같다. */
 .list--sess .row {
     grid-template-columns: 120px 190px 1fr 46px;
 }

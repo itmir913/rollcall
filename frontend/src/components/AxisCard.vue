@@ -38,7 +38,7 @@ const slotButtons = computed(() => {
     return [...all.slice(0, -1), UNKNOWN, all[all.length - 1]]
 })
 
-/** 기간을 아직 안 정한 상태. 결석은 고를 것이 없으므로 이것도 꺼진다. */
+/** 기간을 아직 안 정한 상태. 결석은 선택할 것이 없으므로 이것도 꺼진다. */
 const undecidedOn = computed(() => props.modelValue.slots.length === 0)
 const undecidedOff = computed(() => slotPrompt.value === 'none')
 
@@ -57,7 +57,7 @@ function update(patch) {
 
 function pickType(typeId) {
     const prompt = props.types.find((t) => t.id === typeId)?.slotPrompt ?? null
-    // 바뀐 구분에서 못 고르는 기간이면 미정으로 되돌린다. 버튼 자리는 그대로다.
+    // 바뀐 구분에서 못 선택하는 기간이면 미정으로 되돌린다. 버튼 자리는 그대로다.
     update({typeId, slots: keepUsable(props.modelValue.slots, prompt, props.maxSlot)})
 }
 

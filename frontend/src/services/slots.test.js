@@ -6,7 +6,7 @@
  * 베껴 두는 대신 **고정 벡터 파일 하나**(`src-tauri/src/tests/slot_vectors.json`)를
  * 양쪽 테스트가 읽는다. 베껴 두면 구현이 달라질 때 테스트도 함께 달라진다.
  *
- * 나머지(고를 수 있는 기간 · 되돌리기)는 프런트에만 있는 규칙이라 여기서만 확인한다.
+ * 나머지(선택할 수 있는 기간 · 되돌리기)는 프런트에만 있는 규칙이라 여기서만 확인한다.
  */
 import {describe, expect, it} from 'vitest'
 import {
@@ -93,11 +93,11 @@ describe('고정 벡터 — slots.rs와 같은 파일을 읽는다', () => {
 })
 
 describe('allowedSlots', () => {
-    it('결석은 고를 것이 없다 — 하루 종일이기 때문이다', () => {
+    it('결석은 선택할 것이 없다 — 하루 종일이기 때문이다', () => {
         expect(allowedSlots('none', 7)).toEqual([])
     })
 
-    it('지각은 조회도 고른다 — 조회만 놓친 날이 있다', () => {
+    it('지각은 조회도 선택한다 — 조회만 놓친 날이 있다', () => {
         // 지각은 `조회부터 N교시까지`이고, 조회만 놓쳤으면 그 N이 조회다.
         // 나이스 실파일에도 `질병지각 · 결시교시 조회,`가 있었다.
         const allowed = allowedSlots('end', 7)
@@ -112,7 +112,7 @@ describe('allowedSlots', () => {
         expect(allowed).not.toContain(CLOSING)
     })
 
-    it('결과는 교시만 고른다 — 조회·종례는 교과 시간이 아니고 모를 수도 없다', () => {
+    it('결과는 교시만 선택한다 — 조회·종례는 교과 시간이 아니고 모를 수도 없다', () => {
         expect(allowedSlots('multi', 7)).toEqual(['1', '2', '3', '4', '5', '6', '7'])
     })
 
@@ -130,7 +130,7 @@ describe('keepUsable', () => {
         expect(keepUsable([CLOSING], 'start', 7)).toEqual([])
     })
 
-    it('하나만 고르는 구분에서는 첫 값만 남는다', () => {
+    it('하나만 선택하는 구분에서는 첫 값만 남는다', () => {
         expect(keepUsable(['1', '2'], 'end', 7)).toEqual(['1'])
     })
 
@@ -140,7 +140,7 @@ describe('keepUsable', () => {
 })
 
 describe('isMulti', () => {
-    it('여러 교시를 고르는 것은 결과뿐이다', () => {
+    it('여러 교시를 선택하는 것은 결과뿐이다', () => {
         expect(isMulti('multi')).toBe(true)
         expect(isMulti('end')).toBe(false)
     })
@@ -151,7 +151,7 @@ describe('spanPhrase', () => {
         expect(spanPhrase({slotPrompt: 'none', slots: []})).toBe('하루 종일')
     })
 
-    it('고른 기간이 없으면 기간 미정이다 — 정상 상태이지 오류가 아니다', () => {
+    it('선택한 기간이 없으면 기간 미정이다 — 정상 상태이지 오류가 아니다', () => {
         expect(spanPhrase({slotPrompt: 'end', slots: []})).toBe('기간 미정')
     })
 
@@ -187,7 +187,7 @@ describe('axisPhrase · stampPhrase', () => {
 describe('picksOf — 저장된 구간을 버튼 선택으로', () => {
     const span = (over) => ({slotPrompt: null, startSlot: null, endSlot: null, ...over})
 
-    it('결석은 고를 것이 없다', () => {
+    it('결석은 선택할 것이 없다', () => {
         expect(picksOf(span({slotPrompt: 'none', startSlot: HOMEROOM, endSlot: CLOSING}), 7))
             .toEqual([])
     })

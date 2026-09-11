@@ -3,7 +3,7 @@
  *
  * 여기서 지키는 것은 둘이다.
  *   · **카드가 움직이지 않는다** — 종류를 바꿔도 버튼 수가 변하지 않고 활성 여부만 바뀐다.
- *   · **종류가 기간을 결정한다** — 결석은 고를 것이 없고, 지각에 조회가, 조퇴에 종례가 없다.
+ *   · **종류가 기간을 결정한다** — 결석은 선택할 것이 없고, 지각에 조회가, 조퇴에 종례가 없다.
  */
 import {describe, expect, it} from 'vitest'
 import {mount} from '@vue/test-utils'
@@ -44,12 +44,12 @@ describe('축 카드', () => {
         expect(slotButtons(wrapper).length).toBe(before)
     })
 
-    it('결석은 기간 전체가 꺼진다 — 하루 종일이라 고를 것이 없다', () => {
+    it('결석은 기간 전체가 꺼진다 — 하루 종일이라 선택할 것이 없다', () => {
         const wrapper = build({reasonId: 10, typeId: 3, slots: []})
         expect(slotButtons(wrapper).every((b) => b.attributes('disabled') !== undefined)).toBe(true)
     })
 
-    it('지각은 조회도 고른다 — 조회부터 N교시까지가 지각이다', () => {
+    it('지각은 조회도 선택한다 — 조회부터 N교시까지가 지각이다', () => {
         const wrapper = build({reasonId: 10, typeId: 1, slots: []})
         const homeroom = slotButtons(wrapper).find((b) => labelOf(b) === '조회')
         expect(homeroom.attributes('disabled')).toBeUndefined()
@@ -61,7 +61,7 @@ describe('축 카드', () => {
         expect(closing.attributes('disabled')).toBeDefined()
     })
 
-    it('결과는 조회 · 종례 · ?를 고를 수 없다', () => {
+    it('결과는 조회 · 종례 · ?를 선택할 수 없다', () => {
         const wrapper = build({reasonId: 10, typeId: 4, slots: []})
         const off = slotButtons(wrapper)
             .filter((b) => ['조회', '종례', '?'].includes(labelOf(b)))
@@ -70,7 +70,7 @@ describe('축 카드', () => {
     })
 
     it('종류를 바꿔 못 쓰는 기간이 되면 미정으로 되돌린다', async () => {
-        // 지각으로 종례까지 고른 상태에서 조퇴로 바꾸면 그 기간은 쓸 수 없다.
+        // 지각으로 종례까지 선택한 상태에서 조퇴로 바꾸면 그 기간은 쓸 수 없다.
         const wrapper = build({reasonId: 10, typeId: 1, slots: ['종례']})
         await slotButtons(wrapper) // 렌더를 기다린다
         const typeButtons = wrapper.findAll('.axis__line')[0].findAll('button')
@@ -81,7 +81,7 @@ describe('축 카드', () => {
     })
 
     it('종류를 바꿔도 쓸 수 있는 기간은 그대로 남는다', async () => {
-        // 조퇴에서 조회를 고른 뒤 지각으로 바꾸면, 이제 지각도 조회를 받으므로 남는다.
+        // 조퇴에서 조회를 선택한 뒤 지각으로 바꾸면, 이제 지각도 조회를 받으므로 남는다.
         const wrapper = build({reasonId: 10, typeId: 2, slots: ['조회']})
         await slotButtons(wrapper)
         const typeButtons = wrapper.findAll('.axis__line')[0].findAll('button')
@@ -96,13 +96,13 @@ describe('축 카드', () => {
         expect(wrapper.emitted('update:modelValue').at(-1)[0].slots).toEqual(['1', '3'])
     })
 
-    it('하나만 고르는 종류는 앞의 선택을 바꾼다', async () => {
+    it('하나만 선택하는 종류는 앞의 선택을 바꾼다', async () => {
         const wrapper = build({reasonId: 10, typeId: 1, slots: ['1']})
         await slotButtons(wrapper).find((b) => labelOf(b) === '3').trigger('click')
         expect(wrapper.emitted('update:modelValue').at(-1)[0].slots).toEqual(['3'])
     })
 
-    it('지금 고른 조합을 한 줄로 말해 준다', () => {
+    it('지금 선택한 조합을 한 줄로 말해 준다', () => {
         const wrapper = build({reasonId: 10, typeId: 1, slots: ['2']})
         expect(wrapper.find('.stamp').text()).toContain('질병 지각 · 조회부터 2교시까지')
     })

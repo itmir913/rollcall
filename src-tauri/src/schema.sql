@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS school
 
 CREATE INDEX IF NOT EXISTS ix_school_year ON school (year_id, sort_order);
 
--- 한 학년도에 같은 이름의 학교는 하나다. 목록에서 내린 학교는 세지 않는다 —
+-- 한 학년도에 같은 이름의 학교는 하나다. 마감한 학교는 세지 않는다 —
 -- 잘못 만든 학교를 내리고 같은 이름으로 다시 만드는 일이 있다.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_school_name_active
     ON school (year_id, name)
@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS class_member
     class_id   INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
     student_id INTEGER NOT NULL REFERENCES student (id) ON DELETE CASCADE,
     joined_on  TEXT    NOT NULL,
-    -- 명단에서 빠져도 지우지 않는다. 명렬표 다시 열기와 같은 규칙이다 —
+    -- 명단에서 제외해도 지우지 않는다. 명렬표 다시 열기와 같은 규칙이다 —
     -- 지난 기록이 어느 명단의 것이었는지 남아야 한다.
     left_on    TEXT,
     UNIQUE (class_id, student_id)
@@ -312,7 +312,7 @@ CREATE TABLE IF NOT EXISTS absence_span
     -- 증빙 서류
     doc_done     INTEGER NOT NULL DEFAULT 0 CHECK (doc_done IN (0, 1)),
     doc_done_on  TEXT,
-    -- 마감일은 만들 때 계산해 **박아 둔다.** 설정을 바꿔도 과거 기록의 마감이
+    -- 기한일은 만들 때 계산해 **박아 둔다.** 설정을 바꿔도 과거 기록의 마감이
     -- 소급 변경되지 않아야 하고, 교사가 개별로 고칠 수 있어야 하기 때문이다.
     doc_due      TEXT,
     -- 나이스 등재
@@ -452,11 +452,11 @@ CREATE TABLE IF NOT EXISTS quota_rule
 --   subjectClassId   교과 모드에서 마지막에 본 강좌
 --
 -- **모드마다 마지막 자리를 따로 기억한다.** 오가며 쓰는 값이라, 돌아왔을 때 있던
--- 자리가 아니면 매번 다시 골라야 한다.
+-- 자리가 아니면 매번 다시 선택해야 한다.
 --
 -- **학교는 담당 학급 · 강좌에서 역산하지 않는다.** 그 학년도에 담당이 아직 없는 학교는
 -- 역산으로는 가리킬 수 없고, 순회 교사가 학교를 옮겨도 화면이 따라오지 않는다.
--- 학교가 범위이고 담당 학급 · 강좌가 그 안에 있다 — 순서를 거꾸로 두면 담임 학급을 고르는
+-- 학교가 범위이고 담당 학급 · 강좌가 그 안에 있다 — 순서를 거꾸로 두면 담임 학급을 선택하는
 -- 것만으로 학교가 바뀐다.
 --
 -- **학교 단위 값은 여기 넣지 않는다.** school 행에 자리가 있다.

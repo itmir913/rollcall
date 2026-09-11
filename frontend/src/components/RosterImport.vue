@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 명렬표 파일 열기. 끌어다 놓거나 골라서 연다.
+ * 명렬표 파일 열기. 끌어다 놓거나 선택해서 연다.
  *
  * 붙여넣기 방식을 쓰지 않는다. 탭인지 쉼표인지, 이름에 쉼표가 들어갔는지를
  * 텍스트만으로는 확실히 알 수 없다. 파일에는 그 정보가 들어 있다.
@@ -49,7 +49,7 @@ async function handleFile(file) {
         const parts = [`${result.entries.length}명을 읽었습니다.`]
         if (result.missing.length) {
             const labels = result.missing.map((c) => COL_LABELS[c]).join(' · ')
-            parts.push(`${labels} 열이 없어 학급은 아래에서 골라주세요.`)
+            parts.push(`${labels} 열이 없어 학급은 아래에서 선택해주세요.`)
         }
         // 어느 파서가 읽었는지 알린다. 폴백이 쓰였다면 파일이 표준에서 벗어났다는 뜻이고,
         // 값이 이상할 때 어디를 의심할지 알려주는 단서가 된다.
@@ -73,7 +73,7 @@ function onDrop(event) {
 
 function onPick(event) {
     handleFile(event.target.files?.[0])
-    // 같은 파일을 고쳐서 다시 고를 수 있어야 한다. 값을 비우지 않으면 change가 안 뜬다.
+    // 같은 파일을 고쳐서 다시 선택할 수 있어야 한다. 값을 비우지 않으면 change가 안 뜬다.
     event.target.value = ''
 }
 
@@ -81,16 +81,16 @@ async function downloadSample() {
     error.value = ''
     try {
         const path = await save({
-            title: '명렬표 예시 저장',
+            title: '명렬표 예시 파일로 저장',
             defaultPath: '명렬표_양식.xlsx',
             filters: [{name: '엑셀 파일', extensions: ['xlsx']}],
         })
         if (!path) return
         const buffer = await buildSampleWorkbook()
         await download.saveBytes(path, bufferToBase64(buffer))
-        notice.value = `명렬표 예시를 저장했습니다: ${path}`
+        notice.value = `명렬표 예시를 파일로 저장했습니다: ${path}`
     } catch (e) {
-        error.value = `명렬표 예시를 저장하지 못했습니다: ${e}`
+        error.value = `명렬표 예시를 파일로 저장하지 못했습니다: ${e}`
     }
 }
 </script>
@@ -106,7 +106,7 @@ async function downloadSample() {
                 {{ busy ? '읽는 중…' : '명렬표 파일을 여기에 끌어다 놓으세요' }}
             </p>
             <p class="drop__sub">
-                엑셀(.xlsx) · CSV — 또는 눌러서 고르기
+                엑셀(.xlsx) · CSV — 또는 눌러서 선택
             </p>
             <p v-if="fileName" class="drop__file">{{ fileName }}</p>
             <input ref="fileInput" :accept="ACCEPT" class="drop__input" type="file"
@@ -114,7 +114,7 @@ async function downloadSample() {
         </div>
 
         <div class="import__row">
-            <UiButton @click.stop="downloadSample">명렬표 예시 저장</UiButton>
+            <UiButton @click.stop="downloadSample">예시 파일로 저장</UiButton>
             <span class="import__hint">
                 머리글은 <b>학년 · 반 · 번호 · 이름</b>입니다. 열 순서는 상관없고,
                 모르는 열은 무시합니다.

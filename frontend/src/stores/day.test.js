@@ -5,7 +5,7 @@
  * 앱은 조용히 빈 화면을 보여준다 — 그래서 호출 자체를 테스트한다.
  *
  * 그리고 스토어의 액션은 에러를 `error`에 담고 **다시 던진다.** 삼키면 읽기 실패가
- * "데이터 없음"과 구분되지 않는다.
+ * "데이터 없음"과 구별되지 않는다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {createPinia, setActivePinia} from 'pinia'
@@ -15,7 +15,7 @@ import {useAppStore} from './app'
 
 vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn()}))
 
-/** 담임 학급 하나를 고른 상태. **범위는 그 학급 하나다.** */
+/** 담임 학급 하나를 선택한 상태. **범위는 그 학급 하나다.** */
 function readyApp() {
     const app = useAppStore()
     app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7}]
@@ -67,7 +67,7 @@ describe('오늘의 출결', () => {
         expect(invoke).not.toHaveBeenCalled()
     })
 
-    it('입력할 때 지금 고른 조합을 그대로 넘긴다', async () => {
+    it('입력할 때 지금 선택한 조합을 그대로 넘긴다', async () => {
         readyApp()
         const day = useDayStore()
         day.setDate('2026-09-10')

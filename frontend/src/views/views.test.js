@@ -88,7 +88,7 @@ function renderApp() {
     return mount(App, {global: {plugins: [router]}})
 }
 
-/** 사이드바에 실제로 보이는 항목. 모드가 구분되는 것이 여기서 드러난다. */
+/** 사이드바에 실제로 보이는 항목. 모드가 구별되는 것이 여기서 드러난다. */
 function railLabels(wrapper) {
     return wrapper.findAll('.rail__link').map((link) => link.text())
 }
@@ -158,7 +158,7 @@ describe('개요', () => {
         expect(wrapper.text()).toContain('개요')
         expect(wrapper.text()).toContain('서류 미제출')
         expect(wrapper.text()).toContain('NEIS 미등재')
-        // 칸 수만 세면 미제출(11)과 그중 마감 지남(2)을 바꿔 연결해도 그대로 지나간다.
+        // 칸 수만 세면 미제출(11)과 그중 기한 지남(2)을 바꿔 연결해도 그대로 지나간다.
         // 둘은 뜻이 다른 수라 어느 숫자가 어느 이름 아래 오는지까지 본다.
         const cells = wrapper.findAll('.strip__cell')
         expect(cells).toHaveLength(5)
@@ -167,11 +167,11 @@ describe('개요', () => {
             ['4', '오늘 기록'],
             ['1', '구분 · 종류 미정'],
             ['11', '미제출'],
-            ['2', '그중 마감 지남'],
+            ['2', '그중 기한 지남'],
         ])
     })
 
-    it('나이스 목록에도 마감 칸이 있다 — 칸을 없애면 두 목록의 눈높이가 어긋난다', () => {
+    it('나이스 목록에도 기한 칸이 있다 — 칸을 없애면 두 목록의 눈높이가 어긋난다', () => {
         useHomeStore().summary = {
             enrolled: 1, recorded: 1, incomplete: 0,
             docPending: 1, docOverdue: 0, neisPending: 1,
@@ -184,22 +184,22 @@ describe('개요', () => {
         const columns = (row) => row.findAll('span').map((cell) => cell.attributes('class'))
         expect(columns(rows[1])).toEqual(columns(rows[0]))
         // 서류 쪽 마감은 데이터에서 온다. 나이스 쪽은 마감이 없어 그 자리에 고정 문구가 온다.
-        expect(rows[0].find('.row__due').text()).toBe('마감 2026-09-17')
-        expect(rows[1].find('.row__due').text()).toBe('마감 없음')
+        expect(rows[0].find('.row__due').text()).toBe('기한 2026-09-17')
+        expect(rows[1].find('.row__due').text()).toBe('기한 없음')
     })
 
-    // **없는 것과 고르지 않은 것은 다음 걸음이 다르다.** 앞은 설정에서 만들어야 하고
-    // 뒤는 이동에서 고르기만 하면 된다. 한 문장으로 합치면 이미 학급을 만든 교사를
+    // **없는 것과 선택하지 않은 것은 다음 걸음이 다르다.** 앞은 설정에서 만들어야 하고
+    // 뒤는 이동에서 선택만 하면 된다. 한 문장으로 합치면 이미 학급을 만든 교사를
     // 설정으로 보내 놓고 거기서 또 무엇을 해야 하는지 알려주지 않게 된다.
-    // 교과 쪽은 이미 두 갈래로 구분하고 있었다 — 담임도 짝을 맞춘다.
-    it('담임 학급이 하나도 없으면 등록하라고 알린다 — 빈 화면으로 두지 않는다', () => {
+    // 교과 쪽은 이미 두 갈래로 구별하고 있었다 — 담임도 짝을 맞춘다.
+    it('담임 학급이 하나도 없으면 추가하라고 알린다 — 빈 화면으로 두지 않는다', () => {
         const app = useAppStore()
         app.classes = []
         app.classId = null
 
         const text = render(OverviewView).text()
-        expect(text).toContain('담임 학급을 등록하지 않았습니다')
-        expect(text).toContain('담임 학급 등록하기')
+        expect(text).toContain('담임 학급을 추가하지 않았습니다')
+        expect(text).toContain('담임 학급 추가')
     })
 
     /**
@@ -217,14 +217,14 @@ describe('개요', () => {
         expect(text).not.toContain('찍')
     })
 
-    it('학급은 있는데 고르지 않았으면 고르라고 알린다 — 설정으로 보내지 않는다', () => {
+    it('학급은 있는데 선택하지 않았으면 선택하라고 알린다 — 설정으로 보내지 않는다', () => {
         useAppStore().classId = null
 
         const text = render(OverviewView).text()
         expect(text).toContain('보고 있는 학급이 없습니다')
-        expect(text).toContain('학급 고르기')
+        expect(text).toContain('학급 선택')
         // 만들라는 말은 하지 않는다. 이미 만들어 둔 교사에게는 틀린 안내다.
-        expect(text).not.toContain('담임 학급 등록하기')
+        expect(text).not.toContain('담임 학급 추가')
     })
 })
 
@@ -322,14 +322,14 @@ describe('출결 기록 · 서류 · NEIS', () => {
         expect(render(StatsView).text()).toContain('3학년 6반')
     })
 
-    it('서류 화면은 모은 명단을 그대로 보여준다 — 받은 줄도 자리에 남는다', () => {
+    it('서류 화면은 모은 목록을 그대로 보여준다 — 받은 줄도 자리에 남는다', () => {
         const pending = usePendingStore()
         pending.docRows = [span(), span({id: 2, docDone: true, number: 12, name: '박서연'})]
 
         const wrapper = render(DocsView)
         expect(wrapper.findAll('.row')).toHaveLength(2)
         expect(wrapper.text()).toContain('못 받은 것 1건')
-        expect(wrapper.text()).toContain('모은 명단 2건')
+        expect(wrapper.text()).toContain('모은 목록 2건')
     })
 
     it('NEIS 화면은 날짜별 카드에 한 명씩 등재 버튼을 둔다', () => {
@@ -419,7 +419,7 @@ describe('담임 · 교과 모드', () => {
 
         expect(railLabels(wrapper)).toEqual(HOMEROOM_RAIL)
 
-        // 모드는 고른 학급이 결정한다. 교과 강좌로 옮기면 사이드바가 함께 바뀐다.
+        // 모드는 선택한 학급이 결정한다. 교과 강좌로 옮기면 사이드바가 함께 바뀐다.
         app.classId = 20
         await nextTick()
 

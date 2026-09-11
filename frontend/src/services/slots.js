@@ -32,12 +32,12 @@ export function slotLabel(slot) {
 }
 
 /**
- * 그 종류에서 고를 수 있는 기간.
+ * 그 종류에서 선택할 수 있는 기간.
  *
- * 결석은 하루 종일이라 고를 것이 없고, 지각은 온 때 하나, 조퇴는 나간 때 하나,
+ * 결석은 하루 종일이라 선택할 것이 없고, 지각은 온 때 하나, 조퇴는 나간 때 하나,
  * 결과는 빠진 교시 여러 개(조회·종례·?는 아니다). 종류가 미정이면 교시를 전부 열어 둔다.
  *
- * **지각은 조회를 고를 수 있다.** 지각은 `조회부터 N교시까지`이고, 조회만 놓친 날은
+ * **지각은 조회를 선택할 수 있다.** 지각은 `조회부터 N교시까지`이고, 조회만 놓친 날은
  * 그 N이 조회다. 나이스 실파일에도 `질병지각 · 결시교시 조회,`가 있었다.
  * 조퇴에서 종례를 닫아 두는 것은 그대로다 — 그쪽은 실무에서 쓰는 것을 아직 보지 못했다.
  */
@@ -59,7 +59,7 @@ export function allowedSlots(slotPrompt, maxSlot) {
     }
 }
 
-/** 결과만 여러 교시를 고른다. */
+/** 결과만 여러 교시를 선택한다. */
 export function isMulti(slotPrompt) {
     return slotPrompt === 'multi'
 }
@@ -92,7 +92,7 @@ export function groupRuns(slots) {
     return out
 }
 
-/** 고른 기간이 그 종류에서 여전히 쓸 수 있는가. 못 쓰면 화면이 미정으로 되돌린다. */
+/** 선택한 기간이 그 종류에서 여전히 쓸 수 있는가. 못 쓰면 화면이 미정으로 되돌린다. */
 export function keepUsable(slots, slotPrompt, maxSlot) {
     const allowed = allowedSlots(slotPrompt, maxSlot)
     const kept = slots.filter((v) => allowed.includes(v))
@@ -105,7 +105,7 @@ export function keepUsable(slots, slotPrompt, maxSlot) {
  * **아무것도 건드리지 않고 저장해도 기간이 바뀌지 않아야 한다.** 수정 모달은 이 목록을
  * 그대로 다시 보내므로, 되돌리지 못한 값을 빈 목록으로 내놓으면 모달을 열었다 저장만
  * 해도 기간이 미정으로 날아간다. 그래서 결과(multi)는 표현할 수 없는 끝(조회 · 종례)을
- * 버리지 않고 **고를 수 있는 교시 범위로 좁힌다** — 경계 하나가 옮겨지는 것이
+ * 버리지 않고 **선택할 수 있는 교시 범위로 좁힌다** — 경계 하나가 옮겨지는 것이
  * 기간 전체가 사라지는 것보다 낫다.
  *
  * 열린 쪽(NULL)은 `?`로 되돌린다. 그러지 않으면 `조회부터 ?까지`로 저장된 지각이

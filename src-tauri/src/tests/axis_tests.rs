@@ -373,7 +373,7 @@ fn the_same_memo_typed_with_a_stray_space_is_one_candidate() {
 #[test]
 fn memo_suggestions_stay_inside_the_class() {
     // 후보는 그 반에서 실제로 쓰인 말이어야 도움이 된다. 범위가 학급이므로
-    // 작년 반도 옆 학교도 자연히 구분된다 — 학급이 학년도와 학교를 함께 가리킨다.
+    // 작년 반도 옆 학교도 자연히 구별된다 — 학급이 학년도와 학교를 함께 가리킨다.
     let conn = setup_test_db();
     let school = school_id(&conn);
     let class = homeroom(&conn, school);

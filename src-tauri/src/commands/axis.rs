@@ -215,7 +215,7 @@ pub fn get_codes_impl(
 
 /// 두 축으로 쌍을 찾는다. 한쪽이라도 비면 코드가 없다 — 그것이 정상이다.
 /// 두 축으로 코드를 찾는다. 지금은 테스트만 부르지만, "그 날짜에 유효했던 코드"를
-/// 고르는 규칙(valid_from/valid_to)이 여기 한 곳에만 있어야 문구 생성과 검증이 달라지지 않는다.
+/// 선택하는 규칙(valid_from/valid_to)이 여기 한 곳에만 있어야 문구 생성과 검증이 달라지지 않는다.
 #[allow(dead_code)]
 pub fn find_code_impl(
     conn: &Connection,

@@ -1,4 +1,4 @@
-//! `due.rs` — 마감일 계산과 날짜 유틸.
+//! `due.rs` — 기한일 계산과 날짜 유틸.
 //!
 //! 기한은 학교 설정 두 값으로 결정된다 — `due_days`와 `due_skip_offdays`.
 //! 건너뛸 날은 주말과 **교사가 등록한 휴업일**이다. 공휴일 API를 부르지 않으므로
@@ -20,7 +20,7 @@ fn none() -> HashSet<NaiveDate> {
     HashSet::new()
 }
 
-// ─── 마감일 ────────────────────────────────────────────────────
+// ─── 기한일 ────────────────────────────────────────────────────
 
 #[test]
 fn due_date_skips_the_weekend() {
@@ -83,7 +83,7 @@ fn due_date_crossing_a_month_boundary() {
 #[test]
 fn due_date_terminates_even_if_every_day_is_an_off_day() {
     // 휴업일을 아무리 많이 등록해도 1년 안에서 끝낸다. 무한 루프가 나면
-    // 마감일을 계산하는 화면이 통째로 멈춘다.
+    // 기한일을 계산하는 화면이 통째로 멈춘다.
     let base = d("2026-09-10");
     let all: HashSet<NaiveDate> = (0..400).map(|n| base + chrono::Duration::days(n)).collect();
     let due = due_date(base, 5, true, &all);
@@ -116,9 +116,9 @@ fn open_days_for_a_single_day() {
         open_days_between(d("2026-09-10"), d("2026-09-10"), &none()).len(),
         1
     );
-    // 주말 하루만 고르면 후보가 없다.
+    // 주말 하루만 선택하면 후보가 없다.
     assert!(open_days_between(d("2026-09-12"), d("2026-09-12"), &none()).is_empty());
-    // 등록된 휴업일 하루만 골라도 마찬가지다.
+    // 등록된 휴업일 하루만 선택해도 마찬가지다.
     assert!(open_days_between(d("2026-09-10"), d("2026-09-10"), &off(&["2026-09-10"])).is_empty());
 }
 

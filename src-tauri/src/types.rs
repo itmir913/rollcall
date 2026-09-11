@@ -47,7 +47,7 @@ pub struct OffDayItem {
 /// **담임 출결과 교과 차시를 한 수로 합치지 않는다.** 두 기록은 표부터 다르고, 합친
 /// 수는 "출결 300건"이 담임 것인지 교과 것인지 말해 주지 못한다.
 ///
-/// 마감하거나 목록에서 내린 것(`school.active = 0` · `teaching_class.valid_to`)도 센다 —
+/// 마감한 것(`school.active = 0` · `teaching_class.valid_to`)도 센다 —
 /// 지울 때는 그것들도 똑같이 사라지기 때문이다. 목록 조회와 세는 기준이 다른 것이 맞다.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,7 +60,7 @@ pub struct AcademicYearItem {
     pub school_count: i64,
     /// 담당 학급 · 강좌 수(`teaching_class`). 담임과 교과를 함께 센다.
     pub class_count: i64,
-    /// 학적 수(`student`). 명단에서 빠진 학생도 학적은 남아 있으므로 함께 센다.
+    /// 학적 수(`student`). 명단에서 제외한 학생도 학적은 남아 있으므로 함께 센다.
     pub student_count: i64,
     /// 담임 출결 건수(`absence_span`).
     pub span_count: i64,
@@ -95,7 +95,7 @@ pub struct TeachingClassItem {
     pub valid_from: String,
     pub valid_to: Option<String>,
     /// 지금 명단에 있는 인원. 이동 화면이 "어느 쪽이 내가 찾던 강좌인지"를
-    /// 이름만으로 구별하지 못할 때 이 숫자가 구분한다.
+    /// 이름만으로 구별하지 못할 때 이 숫자가 구별한다.
     pub member_count: i64,
 }
 
@@ -366,7 +366,7 @@ pub struct StampInput {
     pub reason_id: Option<i64>,
     #[serde(default)]
     pub type_id: Option<i64>,
-    /// 고른 교시들. 결과처럼 여럿일 수 있고, 비어 있으면 기간 미정이다.
+    /// 선택한 교시들. 결과처럼 여럿일 수 있고, 비어 있으면 기간 미정이다.
     /// 연속한 교시는 Rust가 한 구간으로 묶는다.
     #[serde(default)]
     pub slots: Vec<String>,
@@ -509,7 +509,7 @@ pub struct QuotaReport {
     pub over_count: i64,
     /// 태그가 비어 있어 세지 못한 구간. 조용히 넘기지 않는다.
     pub untagged: Vec<SpanItem>,
-    /// 실제로 센 구간(ISO). 학년도 창과 교사가 고른 구간의 교집합이다.
+    /// 실제로 센 구간(ISO). 학년도 창과 교사가 선택한 구간의 교집합이다.
     pub window_from: String,
     pub window_to: String,
     /// **그 창 밖이라 세지 못한 구간 수.** 조용히 넘기지 않는다 —
@@ -551,7 +551,7 @@ pub struct SubjectSessionItem {
     /// `1` ~ `9`. 조회 · 종례는 들어올 수 없다 — 그 둘은 담임이 보는 하루의 양 끝이다.
     pub slot: String,
     pub memo: String,
-    /// 그 칸에서 빠진 학생 수.
+    /// 그 차시에서 결석한 학생 수.
     pub absent_count: i64,
     /// 그 날짜의 명단 인원. 분모다 — `absent_count`만으로는 "몇 명 중"을 말할 수 없다.
     pub total: i64,
@@ -600,7 +600,7 @@ pub struct NeisRowInput {
     pub detail: Option<String>,
 }
 
-/// 차분 한 건. **무엇을 할지는 교사가 고른다.**
+/// 차분 한 건. **무엇을 할지는 교사가 선택한다.**
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NeisDiffItem {
@@ -640,7 +640,7 @@ pub struct NeisImportPreview {
     pub to: String,
 }
 
-/// 교사가 고른 것. 여기 없는 것은 손대지 않는다.
+/// 교사가 선택한 것. 여기 없는 것은 손대지 않는다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NeisImportChoice {
@@ -656,6 +656,6 @@ pub struct NeisImportResult {
     pub added: i64,
     pub replaced: i64,
     pub marked: i64,
-    /// 교사가 골랐는데 적용되지 않은 건수. 미리보기 이후에 그 기록이 바뀐 경우다.
+    /// 교사가 선택했는데 적용되지 않은 건수. 미리보기 이후에 그 기록이 바뀐 경우다.
     pub skipped: i64,
 }

@@ -114,8 +114,8 @@ async function toggleNeis(span, value) {
  * 나이스 파일 열기.
  *
  * **일 · 월을 묻지 않는다** — 기간은 파일 안에 있다. 그래서 단추가 하나뿐이고,
- * 고르는 것은 파일뿐이다. fs 플러그인을 통째로 열지 않고 `<input type="file">`을
- * 쓰는 이유는, 앱이 실제로 필요한 권한이 "교사가 고른 파일 하나 읽기"뿐이기 때문이다.
+ * 선택하는 것은 파일뿐이다. fs 플러그인을 통째로 열지 않고 `<input type="file">`을
+ * 쓰는 이유는, 앱이 실제로 필요한 권한이 "교사가 선택한 파일 하나 읽기"뿐이기 때문이다.
  */
 function importNeis() {
     message.value = ''
@@ -144,11 +144,11 @@ async function applyImport() {
         importing.value = false
         neis.reset()
         await log.fetchMonth()
-        // 고른 것이 적용되지 않았으면 그 사실을 먼저 말한다. 미리보기 이후에 그 기록이
+        // 선택한 것이 적용되지 않았으면 그 사실을 먼저 말한다. 미리보기 이후에 그 기록이
         // 바뀐 경우인데, 숫자가 줄어든 것만으로는 교사가 알 수 없다.
         messageKind.value = out.skipped ? 'warn' : 'ok'
         message.value =
-            `가져왔습니다 — 넣기 ${out.added}건 · 고치기 ${out.replaced}건 · 등재 표시 ${out.marked}건`
+            `나이스 파일을 읽었습니다 — 넣기 ${out.added}건 · 고치기 ${out.replaced}건 · 등재 표시 ${out.marked}건`
             + (out.skipped ? ` · 그 사이에 바뀌어 건너뛴 것 ${out.skipped}건` : '')
     } catch {
         messageKind.value = 'error'
@@ -179,7 +179,7 @@ function saveCsv(kind, args, suggested) {
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급과 명렬표를 넣어주세요."/>
+    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급을 추가하고 명렬표를 등록해주세요."/>
 
     <UiPage v-else :subtitle="app.currentClass?.name ?? ''" title="출결 기록">
         <template #actions>

@@ -3,7 +3,7 @@
  *
  * 여기서 지키는 것은 넷이다.
  *   1. **담임 모드에서는 아무것도 읽지 않는다.** 한쪽의 숫자가 다른 쪽에 유출되면 안 된다.
- *   2. 교시를 여럿 골라도 칸은 교시마다 하나씩 만들어진다(연강도 두 칸이다).
+ *   2. 교시를 여럿 선택해도 칸은 교시마다 하나씩 만들어진다(연강도 두 차시다).
  *   3. 입력은 같은 학생을 다시 누르면 취소이고, 돌려주는 값이 입력한 뒤의 상태다.
  *   4. 실패를 삼키지 않는다 — `error`에 담고 다시 던진다.
  */
@@ -24,7 +24,7 @@ const ROLL = (over = {}) => ({
     absent: false, memo: '', homeroomNote: null, ...over,
 })
 
-/** 교과 강좌 하나를 맡은 교사. 모드는 고른 학급의 역할이 결정한다. */
+/** 교과 강좌 하나를 맡은 교사. 모드는 선택한 학급의 역할이 결정한다. */
 function subjectTeacher() {
     const app = useAppStore()
     app.schools = [{id: 1, yearId: 2, name: '한빛고등학교', maxSlot: 7}]
@@ -38,7 +38,7 @@ function subjectTeacher() {
     return app
 }
 
-/** 커맨드마다 다른 응답이 필요하다. 이름으로 구분한다. */
+/** 커맨드마다 다른 응답이 필요하다. 이름으로 구별한다. */
 function answers({sessions = [], roll = [], created = 77, toggled = true} = {}) {
     invoke.mockImplementation(async (command) => {
         if (command === 'get_subject_sessions') return sessions
@@ -142,7 +142,7 @@ describe('날짜 옮기기', () => {
         return subject
     }
 
-    it('하루 옮기면 고른 차시와 명단을 함께 비운다 — 보이지 않는 날에 입력되면 안 된다', async () => {
+    it('하루 옮기면 선택한 차시와 명단을 함께 비운다 — 보이지 않는 날에 입력되면 안 된다', async () => {
         const subject = await openedOn11()
 
         await subject.move(1)
@@ -152,7 +152,7 @@ describe('날짜 옮기기', () => {
         expect(subject.roll).toEqual([])
     })
 
-    it('날짜를 직접 골라도 앞 날짜의 차시가 남지 않는다', async () => {
+    it('날짜를 직접 선택해도 앞 날짜의 차시가 남지 않는다', async () => {
         const subject = await openedOn11()
 
         subject.setDate('2026-09-12')
@@ -161,7 +161,7 @@ describe('날짜 옮기기', () => {
         expect(subject.roll).toEqual([])
     })
 
-    it('같은 날짜를 다시 골라도 열어 둔 차시는 그대로다 — 옮긴 것이 아니다', async () => {
+    it('같은 날짜를 다시 선택해도 열어 둔 차시는 그대로다 — 옮긴 것이 아니다', async () => {
         const subject = await openedOn11()
 
         subject.setDate('2026-09-11')
@@ -178,11 +178,11 @@ describe('날짜 옮기기', () => {
         await expect(subject.toggle(11)).rejects.toBeTruthy()
         await expect(subject.setAbsenceMemo(11, '병원')).rejects.toBeTruthy()
 
-        expect(subject.error).toContain('교시를 고르세요')
+        expect(subject.error).toContain('교시를 선택하세요')
         expect(invoke).not.toHaveBeenCalled()
     })
 
-    it('지난 차시를 열 때는 날짜부터 옮기고 고른다 — 순서가 뒤바뀌면 방금 고른 것이 지워진다', async () => {
+    it('지난 차시를 열 때는 날짜부터 옮기고 선택한다 — 순서가 뒤바뀌면 방금 선택한 것이 지워진다', async () => {
         subjectTeacher()
         answers({
             sessions: [SESSION({id: 5, date: '2026-09-03', slot: '2'})],
@@ -205,7 +205,7 @@ describe('날짜 옮기기', () => {
 })
 
 describe('차시 만들기 · 지우기', () => {
-    it('고른 교시마다 칸을 하나씩 만든다 — 연강도 두 칸이다', async () => {
+    it('선택한 교시마다 칸을 하나씩 만든다 — 연강도 두 차시다', async () => {
         subjectTeacher()
         let next = 100
         invoke.mockImplementation(async (command) => {
@@ -227,7 +227,7 @@ describe('차시 만들기 · 지우기', () => {
             {classId: 20, date: '2026-09-11', slot: '3'},
             {classId: 20, date: '2026-09-11', slot: '4'},
         ])
-        // 여럿을 골라도 여는 것은 하나다. 화면이 스스로 옮겨 다니면 어디를 보고 있었는지 놓친다.
+        // 여럿을 선택해도 여는 것은 하나다. 화면이 스스로 옮겨 다니면 어디를 보고 있었는지 놓친다.
         expect(subject.sessionId).toBe(101)
     })
 
@@ -306,7 +306,7 @@ describe('묶음과 세기', () => {
         expect(subject.absentTotal).toBe(3)
     })
 
-    it('오늘 몫은 날짜로 골라 센다 — 달을 읽어 두고도 오늘만 본다', async () => {
+    it('오늘 몫은 날짜로 선택해 센다 — 달을 읽어 두고도 오늘만 본다', async () => {
         subjectTeacher()
         answers({
             sessions: [

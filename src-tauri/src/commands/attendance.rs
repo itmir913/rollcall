@@ -67,7 +67,7 @@ pub(crate) fn max_slot_of(conn: &Connection, school_id: i64) -> Result<i64, Stri
     Ok(school_settings(conn, school_id)?.max_slot)
 }
 
-/// 마감을 셀 때 건너뛸 날. 학사일정이 아니라 그 목록일 뿐이다.
+/// 기한을 셀 때 건너뛸 날. 학사일정이 아니라 그 목록일 뿐이다.
 pub(crate) fn off_days_of(conn: &Connection, school_id: i64) -> Result<HashSet<NaiveDate>, String> {
     let mut stmt = conn
         .prepare("SELECT date FROM off_day WHERE school_id = ?1")
@@ -77,12 +77,12 @@ pub(crate) fn off_days_of(conn: &Connection, school_id: i64) -> Result<HashSet<N
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    // 형식이 깨진 행은 마감 계산에서 제외한다. 그것 때문에 저장이 막히면 안 된다.
+    // 형식이 깨진 행은 기한 계산에서 제외한다. 그것 때문에 저장이 막히면 안 된다.
     Ok(rows.iter().filter_map(|s| parse_date(s).ok()).collect())
 }
 
 /// 그 학생이 이 학급 명단인지 확인한다. **날짜로 좁히지 않는다** — 지난 날짜를 열어
-/// 정리하는 동안 지금 명단에서 빠진 학생의 그날 기록을 고칠 수 있어야 한다.
+/// 정리하는 동안 지금 명단에서 제외한 학생의 그날 기록을 고칠 수 있어야 한다.
 ///
 /// 확인하는 이유는 판정이 아니라 메시지다. 그냥 넣으면 외래키 위반이 "참조하는 항목이
 /// 없습니다"로 올라와, 교사는 무엇이 잘못됐는지 알 수 없다.
@@ -109,7 +109,7 @@ fn span_class(conn: &Connection, span_id: i64) -> Result<i64, String> {
         |r| r.get(0),
     )
     .map_err(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => format!("출결 기록을 찾을 수 없습니다: {span_id}"),
+        rusqlite::Error::QueryReturnedNoRows => format!("출결 한 건을 찾을 수 없습니다: {span_id}"),
         other => other.to_string(),
     })
 }
@@ -190,11 +190,11 @@ pub(crate) fn span_text(
     }
 }
 
-/// 고른 교시를 저장할 구간들로 바꾼다. 순수 함수다.
+/// 선택한 교시를 저장할 구간들로 바꾼다. 순수 함수다.
 ///
 /// · 종류가 `none`이면 조회~종례 한 건이다(결석은 교시를 묻지 않는다).
-/// · 고른 교시가 없으면 양쪽이 열린 한 건이다(기간 미정).
-/// · `end`는 조회~고른 값, `start`는 고른 값~종례.
+/// · 선택한 교시가 없으면 양쪽이 열린 한 건이다(기간 미정).
+/// · `end`는 조회~선택한 값, `start`는 선택한 값~종례.
 /// · 그 밖(`multi`, 종류 미정)은 **연속한 것끼리 묶어** 여러 건으로 나눈다.
 ///   1,2,3은 한 건이고 1,3,5는 세 건이다 — 연속하지 않은 것을 한 구간으로 저장하면
 ///   2교시가 조용히 포함된다.
@@ -220,7 +220,7 @@ pub(crate) fn ranges_for(
         return match slot_prompt {
             Some("end") => Ok(vec![(Some(HOMEROOM.to_string()), None)]),
             Some("start") => Ok(vec![(None, Some(CLOSING.to_string()))]),
-            _ => Err(format!("여기서는 {UNKNOWN}를 고를 수 없습니다.")),
+            _ => Err(format!("여기서는 {UNKNOWN}를 선택할 수 없습니다.")),
         };
     }
 
@@ -299,7 +299,7 @@ fn map_span(row: &rusqlite::Row, today: NaiveDate) -> rusqlite::Result<SpanItem>
     let doc_done: bool = row.get::<_, i64>(16)? != 0;
     let doc_due: Option<String> = row.get(17)?;
 
-    // 이미 받은 서류는 마감을 세지 않는다.
+    // 이미 받은 서류는 기한을 세지 않는다.
     let days_overdue = match (doc_done, doc_due.as_deref()) {
         (false, Some(d)) => parse_date(d).ok().map(|due| due::days_overdue(due, today)),
         _ => None,
@@ -377,7 +377,7 @@ fn mark_overlaps(items: &mut [SpanItem], max_slots: &[i64]) {
 /// `where_sql`은 `SPAN_SELECT` 뒤에 그대로 붙는다 — `WHERE ...`부터 `ORDER BY ...`까지
 /// 부르는 쪽이 적고, 매개변수는 `?1`부터 쓴다. 별칭은 구간이 `s`, 학생이 `st`, 학교가 `sc`다.
 ///
-/// `today`는 화면이 넘긴 기준일(ISO)이다. 마감 경과일을 이 날짜로 센다 —
+/// `today`는 화면이 넘긴 기준일(ISO)이다. 기한 경과일을 이 날짜로 센다 —
 /// 여기서 시계를 읽으면 지난 날짜를 열어 둔 채 정리하는 동안 화면이 보는 날과 어긋난다.
 pub(crate) fn load_spans(
     conn: &Connection,
@@ -483,7 +483,7 @@ fn span_notes(conn: &Connection, span_id: i64) -> Result<Vec<&'static str>, Stri
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => {
-                format!("출결 기록을 찾을 수 없습니다: {span_id}")
+                format!("출결 한 건을 찾을 수 없습니다: {span_id}")
             }
             other => other.to_string(),
         })?;
@@ -531,7 +531,7 @@ fn insert_span(
     Ok(conn.last_insert_rowid())
 }
 
-/// 서류 제출 마감. **만들 때 계산해 박는다** — 설정을 바꿔도 과거 기록의 마감이
+/// 서류 제출 기한. **만들 때 계산해 박는다** — 설정을 바꿔도 과거 기록의 기한이
 /// 소급 변경되지 않아야 하기 때문이다.
 pub(crate) fn due_for(
     date: NaiveDate,
@@ -548,7 +548,7 @@ pub(crate) fn due_for(
 
 /// 출결 한 건을 입력한다. **같은 조합을 다시 입력하면 취소다.**
 ///
-/// 고른 교시가 여러 묶음이면 구간도 여러 건이 된다. 그 전부가 이미 있을 때만
+/// 선택한 교시가 여러 묶음이면 구간도 여러 건이 된다. 그 전부가 이미 있을 때만
 /// 취소로 보고 지운다 — 일부만 있으면 나머지를 채우는 것이 교사의 의도다.
 ///
 /// 그중 하나라도 교사가 적어 둔 것을 들고 있으면 `kept`로 돌려주고 아무것도 지우지
@@ -648,7 +648,7 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
 
 /// 구간 하나의 두 축과 기간을 고친다.
 ///
-/// **마감은 다시 계산하지 않는다.** 이미 교사가 학부모에게 말해 둔 날짜이고,
+/// **기한은 다시 계산하지 않는다.** 이미 교사가 학부모에게 말해 둔 날짜이고,
 /// 축을 고쳤다고 소급해 움직이면 그 약속이 조용히 달라진다.
 pub fn edit_span_impl(conn: &Connection, edit: &SpanEdit) -> Result<(), String> {
     let scope = homeroom_scope(conn, span_class(conn, edit.span_id)?)?;
@@ -681,7 +681,7 @@ pub fn edit_span_impl(conn: &Connection, edit: &SpanEdit) -> Result<(), String> 
             )
             .map_err(|e| constraint_err(&e, "이미 같은 구간이 있습니다."))?;
         if changed == 0 {
-            return Err(format!("출결 기록을 찾을 수 없습니다: {}", edit.span_id));
+            return Err(format!("출결 한 건을 찾을 수 없습니다: {}", edit.span_id));
         }
         Ok(())
     })
@@ -692,7 +692,7 @@ pub fn delete_span_impl(conn: &Connection, span_id: i64) -> Result<(), String> {
         .execute("DELETE FROM absence_span WHERE id = ?1", params![span_id])
         .map_err(|e| e.to_string())?;
     if removed == 0 {
-        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+        return Err(format!("출결 한 건을 찾을 수 없습니다: {span_id}"));
     }
     Ok(())
 }
@@ -706,7 +706,7 @@ pub fn set_span_memo_impl(conn: &Connection, span_id: i64, memo: &str) -> Result
         )
         .map_err(|e| e.to_string())?;
     if changed == 0 {
-        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+        return Err(format!("출결 한 건을 찾을 수 없습니다: {span_id}"));
     }
     Ok(())
 }
@@ -750,7 +750,7 @@ pub fn set_span_tag_impl(
         )
         .map_err(|e| constraint_err(&e, "이미 같은 태그가 있습니다."))?;
     if changed == 0 {
-        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+        return Err(format!("출결 한 건을 찾을 수 없습니다: {span_id}"));
     }
     Ok(())
 }
@@ -760,7 +760,7 @@ pub fn set_span_tag_impl(
 /// 하루치 격자. 그날 명단에 있던 학생 전원이 행으로 나온다.
 ///
 /// 구간이 없어도 행은 나온다 — 빈 행이 곧 출석이고, 출석은 저장하지 않는다.
-/// 명단에서 빠졌거나 전출한 학생은 그날 명단이 아니므로 빠진다.
+/// 명단에서 제외됐거나 전출한 학생은 그날 명단이 아니므로 빠진다.
 pub fn get_day_grid_impl(
     conn: &Connection,
     class_id: i64,
@@ -785,7 +785,7 @@ pub fn get_day_grid_impl(
     )?;
 
     // 명단에 있는 학생이 격자의 줄이다. 다만 **그날 기록이 있는 학생은 명단에서
-    // 빠졌더라도 줄을 만든다.** 명렬표를 다시 가져와 번호가 빠지면 그 학생의 그날
+    // 빠졌더라도 줄을 만든다.** 명렬표를 다시 열어 번호가 빠지면 그 학생의 그날
     // 구간은 학급에 그대로 남는데, 줄이 없으면 화면에서 손댈 수 없는 기록이 된다.
     // 그날 그 학생은 이 반이었다 — 지우는 것은 교사가 보고 판단할 일이다.
     let mut rows: Vec<DayRow> = students
@@ -859,7 +859,7 @@ pub fn get_spans_between_impl(
 
 /// 한 달치 기록을 날짜별로 묶는다. 최신 날짜가 먼저다.
 ///
-/// 명단에서 빠진 학생의 지난 기록도 그대로 나온다 — 그 구간이 이 학급을 가리키고 있다.
+/// 명단에서 제외한 학생의 지난 기록도 그대로 나온다 — 그 구간이 이 학급을 가리키고 있다.
 /// `enrolled`는 그날 명단 인원이므로 지금 인원과 다를 수 있다.
 pub fn get_month_log_impl(
     conn: &Connection,

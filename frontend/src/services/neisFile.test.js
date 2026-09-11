@@ -197,7 +197,7 @@ describe('splitCodeLabel', () => {
             .toEqual({reasonLabel: null, typeLabel: null})
     })
 
-    it('후보는 DB에서 온다 — 목록이 비면 아무것도 구분하지 못한다', () => {
+    it('후보는 DB에서 온다 — 목록이 비면 아무것도 구별하지 못한다', () => {
         expect(splitCodeLabel('질병조퇴', [], [])).toEqual({reasonLabel: null, typeLabel: null})
     })
 })
@@ -456,7 +456,7 @@ describe('번호 이어받기', () => {
 describe('종례의 자리', () => {
     it('마지막 교시부터의 조퇴를 쪼개지 않는다 — 월별 파일에서 가장 흔한 줄이다', () => {
         // 분리하면 `7교시~7교시`와 `종례~종례` 두 건이 되어 이미 올바르게 저장된
-        // `7교시~종례`와 어긋나고, `종례~종례` 조퇴는 고르개가 표현할 수도 없다.
+        // `7교시~종례`와 어긋나고, `종례~종례` 조퇴는 선택 단추로는 표현할 수도 없다.
         expect(slotRuns(['7', '종례'])).toEqual([{startSlot: '7', endSlot: '종례'}])
         expect(slotRuns(['2', '종례'])).toEqual([{startSlot: '2', endSlot: '종례'}])
         expect(slotRuns(['6', '7', '종례'])).toEqual([{startSlot: '6', endSlot: '종례'}])
@@ -596,10 +596,10 @@ describe('표기를 다듬는 자리', () => {
     })
 })
 
-describe('구분하지 못한 표기', () => {
+describe('구별하지 못한 표기', () => {
     it('모르는 출결 표기를 미정 기록과 일치라고 말하지 않는다', () => {
         // Rust의 `resolve`는 같은 줄을 "모르는 출결 표기"로 돌려보낸다. 여기서만
-        // 일치라고 하면 검증 화면과 가져오기 화면이 한 줄을 두고 다른 말을 한다.
+        // 일치라고 하면 검증 화면과 파일 열기 화면이 한 줄을 두고 다른 말을 한다.
         const unread = theirs({codeLabel: '공결', reasonLabel: null, typeLabel: null})
         const undecided = mine({reasonLabel: null, typeLabel: null})
         expect(sameRecord(undecided, unread)).toBe(false)

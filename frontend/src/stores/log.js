@@ -35,7 +35,7 @@ export const useLogStore = defineStore('log', {
     },
 
     actions: {
-        /** 달을 고른다. 1월과 2월은 학년도의 이듬해다. */
+        /** 달을 선택한다. 1월과 2월은 학년도의 이듬해다. */
         setMonth(month, academicYear) {
             this.month = month
             this.year = calendarYearOf(academicYear, month)

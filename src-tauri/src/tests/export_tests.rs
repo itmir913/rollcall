@@ -228,9 +228,9 @@ fn overdue_column_reads_as_a_sentence() {
         &[past, today, ahead, none],
     ));
     assert!(rows[1].ends_with("3일 경과"), "{}", rows[1]);
-    assert!(rows[2].ends_with("오늘 마감"), "{}", rows[2]);
+    assert!(rows[2].ends_with("오늘까지"), "{}", rows[2]);
     assert!(rows[3].ends_with("4일 남음"), "{}", rows[3]);
-    // 마감이 없는 건은 재촉할 근거가 없으므로 경과일 칸이 빈다.
+    // 기한이 없는 건은 재촉할 근거가 없으므로 경과일 칸이 빈다.
     assert!(rows[4].ends_with(','), "{}", rows[4]);
 }
 

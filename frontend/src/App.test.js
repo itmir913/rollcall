@@ -127,20 +127,20 @@ describe('담당 학급 · 강좌가 없는 모드', () => {
         expect(lockedLabels(wrapper)).toEqual([
             '오늘의 출결', '출결 기록', '서류 미제출자', 'NEIS 미등재', '통계', 'NEIS 검증',
         ])
-        // 개요 · 이동 · 설정은 열려 있다. 등록하러 갈 길이 막히면 안 된다.
+        // 개요 · 이동 · 설정은 열려 있다. 추가하러 갈 길이 막히면 안 된다.
         expect(wrapper.findAll('a.rail__link').map((l) => l.text()))
             .toEqual(['개요', '이동', '설정', '업데이트 확인'])
         expect(wrapper.find('.rail__where').text()).toContain('담임 학급이 없습니다')
         expect(wrapper.find('.rail__here-name').text()).toBe('담임 학급 없음')
     })
 
-    it('수업을 등록하지 않은 교과 모드도 같다', async () => {
+    it('교과 강좌가 없는 모드도 같다', async () => {
         scope({classes: [HOMEROOM], classId: null, mode: 'subject'})
         const wrapper = renderApp()
         await flushPromises()
 
         expect(lockedLabels(wrapper)).toEqual(['오늘 수업', '수업 기록'])
-        expect(wrapper.find('.rail__where').text()).toContain('수업을 등록하지 않았습니다')
+        expect(wrapper.find('.rail__where').text()).toContain('교과 강좌가 없습니다')
     })
 
     it('담당 학급 · 강좌가 있으면 잠그지 않는다', async () => {

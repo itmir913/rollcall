@@ -112,7 +112,7 @@ describe('명렬표', () => {
         })
     })
 
-    it('학급 판단은 파일이 말해 준다 — 넣을 명단은 교사가 고른 학급이다', async () => {
+    it('학급 판단은 파일이 말해 준다 — 넣을 명단은 교사가 선택한 학급이다', async () => {
         await useRosterStore().detectClass([{number: 1, name: '학생1'}])
         expect(invoke).toHaveBeenCalledWith('detect_roster_class', {
             entries: [{number: 1, name: '학생1'}],

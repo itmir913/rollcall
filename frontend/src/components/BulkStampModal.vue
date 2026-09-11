@@ -5,7 +5,7 @@
  * **화면(탭)으로 만들지 않는다.** 기간은 화면이 아니라 입력의 한 축이라, 오늘의 출결에서
  * 열리는 창이어야 한다. 탭으로 만들면 "어제 것도 여기서 넣나"를 매번 되묻게 된다.
  *
- * 주말과 등록된 휴업일은 Rust가 미리 빼 준다. 그래도 남은 날 중에 학교가 쉰 날이
+ * 주말과 추가한 휴업일은 Rust가 미리 빼 준다. 그래도 남은 날 중에 학교가 쉰 날이
  * 있을 수 있으므로 **교사가 미리보기에서 지운다** — 학사일정을 앱이 알 수 없다는
  * 사실의 인정이다.
  */
@@ -42,7 +42,7 @@ watch(
 async function look() {
     error.value = ''
     if (!from.value || !to.value) {
-        error.value = '시작일과 마지막 날을 골라주세요.'
+        error.value = '시작일과 마지막 날을 선택해주세요.'
         return
     }
     if (from.value > to.value) {
@@ -82,7 +82,7 @@ function toggle(date) {
 
         <div v-if="days.length" class="bulk">
             <p class="set__hint">
-                주말과 휴업일은 이미 빠졌습니다. 학교가 쉰 날이 남아 있으면 눌러서 빼주세요.
+                주말과 휴업일은 이미 제외했습니다. 학교가 쉰 날이 남아 있으면 눌러서 제외해주세요.
             </p>
             <div class="bulk__days">
                 <button v-for="day in days" :key="day.date"

@@ -1,8 +1,8 @@
 //! 명단과 연락처.
 //!
 //! 명렬표를 다시 여는 것은 **교체가 아니라 차분**이다. 사라진 번호를 지우면 그 학생의 출결
-//! 기록이 함께 사라지므로, 명단에서 빠진 번호는 `class_member.left_on`을 채우는 것으로
-//! 끝난다. **학생의 `enrolled_to`가 아니다** — 내 명단에서 빠진 것과 학교를 떠난 것은
+//! 기록이 함께 사라지므로, 명단에서 제외한 번호는 `class_member.left_on`을 채우는 것으로
+//! 끝난다. **학생의 `enrolled_to`가 아니다** — 내 명단에서 제외된 것과 학교를 떠난 것은
 //! 다른 일이다.
 //!
 //! 파일 열기는 두 가지 일을 한다. 학생을 만드는 일과 내 명단에 연결하는 일이고,
@@ -239,7 +239,7 @@ fn 교과에서_같은_번호_다른_반_두_줄이_서로_다른_학생으로_�
 #[test]
 fn 교과_파일에_학년이_빈_줄이_있으면_그_줄만_blocked이고_전출이_꺼진다() {
     // 읽지 못한 줄은 짝 찾기에 참여하지 못한다. 그대로 두면 그 줄이 가리키던 학생이
-    // 짝을 잃어 전출로 잡히고, 교사가 [저장]을 누르면 명단에서 빠진다.
+    // 짝을 잃어 전출로 잡히고, 교사가 [저장]을 누르면 명단에서 제외된다.
     let conn = setup_test_db();
     let school = school_id(&conn);
     let subject = insert_class(&conn, school, "subject", "지구과학Ⅰ", None, None);
@@ -307,7 +307,7 @@ fn 자리를_남이_써서_막힌_줄도_전출을_보류한다() {
     // 차분이 막은 줄만 전출을 멈추면, 자리를 맞춰 본 뒤에 막힌 줄은 그대로 지나간다.
     // 그런데 그 줄도 짝을 빼앗는다 — 파일의 반 오타 한 글자로 `3학년 6반 4번`이
     // `3학년 1반 4번`이 되면 그 줄은 남의 자리라 막히고, 내 명단의 김하늘은 짝을 잃는다.
-    // 교사가 "한 줄만 못 넣었구나" 하고 저장하면 유일한 학생이 명단에서 빠진다.
+    // 교사가 "한 줄만 못 넣었구나" 하고 저장하면 유일한 학생이 명단에서 제외된다.
     let conn = setup_test_db();
     let school = school_id(&conn);
     let subject = insert_class(&conn, school, "subject", "지구과학Ⅰ", None, None);
@@ -452,7 +452,7 @@ fn 담임_학급_학생이_내_교과_강좌에도_있으면_학생_행은_하�
     // 교과 명렬표에는 그 학생이 학적 자리와 함께 들어온다.
     let rows = preview_roster_impl(&conn, subject, &[entry_at(3, 6, 1, "김철수")]).unwrap();
     assert_eq!(rows[0].action, "added", "내 강좌 명단에는 아직 없다");
-    assert_eq!(rows[0].student_id, None, "화면 토글이 studentId로 구분된다");
+    assert_eq!(rows[0].student_id, None, "화면 토글이 studentId로 구별된다");
     assert!(rows[0].why.as_deref().unwrap().contains("이미 있는 학생"));
 
     let result = apply_roster_impl(&conn, subject, "2026-03-02", &rows).unwrap();
@@ -555,7 +555,7 @@ fn apply_adds_and_withdraws() {
 }
 
 #[test]
-fn 다시_가져와도_학생이_중복으로_생기지_않는다() {
+fn 다시_열어도_학생이_중복으로_생기지_않는다() {
     // 같은 학적 자리의 학생은 한 행이다. 파일 열기가 학생을 다시 만들면 같은 사람이
     // 둘이 되고, 지난 기록이 어느 쪽에 붙었는지 알 수 없게 된다.
     let conn = setup_test_db();
@@ -697,7 +697,7 @@ fn apply_rolls_back_on_error() {
 
 #[test]
 fn apply_refuses_a_row_that_points_at_another_class() {
-    // 학급을 잘못 고른 채 적용하면 옆 반 명단이 조용히 정리된다.
+    // 학급을 잘못 선택한 채 적용하면 옆 반 명단이 조용히 정리된다.
     let conn = setup_test_db();
     let school = school_id(&conn);
     let class = homeroom(&conn, school);
@@ -712,7 +712,7 @@ fn apply_refuses_a_row_that_points_at_another_class() {
     assert_eq!(get_students_impl(&conn, class).unwrap().len(), 1);
 }
 
-// ── 학교가 명단을 구분한다 ────────────────────────────────────
+// ── 학교가 명단을 구별한다 ────────────────────────────────────
 
 #[test]
 fn two_schools_can_hold_the_same_class_without_mixing() {
@@ -1012,7 +1012,7 @@ fn contacts_go_away_with_the_student_row() {
 // ── 학급 ──────────────────────────────────────────────────────
 //
 // 학급 목록은 이제 명단에서 추출하지 않는다. **담당 학급 · 강좌가 행이다**(`teaching_class`).
-// 학생이 아직 하나도 없는 반도 골라야 하고, 교과 강좌는 반이 섞여 학적으로는
+// 학생이 아직 하나도 없는 반도 선택해야 하고, 교과 강좌는 반이 섞여 학적으로는
 // 이름조차 만들 수 없기 때문이다. 그쪽 시험은 `class_tests.rs`에 있다.
 
 #[test]
@@ -1027,10 +1027,10 @@ fn 명단이_비어도_학급은_남는다() {
     let left: i64 = conn
         .query_row("SELECT COUNT(*) FROM teaching_class", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(left, 1, "명렬표를 다시 가져올 자리가 남아야 한다");
+    assert_eq!(left, 1, "명렬표를 다시 열 자리가 남아야 한다");
 }
 
-// ── 명단에서 빠진 학생 ────────────────────────────────────────
+// ── 명단에서 제외한 학생 ────────────────────────────────────────
 
 #[test]
 fn 명단에서_뺀_학생의_지난_기록은_보는_화면에_그대로_남는다() {

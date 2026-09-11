@@ -109,7 +109,7 @@ describe('어긋난 서식은 교체하지 않는다', () => {
         '캡션 기호가 없음': broken((c) => {
             c.caption.markers = []
         }),
-        '구분자가 없음': broken((c) => delete c.slotList),
+        '교시 목록 규칙이 없음': broken((c) => delete c.slotList),
         '날짜 표기가 하나도 없음': broken((c) => {
             c.date.patterns = []
         }),

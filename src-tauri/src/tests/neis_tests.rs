@@ -3,9 +3,9 @@
 //! 학생 이름은 전부 가짜다. 실제 파일의 이름은 개인정보라 저장소에 남기지 않는다.
 //!
 //! 여기서 지키려는 것은 셋이다.
-//!   · 같은 것은 그대로 두고, 없는 것은 추가하고, 다른 것은 교사가 고른다.
+//!   · 같은 것은 그대로 두고, 없는 것은 추가하고, 다른 것은 교사가 선택한다.
 //!   · **앱에만 있는 기록을 지우지 않는다.** 나이스에 아직 안 넣은 것이 이 앱의 존재 이유다.
-//!   · 고르지 않은 것은 손대지 않는다.
+//!   · 선택하지 않은 것은 손대지 않는다.
 
 use super::*;
 use crate::commands::attendance::stamp_span_impl;
@@ -129,7 +129,7 @@ fn 똑같은_기록은_같음이고_손대지_않는다() {
 }
 
 #[test]
-fn 내용이_다르면_다름이고_교사가_고른다() {
+fn 내용이_다르면_다름이고_교사가_선택한다() {
     let (conn, school, class) = fixture();
     let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
@@ -141,11 +141,11 @@ fn 내용이_다르면_다름이고_교사가_고른다() {
     let item = &out.items[0];
     assert_eq!(item.my_axis.as_deref(), Some("미인정 결석"));
     assert_eq!(item.their_axis, "질병 결석");
-    assert!(item.span_id.is_some(), "고칠 대상을 알려줘야 고를 수 있다");
+    assert!(item.span_id.is_some(), "고칠 대상을 알려줘야 선택할 수 있다");
 }
 
 #[test]
-fn 고르지_않으면_아무것도_바뀌지_않는다() {
+fn 선택하지_않으면_아무것도_바뀌지_않는다() {
     let (conn, school, class) = fixture();
     let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
@@ -161,11 +161,11 @@ fn 고르지_않으면_아무것도_바뀌지_않는다() {
             |r| r.get(0),
         )
         .unwrap();
-    assert_eq!(axis, "미인정", "고르지 않은 것을 바꾸지 않는다");
+    assert_eq!(axis, "미인정", "선택하지 않은 것을 바꾸지 않는다");
 }
 
 #[test]
-fn 고른_것만_추가한다() {
+fn 선택한_것만_추가한다() {
     let (conn, school, class) = fixture();
     enroll(&conn, class, school, 5, "학생5");
     enroll(&conn, class, school, 6, "학생6");
@@ -236,7 +236,7 @@ fn 나이스에_있는_것으로_확인되면_등재_표시를_해준다() {
 }
 
 #[test]
-fn 다름을_고르면_내_기록이_나이스_쪽으로_바뀐다() {
+fn 다름을_선택하면_내_기록이_나이스_쪽으로_바뀐다() {
     let (conn, school, class) = fixture();
     let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
@@ -335,8 +335,8 @@ fn 결시교시가_조회_하나뿐인_지각도_들어간다() {
     let (conn, school, class) = fixture();
     enroll(&conn, class, school, 18, "학생18");
 
-    // 나이스 실파일의 `질병지각 · 결시교시 조회,`. 화면의 교시 고르개는 지각에서
-    // 조회를 열지 않지만, 파일에서 온 값은 그대로 저장한다 — 우리가 못 고르는 것과
+    // 나이스 실파일의 `질병지각 · 결시교시 조회,`. 화면의 교시 선택 단추는 지각에서
+    // 조회를 열지 않지만, 파일에서 온 값은 그대로 저장한다 — 우리가 못 선택하는 것과
     // 나이스에 그렇게 적혀 있는 것은 다른 문제다.
     let rows = vec![row(18, "질병지각", "질병", "지각", Some("조회"), Some("조회"))];
     let choice = NeisImportChoice {
@@ -420,7 +420,7 @@ fn 다른_반의_기록은_섞이지_않는다() {
 }
 
 #[test]
-fn 마감은_가져올_때_계산해_박는다() {
+fn 기한은_파일을_열_때_계산해_박는다() {
     let (conn, school, class) = fixture();
     enroll(&conn, class, school, 5, "학생5");
 
@@ -443,7 +443,7 @@ fn 못_읽은_줄_하나가_나머지를_막지_않는다() {
     let (conn, school, class) = fixture();
     enroll(&conn, class, school, 5, "학생5");
 
-    // 5번은 읽히고 99번은 명렬표에 없다. 교사는 읽힌 것만 골랐다.
+    // 5번은 읽히고 99번은 명렬표에 없다. 교사는 읽힌 것만 선택했다.
     let rows = vec![sick_absence(5), sick_absence(99)];
     let choice = NeisImportChoice {
         add: vec![0],
@@ -555,7 +555,7 @@ fn 전출한_학생은_전출일부터_이_반이_아니다() {
 }
 
 #[test]
-fn 같은_파일을_다시_가져와도_더_들어가지_않는다() {
+fn 같은_파일을_다시_열어도_더_들어가지_않는다() {
     let (conn, school, class) = fixture();
     enroll(&conn, class, school, 5, "학생5");
 
@@ -569,7 +569,7 @@ fn 같은_파일을_다시_가져와도_더_들어가지_않는다() {
     assert_eq!(first.added, 1);
 
     // 같은 파일을 한 번 더 올린 것. 두 번째는 '같음'이라 더할 것이 없고,
-    // 교사가 고른 줄이 적용되지 않았다는 사실만 세어서 알린다.
+    // 교사가 선택한 줄이 적용되지 않았다는 사실만 세어서 알린다.
     let again = apply_neis_import_impl(&conn, class, &rows, &choice, TODAY).unwrap();
     assert_eq!(again.added, 0);
     assert_eq!(again.skipped, 1);
@@ -577,7 +577,7 @@ fn 같은_파일을_다시_가져와도_더_들어가지_않는다() {
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM absence_span", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(count, 1, "두 번 가져왔다고 같은 기록이 둘이 되면 안 된다");
+    assert_eq!(count, 1, "두 번 열었다고 같은 기록이 둘이 되면 안 된다");
 }
 
 #[test]
@@ -773,7 +773,7 @@ fn 결시교시가_비어_온_결석도_조회부터_종례까지_저장한다()
 }
 
 #[test]
-fn 고른_것이_적용되지_않으면_세어서_알린다() {
+fn 선택한_것이_적용되지_않으면_세어서_알린다() {
     let (conn, school, class) = fixture();
     let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "질병", "결석", &[]);

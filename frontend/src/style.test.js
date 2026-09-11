@@ -477,7 +477,7 @@ describe('스크롤바', () => {
         expect(
             offenders,
             '이 둘 중 하나라도 있으면 최신 Chromium이 표준 스크롤바로 넘어가면서 ' +
-            `::-webkit-scrollbar 모양을 통째로 무시한다. 한쪽만 고른다.\n${offenders.join(', ')}`,
+            `::-webkit-scrollbar 모양을 통째로 무시한다. 한쪽만 선택한다.\n${offenders.join(', ')}`,
         ).toEqual([])
     })
 })
@@ -555,7 +555,7 @@ describe('문구', () => {
 
 describe('검사기 자체', () => {
     // 저장소가 깨끗하면 위 검사는 전부 초록이다. 검사기가 고장 나도 초록이다.
-    // 그 둘을 구분하려고 표본을 넣어 본다.
+    // 그 둘을 구별하려고 표본을 넣어 본다.
     const size = (text) => sizeOffenders('표본', text)
     const color = (text) => colorOffenders('표본', text)
 

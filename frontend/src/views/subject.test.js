@@ -39,7 +39,7 @@ function render(view) {
     return mount(view, {global: {plugins: [router]}})
 }
 
-/** 교과 강좌 하나를 담당하는 교사. 모드는 고른 학급의 역할이 결정한다. */
+/** 교과 강좌 하나를 담당하는 교사. 모드는 선택한 학급의 역할이 결정한다. */
 function subjectTeacher() {
     const app = useAppStore()
     app.booted = true
@@ -85,7 +85,7 @@ describe('오늘 수업', () => {
         expect(labels).not.toContain('종례')
     })
 
-    it('이미 만든 교시는 눌러 둔다 — 같은 칸을 또 고르지 않는다', () => {
+    it('이미 만든 교시는 눌러 둔다 — 같은 칸을 또 선택하지 않는다', () => {
         openSession([ROLL()], [SESSION({slot: '3'})])
         const wrapper = render(SubjectTodayView)
         const picks = wrapper.findAll('.pickline .pick')
@@ -94,7 +94,7 @@ describe('오늘 수업', () => {
         expect(picks[0].attributes('disabled')).toBeUndefined()
     })
 
-    it('고른 교시를 한꺼번에 더한다 — 연강도 두 칸이다', async () => {
+    it('선택한 교시를 한꺼번에 더한다 — 연강도 두 차시다', async () => {
         const subject = useSubjectStore()
         subject.date = '2026-09-11'
         const add = vi.spyOn(subject, 'addSessions').mockResolvedValue([1, 2])
@@ -141,7 +141,7 @@ describe('오늘 수업', () => {
     /**
      * 화면에 쓰는 말을 고정한다. `찍다`는 실무 표현이라고 여겨 두었던 말인데 현직
      * 교사가 어색하다고 확인했다 — 교과 화면이 남기는 것은 `기록`이다. 범례는 내
-     * 기록과 담임 참고를 구별하는 문장이라 여기서 갈라지면 그 구별부터 흐려진다.
+     * 기록과 담임 참선택할 구별하는 문장이라 여기서 갈라지면 그 구별부터 흐려진다.
      */
     it('출결을 찍는다고 말하지 않는다 — 내가 기록한 결석이라고 적는다', () => {
         openSession([ROLL({absent: true}), ROLL({studentId: 12, number: 6, name: '박서연'})])
@@ -214,30 +214,30 @@ describe('오늘 수업', () => {
         expect(note[0].text()).toContain('3학년 1반')
     })
 
-    it('차시를 고르기 전에는 없다고 단언하지 않는다 — 읽은 적 없는 날이다', () => {
+    it('차시를 선택하기 전에는 없다고 단언하지 않는다 — 읽은 적 없는 날이다', () => {
         const subject = useSubjectStore()
         subject.date = '2026-09-11'
         subject.classId = 20
-        subject.sessions = [SESSION()]   // 칸은 있는데 아직 고르지 않았다
+        subject.sessions = [SESSION()]   // 칸은 있는데 아직 선택하지 않았다
 
         const wrapper = render(SubjectTodayView)
 
-        expect(wrapper.find('.roll .muted').text()).toContain('아직 교시를 고르지 않았습니다')
+        expect(wrapper.find('.roll .muted').text()).toContain('아직 교시를 선택하지 않았습니다')
         expect(wrapper.text()).not.toContain('그날 담임으로 적어 둔 기록이 없습니다')
-        expect(wrapper.text()).not.toContain('이 차시에 빠진 학생이 없습니다')
+        expect(wrapper.text()).not.toContain('이 차시에 결석한 학생이 없습니다')
         const empties = wrapper.findAll('.ledger__empty').map((p) => p.text())
-        expect(empties.filter((t) => t.includes('아직 교시를 고르지 않았습니다'))).toHaveLength(2)
+        expect(empties.filter((t) => t.includes('아직 교시를 선택하지 않았습니다'))).toHaveLength(2)
     })
 
-    it('차시를 고른 뒤 기록이 없으면 그때 없다고 적는다', () => {
+    it('차시를 선택한 뒤 기록이 없으면 그때 없다고 적는다', () => {
         openSession([ROLL()])
         const text = render(SubjectTodayView).text()
 
         expect(text).toContain('그날 담임으로 적어 둔 기록이 없습니다')
-        expect(text).toContain('이 차시에 빠진 학생이 없습니다')
+        expect(text).toContain('이 차시에 결석한 학생이 없습니다')
     })
 
-    it('날짜를 옮기면 고른 교시와 열어 둔 차시가 함께 비워진다', async () => {
+    it('날짜를 옮기면 선택한 교시와 열어 둔 차시가 함께 비워진다', async () => {
         const subject = openSession([ROLL()], [SESSION({slot: '3'})])
         vi.spyOn(subject, 'fetchDay').mockResolvedValue([])
 
@@ -252,9 +252,9 @@ describe('오늘 수업', () => {
 
         expect(subject.date).toBe('2026-09-12')
         expect(subject.sessionId).toBeNull()
-        // 고른 교시는 그 날짜의 것이다. 남으면 교사가 고른 적 없는 칸이 12일에 생긴다.
+        // 선택한 교시는 그 날짜의 것이다. 남으면 교사가 선택한 적 없는 칸이 12일에 생긴다.
         expect(wrapper.findAll('.pickline .pick')[0].classes()).not.toContain('is-on')
-        expect(wrapper.find('.roll .muted').text()).toContain('아직 교시를 고르지 않았습니다')
+        expect(wrapper.find('.roll .muted').text()).toContain('아직 교시를 선택하지 않았습니다')
     })
 
     it('차시 지우기는 확인을 거친다 — 그 칸의 결석까지 사라진다', async () => {
@@ -314,7 +314,7 @@ describe('수업 기록', () => {
         expect(cards[0].text()).toContain('2026.09.11.(금)')
         expect(cards[1].text()).toContain('2026.09.10.(목)')
         expect(cards.map((card) => card.findAll('.row').length)).toEqual([1, 2])
-        expect(cards[1].text()).toContain('빠진 사람 2 / 28명')
+        expect(cards[1].text()).toContain('결석 2 / 28명')
     })
 
     it('월을 누르면 그 달을 읽는다', async () => {
@@ -365,7 +365,7 @@ describe('수업 기록', () => {
         expect(router.currentRoute.value.path).toBe('/subject/today')
     })
 
-    it('지난 차시를 열면 날짜부터 옮기고 그 칸을 고른다', async () => {
+    it('지난 차시를 열면 날짜부터 옮기고 그 칸을 선택한다', async () => {
         const subject = useSubjectStore()
         subject.classId = 20
         subject.date = '2026-09-11'
@@ -380,19 +380,19 @@ describe('수업 기록', () => {
         await wrapper.find('.list--sesslog .row__acts button').trigger('click')
         await flushPromises()
 
-        // 날짜가 먼저다. 뒤바뀌면 방금 고른 칸을 setDate가 지운다.
+        // 날짜가 먼저다. 뒤바뀌면 방금 선택한 칸을 setDate가 지운다.
         expect(subject.date).toBe('2026-09-03')
         expect(select).toHaveBeenCalledWith(5)
     })
 })
 
 /**
- * **`등록하지 않음`과 `고르지 않음`은 다른 상태다.** 강좌를 이미 만든 교사에게
- * "아직 수업을 등록하지 않았습니다"라고 적으면 이미 한 일을 다시 시키는 것이고,
- * 그 화면에서 나갈 길도 없다. 개요가 두 상태를 구분하는 방식을 그대로 쓴다.
+ * **`등록하지 않음`과 `선택하지 않음`은 다른 상태다.** 강좌를 이미 만든 교사에게
+ * "아직 교과 강좌를 추가하지 않았습니다"라고 적으면 이미 한 일을 다시 시키는 것이고,
+ * 그 화면에서 나갈 길도 없다. 개요가 두 상태를 구별하는 방식을 그대로 쓴다.
  */
 describe('교과 화면의 빈 상태', () => {
-    it('강좌가 하나도 없으면 등록하러 가는 길을 준다', async () => {
+    it('강좌가 하나도 없으면 추가하러 가는 길을 준다', async () => {
         const app = useAppStore()
         app.classes = []
         app.classId = null
@@ -400,28 +400,28 @@ describe('교과 화면의 빈 상태', () => {
 
         for (const view of [SubjectTodayView, SubjectLogView]) {
             const wrapper = render(view)
-            expect(wrapper.text()).toContain('아직 수업을 등록하지 않았습니다')
+            expect(wrapper.text()).toContain('아직 교과 강좌를 추가하지 않았습니다')
 
             const lead = wrapper.find('.lead button')
-            expect(lead.text()).toBe('수업 등록하기')
+            expect(lead.text()).toBe('강좌 추가')
             await lead.trigger('click')
             await flushPromises()
             expect(router.currentRoute.value.path).toBe('/settings')
         }
     })
 
-    it('담당 강좌는 있는데 고르지 않았으면 고르러 가는 길을 준다', async () => {
+    it('담당 강좌는 있는데 선택하지 않았으면 선택하러 가는 길을 준다', async () => {
         const app = useAppStore()
         app.classId = null      // 강좌 목록은 그대로 있다
         app.lastMode = 'subject'
 
         for (const view of [SubjectTodayView, SubjectLogView]) {
             const wrapper = render(view)
-            expect(wrapper.text()).toContain('보고 있는 수업이 없습니다')
-            expect(wrapper.text()).not.toContain('아직 수업을 등록하지 않았습니다')
+            expect(wrapper.text()).toContain('보고 있는 강좌가 없습니다')
+            expect(wrapper.text()).not.toContain('아직 교과 강좌를 추가하지 않았습니다')
 
             const lead = wrapper.find('.lead button')
-            expect(lead.text()).toBe('수업 고르기')
+            expect(lead.text()).toBe('강좌 선택')
             await lead.trigger('click')
             await flushPromises()
             expect(router.currentRoute.value.path).toBe('/move')
@@ -441,16 +441,16 @@ describe('개요 — 교과', () => {
         return home
     }
 
-    it('강좌가 없으면 담임 어휘 대신 수업을 등록하러 가는 길을 준다', () => {
+    it('강좌가 없으면 담임 어휘 대신 강좌를 추가하러 가는 길을 준다', () => {
         const app = useAppStore()
         app.classes = []
         app.classId = null
         app.lastMode = 'subject'
 
         const wrapper = render(OverviewView)
-        expect(wrapper.text()).toContain('아직 수업을 등록하지 않았습니다')
+        expect(wrapper.text()).toContain('아직 교과 강좌를 추가하지 않았습니다')
         expect(wrapper.text()).not.toContain('명렬표')
-        expect(wrapper.find('.lead button').text()).toBe('수업 등록하기')
+        expect(wrapper.find('.lead button').text()).toBe('강좌 추가')
     })
 
     it('수업 기록 자리에 실제로 센 값이 온다 — 고정 문구를 두지 않는다', async () => {
@@ -472,7 +472,7 @@ describe('개요 — 교과', () => {
         const cells = wrapper.findAll('.strip__cell')
         expect(cells.map((cell) => [cell.find('b').text(), cell.find('span').text()])).toEqual([
             ['2', '오늘 차시'],
-            ['1', '오늘 빠진 사람'],
+            ['1', '오늘 결석'],
             ['3', '9월 차시'],
             ['2', '9월 수업한 날'],
         ])

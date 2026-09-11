@@ -36,12 +36,12 @@ const bulkFor = ref(null)
 /**
  * 여러 날 모드. 켜면 격자를 누를 때 바로 입력하는 대신 기간 창이 열린다.
  *
- * 번호를 두 벌 늘어놓지 않으려는 것이다 — 격자가 곧 우리 반이고, 학생을 고르는
+ * 번호를 두 벌 늘어놓지 않으려는 것이다 — 격자가 곧 우리 반이고, 학생을 선택하는
  * 방법이 화면마다 달라지면 그때마다 다시 배워야 한다.
  */
 const bulkMode = ref(false)
 
-/** 여러 날 창의 머리에 적을 한 줄. 지금 고른 조합을 그대로 보여준다. */
+/** 여러 날 창의 머리에 적을 한 줄. 지금 선택한 조합을 그대로 보여준다. */
 const draftPhrase = computed(() =>
     stampPhrase({
         reasonLabel: axis.reasons.find((r) => r.id === day.draft.reasonId)?.label,
@@ -110,7 +110,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급과 명렬표를 넣어주세요."/>
+    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급을 추가하고 명렬표를 등록해주세요."/>
 
     <UiPage v-else :subtitle="`재학 ${day.rows.length}명 · 오늘 기록 ${day.recorded}명`"
             :title="day.dateLabel">
@@ -128,7 +128,7 @@ onMounted(async () => {
                   :types="axis.types"/>
 
         <p v-if="bulkMode" class="notice notice--warn">
-            여러 날 모드입니다. 학생을 누르면 기간을 고르는 창이 열립니다 —
+            여러 날 모드입니다. 학생을 누르면 기간을 선택하는 창이 열립니다 —
             기간은 화면이 아니라 입력의 한 축이라 탭으로 만들지 않았습니다.
         </p>
 

@@ -10,7 +10,7 @@ import {exportCsv} from '../services/download'
  * 서비스를 바로 불러 실패가 아무 데도 남지 않았다 — 교사가 CSV를 눌러도 아무 일이
  * 일어나지 않고, 왜인지 알 방법이 없었다.
  *
- * 성공도 알린다. 저장 대화상자에서 고른 경로가 어디였는지 곧 잊어버리기 때문이다.
+ * 성공도 알린다. 저장 대화상자에서 선택한 경로가 어디였는지 곧 잊어버리기 때문이다.
  */
 export const useDownloadStore = defineStore('download', {
     state: () => ({

@@ -4,8 +4,8 @@
 //!
 //! 이 파일이 지키는 결정은 넷이다.
 //!   · **행이 있다는 것이 곧 그 교시를 불렀다는 뜻이다.** 결석자 행만으로는
-//!     "빠진 사람이 없는 날"과 "아직 안 부른 날"이 구별되지 않는다.
-//!   · **같은 칸을 두 번 만들지 않는다.** [교시 추가]를 두 번 누른 것은 실수다.
+//!     "결석이 없는 날"과 "아직 안 부른 날"이 구별되지 않는다.
+//!   · **같은 차시를 두 번 만들지 않는다.** [차시 추가]를 두 번 누른 것은 실수다.
 //!   · **같은 학생을 다시 누르면 취소다.** 담임 쪽 무르기와 같은 규칙이다.
 //!   · **담임 출결은 읽기 전용 참고로만 온다.** 내가 담임인 학급의 기록만 본다.
 
@@ -63,12 +63,12 @@ fn a_session_row_is_the_record_that_the_slot_was_called() {
     assert_eq!(sessions[0].date, DAY);
     assert_eq!(sessions[0].slot, "1");
     assert_eq!(sessions[0].memo, "");
-    // 빠진 사람이 없는 날과 아직 안 부른 날이 이렇게 구별된다.
+    // 결석이 없는 날과 아직 안 부른 날이 이렇게 구별된다.
     assert_eq!(sessions[0].absent_count, 0);
     assert_eq!(sessions[0].total, 3);
 }
 
-/// [교시 추가]를 두 번 누른 것은 실수지 새 칸을 만들라는 뜻이 아니다.
+/// [차시 추가]를 두 번 누른 것은 실수지 새 차시를 만들라는 뜻이 아니다.
 #[test]
 fn making_the_same_slot_twice_returns_the_one_that_is_there() {
     let f = fixture();
@@ -228,7 +228,7 @@ fn a_session_memo_is_free_text_and_the_app_does_not_read_it() {
 // ── 차시 명단 ─────────────────────────────────────────────────
 
 /// 그 날짜 명단 전원이 줄로 나온다. **학적 자리 순이다** — 교과는 반이 섞여
-/// 번호만으로는 줄을 구분할 수 없다.
+/// 번호만으로는 줄을 구별할 수 없다.
 #[test]
 fn the_roll_lists_everyone_on_the_list_in_seat_order() {
     let f = fixture();
@@ -300,7 +300,7 @@ fn a_student_outside_the_list_is_refused_in_korean() {
     assert!(err.contains("차시를 찾을 수 없습니다"), "{err}");
 }
 
-/// 메모는 결석에 붙는 말이다. 빠지지 않은 학생에게 메모만 남으면 그 줄이 결석인지
+/// 메모는 결석에 붙는 말이다. 결석하지 않은 학생에게 메모만 남으면 그 줄이 결석인지
 /// 아닌지 화면이 말할 수 없다.
 #[test]
 fn an_absence_memo_needs_an_absence_to_hang_on() {
@@ -502,13 +502,13 @@ fn a_subject_class_can_never_hold_a_homeroom_record() {
 // ── 명단이 바뀌어도 지난 차시는 그대로다 ─────────────────────
 
 /// `total`은 **그 날짜의** 명단 인원이다. 지금 인원이 아니다 —
-/// 명렬표를 다시 가져와 인원이 달라져도 지난 차시의 분모가 움직이면 안 된다.
+/// 명렬표를 다시 열어 인원이 달라져도 지난 차시의 분모가 움직이면 안 된다.
 #[test]
 fn the_denominator_is_the_list_as_it_was_on_that_day() {
     let f = fixture();
     create_subject_session_impl(&f.conn, f.class, DAY, "1").unwrap();
 
-    // 9월 12일에 한 명이 명단에서 빠졌다.
+    // 9월 12일에 한 명이 명단에서 제외됐다.
     f.conn
         .execute(
             "UPDATE class_member SET left_on = '2026-09-12'

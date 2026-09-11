@@ -405,10 +405,10 @@ fn 겹치지_않는_구간은_표시되지_않는다() {
     assert!(rows.iter().all(|r| !r.overlapping));
 }
 
-// ── 마감일 ────────────────────────────────────────────────────
+// ── 기한일 ────────────────────────────────────────────────────
 
 #[test]
-fn 마감일은_주말을_건너뛴다() {
+fn 기한일은_주말을_건너뛴다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
     // 2026-09-10은 목요일이고 기본 제출 기한은 7일이다.
@@ -421,7 +421,7 @@ fn 마감일은_주말을_건너뛴다() {
 }
 
 #[test]
-fn 마감일은_등록된_휴업일도_건너뛴다() {
+fn 기한일은_추가한_휴업일도_건너뛴다() {
     let f = fixture();
     add_off_day(&f.conn, f.school, "2026-09-16");
     let (reason, kind) = axes(&f.conn, "질병", "결석");
@@ -435,7 +435,7 @@ fn 마감일은_등록된_휴업일도_건너뛴다() {
 }
 
 #[test]
-fn 마감일을_세지_않기로_하면_날짜를_그대로_더한다() {
+fn 기한일을_세지_않기로_하면_날짜를_그대로_더한다() {
     let f = fixture();
     f.conn
         .execute(
@@ -479,7 +479,7 @@ fn 마감_경과일은_서류를_받으면_사라진다() {
 // ── 수정 · 삭제 ───────────────────────────────────────────────
 
 #[test]
-fn 수정은_마감일을_다시_계산하지_않는다() {
+fn 수정은_기한일을_다시_계산하지_않는다() {
     let f = fixture();
     let (reason, kind) = axes(&f.conn, "질병", "결석");
     let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]))
@@ -562,7 +562,7 @@ fn 없는_기록을_고치거나_지우면_오류다() {
     let missing = 9999;
 
     let err = delete_span_impl(&f.conn, missing).unwrap_err();
-    assert!(err.contains("출결 기록을 찾을 수 없습니다"), "{err}");
+    assert!(err.contains("출결 한 건을 찾을 수 없습니다"), "{err}");
     assert!(set_span_memo_impl(&f.conn, missing, "메모").is_err());
     assert!(set_span_tag_impl(&f.conn, missing, None).is_err());
     assert!(edit_span_impl(
@@ -952,12 +952,12 @@ fn 구간_묶기는_연속한_것끼리만_묶는다() {
         ranges_for(Some("multi"), &picked(&["조회", "1"]), 7).unwrap(),
         vec![(Some("조회".to_string()), Some("1".to_string()))]
     );
-    // 결석은 고른 교시와 무관하게 하루 전체다.
+    // 결석은 선택한 교시와 무관하게 하루 전체다.
     assert_eq!(
         ranges_for(Some("none"), &picked(&["3"]), 7).unwrap(),
         vec![(Some("조회".to_string()), Some("종례".to_string()))]
     );
-    // 종류를 아직 설정하지 않았고 교시도 안 골랐으면 기간 미정이다.
+    // 종류를 아직 설정하지 않았고 교시도 안 선택했으면 기간 미정이다.
     assert_eq!(ranges_for(None, &[], 7).unwrap(), vec![(None, None)]);
 
     // `?`는 **묻고 있는 쪽이 열려 있다**는 뜻이고, 저장은 NULL이다(`slots.rs`).

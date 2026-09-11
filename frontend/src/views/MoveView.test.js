@@ -5,7 +5,7 @@
  *   1. **계층 그대로 보여준다.** 학교가 결정되어야 담당 학급 · 강좌가 결정된다 —
  *      A학교에서는 담임 + 교과, B학교에서는 교과만. 그것이 순회 교사다.
  *   2. **학교를 옮기면 목록이 그 학교의 것으로 바뀐다.** 학급과 강좌는 학교에 소속되어 있다.
- *   3. **학년도는 여기서 바꾸지 않는다.** 해가 바뀌면 학교부터 다시 골라야 하므로
+ *   3. **학년도는 여기서 바꾸지 않는다.** 해가 바뀌면 학교부터 다시 선택해야 하므로
  *      설정이 담당한다. 어디로 가야 하는지는 화면이 적는다.
  *   4. **강좌는 묶음별로 모인다.** 담임 학급은 묶지 않는다 — 묶을 것이 없다.
  *
@@ -110,7 +110,7 @@ describe('이동 — 어디에서', () => {
         app.schools = []
         app.classes = []
 
-        expect(render().text()).toContain('설정에서 만들어 주세요')
+        expect(render().text()).toContain('설정에서 추가해주세요')
     })
 })
 
@@ -155,7 +155,7 @@ describe('이동 — 담당 학급 · 강좌', () => {
         const text = render().text()
         expect(text).toContain('이 모드에서 담당하는 학급이나 강좌가 없습니다')
         expect(text).not.toContain('하나뿐입니다')
-        expect(text).toContain('설정에서 만들 수 있습니다')
+        expect(text).toContain('설정에서 추가할 수 있습니다')
     })
 
     it('담당 학급 · 강좌가 하나뿐이면 어디서 더하는지 적는다', () => {
@@ -187,7 +187,7 @@ describe('이동 — 담당 학급 · 강좌', () => {
 
         const text = render().text()
         expect(text).not.toContain('하나뿐입니다')
-        expect(text).not.toContain('설정에서 만들 수 있습니다')
+        expect(text).not.toContain('설정에서 추가할 수 있습니다')
     })
 
     it('줄을 누르면 그 강좌로 옮긴다', async () => {

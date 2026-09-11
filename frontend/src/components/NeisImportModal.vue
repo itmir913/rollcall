@@ -2,7 +2,7 @@
 /**
  * 나이스 파일 열기. **교체가 아니라 차분이다.**
  *
- * 같은 것은 그대로 두고, 없는 것은 추가하고, 다른 것은 어느 쪽을 남길지 교사가 고른다.
+ * 같은 것은 그대로 두고, 없는 것은 추가하고, 다른 것은 어느 쪽을 남길지 교사가 선택한다.
  * **앱에만 있는 기록은 지우지 않는다** — 나이스에 아직 안 넣은 것이 이 앱을 쓰는 이유라,
  * 파일에 없다는 것이 삭제 근거가 될 수 없다. 세어서 알리기만 한다.
  *
@@ -31,7 +31,7 @@ const GROUPS = [
         kind: 'add',
         verdict: 'add',
         title: '앱에 없는 기록',
-        hint: '나이스에는 있는데 이 앱에 없다. 넣을 것을 고른다',
+        hint: '나이스에는 있는데 이 앱에 없다. 넣을 것을 선택한다',
         tone: 'is-only',
         on: '넣는다',
         off: '넘긴다',
@@ -41,7 +41,7 @@ const GROUPS = [
         kind: 'replace',
         verdict: 'differ',
         title: '서로 다름',
-        hint: '어느 쪽을 남길지 고른다. 고르지 않으면 내 기록이 그대로 남는다',
+        hint: '어느 쪽을 남길지 선택한다. 선택하지 않으면 내 기록이 그대로 남는다',
         tone: 'is-diff',
         on: '나이스 것으로',
         off: '내 것 유지',
@@ -49,7 +49,7 @@ const GROUPS = [
     },
 ]
 
-/** 이 갈래를 전부 고르거나 전부 푼다. 서른 줄을 하나씩 누르게 하지 않는다. */
+/** 이 갈래를 전부 선택하거나 전부 푼다. 서른 줄을 하나씩 누르게 하지 않는다. */
 function toggleAll(group) {
     const keys = items(group.verdict).map((i) => i.key)
     const allPicked = keys.length > 0 && keys.every((k) => store.picked[group.kind].has(k))
@@ -111,7 +111,7 @@ function toggleAll(group) {
                       :hint="group.hint" :note="`${items(group.verdict).length}건`"
                       :title="group.title">
                 <template #actions>
-                    <UiButton size="tight" @click="toggleAll(group)">전부 고르기</UiButton>
+                    <UiButton size="tight" @click="toggleAll(group)">전부 선택</UiButton>
                 </template>
                 <div class="cmp__head">
                     <span>내 기록</span><span>나이스</span><span>할 일</span>

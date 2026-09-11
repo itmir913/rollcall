@@ -18,7 +18,7 @@ beforeEach(() => {
 })
 
 describe('csv', () => {
-    it('저장한 경로를 알린다 — 대화상자에서 고른 곳을 곧 잊는다', async () => {
+    it('저장한 경로를 알린다 — 대화상자에서 선택한 곳을 곧 잊는다', async () => {
         exportCsv.mockResolvedValue('C:/temp/출결.csv')
         const store = useDownloadStore()
         await store.csv('spans', {}, '출결.csv')

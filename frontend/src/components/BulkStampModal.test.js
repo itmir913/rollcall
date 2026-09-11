@@ -48,7 +48,7 @@ describe('여러 날 입력', () => {
         wrapper.unmount()
     })
 
-    it('기간을 고르기 전에는 날짜를 묻지 않는다', () => {
+    it('기간을 선택하기 전에는 날짜를 묻지 않는다', () => {
         const {wrapper} = build()
         expect(document.querySelector('.bulk')).toBeNull()
         wrapper.unmount()
@@ -61,7 +61,7 @@ describe('여러 날 입력', () => {
         await wrapper.vm.$nextTick()
 
         expect(preview).not.toHaveBeenCalled()
-        expect(document.querySelector('.notice').textContent).toContain('골라주세요')
+        expect(document.querySelector('.notice').textContent).toContain('선택해주세요')
         wrapper.unmount()
     })
 
@@ -79,7 +79,7 @@ describe('여러 날 입력', () => {
         wrapper.unmount()
     })
 
-    it('기간을 고르면 셀 수 있는 날만 받아 온다 — 주말과 휴업일은 Rust가 뺀다', async () => {
+    it('기간을 선택하면 셀 수 있는 날만 받아 온다 — 주말과 휴업일은 Rust가 뺀다', async () => {
         const {wrapper, preview} = build()
         wrapper.vm.from = '2026-09-07'
         wrapper.vm.to = '2026-09-09'
@@ -118,7 +118,7 @@ describe('여러 날 입력', () => {
         wrapper.unmount()
     })
 
-    it('고른 날이 하나도 없으면 입력할 수 없다', async () => {
+    it('선택한 날이 하나도 없으면 입력할 수 없다', async () => {
         const {wrapper} = build()
         wrapper.vm.days = DAYS
         await wrapper.vm.$nextTick()

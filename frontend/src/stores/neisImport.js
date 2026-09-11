@@ -11,7 +11,7 @@ import {useAxisStore} from './axis'
  * 없는가"라는 판단은 Rust가 한다. 그래야 화면을 고쳐도 업무 규칙이 따라 흔들리지 않는다.
  *
  * **일 · 월을 교사에게 묻지 않는다.** 기간은 파일 안에 있다. 그래서 이 store에는
- * 기간을 고르는 상태가 없다.
+ * 기간을 선택하는 상태가 없다.
  */
 export const useNeisImportStore = defineStore('neisImport', {
     state: () => ({
@@ -19,7 +19,7 @@ export const useNeisImportStore = defineStore('neisImport', {
         rows: [],
         meta: null,
         preview: null,
-        /** 교사가 고른 것. 처음에는 추가만 켜 둔다 — 덮어쓰기는 스스로 고르게 한다. */
+        /** 교사가 선택한 것. 처음에는 추가만 켜 둔다 — 덮어쓰기는 스스로 선택하게 한다. */
         picked: {add: new Set(), replace: new Set()},
         markNeis: true,
         error: '',
@@ -65,7 +65,7 @@ export const useNeisImportStore = defineStore('neisImport', {
                     rows: read.rows,
                     today: app.today,
                 })
-                // 추가는 기본으로 고른다. 앱에 없는 기록을 넣는 것이 파일 열기의 목적이다.
+                // 추가는 기본으로 선택한다. 앱에 없는 기록을 넣는 것이 파일 열기의 목적이다.
                 this.picked.add = new Set(
                     this.preview.items.filter((i) => i.verdict === 'add').map((i) => i.key),
                 )

@@ -2,7 +2,7 @@
 /**
  * NEIS 검증 — 나이스 파일과 이 앱의 기록을 대조한다.
  *
- * 처음에는 **파일 열기 마법사**가 뜬다. 단계를 보여 주는 이유는, 파일을 잘못 골랐을 때
+ * 처음에는 **파일 열기 마법사**가 뜬다. 단계를 보여 주는 이유는, 파일을 잘못 선택했을 때
  * 어디로 돌아가야 하는지가 눈에 보여야 하기 때문이다.
  *
  * 결과는 **왼쪽이 내 기록, 오른쪽이 나이스**인 두 열이다. 한쪽에만 있으면 반대쪽은
@@ -40,8 +40,8 @@ const counts = computed(() => ({
 const fileInput = ref(null)
 
 /**
- * 파일 고르기. fs 플러그인을 통째로 열지 않고 `<input type="file">`을 쓴다 —
- * 앱이 실제로 필요한 권한은 "교사가 고른 파일 하나 읽기"뿐이다.
+ * 파일 선택. fs 플러그인을 통째로 열지 않고 `<input type="file">`을 쓴다 —
+ * 앱이 실제로 필요한 권한은 "교사가 선택한 파일 하나 읽기"뿐이다.
  */
 function pickFile() {
     fileInput.value?.click()
@@ -64,7 +64,7 @@ async function onDrop(event) {
 async function load(bytes) {
     error.value = ''
     try {
-        // 구분 · 종류는 DB에서 온다. 파일의 `질병조퇴`를 두 축으로 구분하는 후보다.
+        // 구분 · 종류는 DB에서 온다. 파일의 `질병조퇴`를 두 축으로 판별하는 후보다.
         if (axis.types.length === 0) await axis.fetchAll()
         const read = await readNeisFile(bytes, {reasons: axis.reasons, types: axis.types})
         meta.value = read.meta
@@ -115,7 +115,7 @@ function mark(mine, theirs, field) {
             <span class="drop__hint">
                 일일출석부(XLS data) 또는 월별 출결 현황 <span class="num">.xlsx</span>
             </span>
-            <UiButton size="wide" variant="upload" @click="pickFile">파일 고르기</UiButton>
+            <UiButton size="wide" variant="upload" @click="pickFile">파일 선택</UiButton>
             <input ref="fileInput" accept=".xlsx" hidden type="file" @change="onPick"/>
         </div>
 
@@ -167,7 +167,7 @@ function mark(mine, theirs, field) {
                       :note="`${group.pairs.length}건`" :title="group.title"
                       empty-text="어긋난 것이 없습니다.">
                 <div class="cmp__head">
-                    <span>내 기록</span><span>나이스</span><span>판정</span>
+                    <span>내 기록</span><span>나이스</span><span>어느 쪽</span>
                 </div>
                 <div v-for="(pair, i) in sortPairs(group.pairs, order)" :key="i"
                      :class="['cmp', group.tone]">

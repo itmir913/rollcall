@@ -172,7 +172,7 @@ struct ClassStudent {
     name: String,
 }
 
-/// 그 학급의 명단 전부. **명단에서 빠진 학생도 뺀다고 판정하지 않는다** —
+/// 그 학급의 명단 전부. **명단에서 제외한 학생도 뺀다고 판정하지 않는다** —
 /// 빠지기 전에 쓴 날짜가 통계에서 조용히 사라지면 안 되기 때문이다.
 /// 그래서 `left_on`도 `enrolled_to`도 보지 않고 한 번이라도 명단이었던 학생을 전부 센다.
 fn class_students(conn: &Connection, class_id: i64) -> Result<Vec<ClassStudent>, String> {
@@ -487,7 +487,7 @@ pub fn get_quota_reports_impl(
     max_slot_of(conn, school_id)?;
     let (year_from, year_to) = academic_year_range(year_of(conn, scope.year_id)?)?;
 
-    // 집계 구간은 학년도 범위와 교사가 고른 구간의 교집합이다. 학년도 밖을 세지 않는다.
+    // 집계 구간은 학년도 범위와 교사가 선택한 구간의 교집합이다. 학년도 밖을 세지 않는다.
     let win_from = match from {
         Some(v) => parse_date(v)?.max(year_from),
         None => year_from,

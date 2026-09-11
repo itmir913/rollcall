@@ -2,8 +2,8 @@
 /**
  * 설정 — 학년도 · 학교 · 한도 규정 · 학급과 강좌 · 명렬표 · 화면.
  *
- * **계층이 그대로 화면의 차례다 — 학년도 → 학교 → 담당 학급 · 강좌.** 학년도를 고르면
- * 그 학년도의 학교가 나오고, 학교를 고르면 그 학교의 학급과 강좌가 나온다. 위에서 고른 것이
+ * **계층이 그대로 화면의 차례다 — 학년도 → 학교 → 담당 학급 · 강좌.** 학년도를 선택하면
+ * 그 학년도의 학교가 나오고, 학교를 선택하면 그 학교의 학급과 강좌가 나온다. 위에서 선택한 것이
  * 아래의 범위다.
  *
  * **학년도를 바꾸는 길은 여기뿐이다.** 첫 실행 화면은 한 번 지나가면 닿을 수 없어,
@@ -70,19 +70,19 @@ const newSchoolName = ref('')
 const newClassTag = ref('')
 const message = ref('')
 
-/** 지우려고 고른 휴업일. 태그 · 규정의 [마감]과 달리 이것은 행을 지우는 DELETE다. */
+/** 지우려고 선택한 휴업일. 태그 · 규정의 [마감]과 달리 이것은 행을 지우는 DELETE다. */
 const droppingOffDay = ref(null)
 
-/** 지우려고 고른 강좌 묶음. 이것도 행이 사라지는 DELETE다. */
+/** 지우려고 선택한 강좌 묶음. 이것도 행이 사라지는 DELETE다. */
 const droppingClassTag = ref(null)
 
-/** 마감하려고 고른 학급 · 강좌. 지우는 것이 아니라 목록에서 내리는 것이다. */
+/** 마감하려고 선택한 학급 · 강좌. 지우는 것이 아니라 마감하는 것이다. */
 const closingClass = ref(null)
 
-/** 마감하려고 고른 학교. 학교도 지우지 않고 목록에서 내린다. */
+/** 마감하려고 선택한 학교. 학교도 지우지 않고 마감한다. */
 const closingSchool = ref(null)
 
-/** 이 학년도에 등록한 학교가 없는 상태. 해가 바뀐 직후의 정상 상태다. */
+/** 이 학년도에 추가한 학교가 없는 상태. 해가 바뀐 직후의 정상 상태다. */
 const noSchool = computed(() => app.schools.length === 0)
 
 const yearLabel = computed(() => `${app.currentYear?.year ?? academicYearOf(app.today)}학년도`)
@@ -114,9 +114,9 @@ const subjectGroups = computed(() => {
 })
 
 /**
- * 명렬표를 넣을 학급. 고르기 전에는 지금 보고 있는 학급이다.
+ * 명렬표를 넣을 학급. 선택하기 전에는 지금 보고 있는 학급이다.
  *
- * 줄마다 명렬표 상자를 열지 않고 **고르개만 둔다** — 상자가 생겼다 사라지면 아래
+ * 줄마다 명렬표 상자를 열지 않고 **선택 단추만 둔다** — 상자가 생겼다 사라지면 아래
  * 단추들의 자리가 그때마다 달라진다. 자리는 그대로 두고 무엇을 가리키는지만 바꾼다.
  */
 const rosterClassId = ref(null)
@@ -198,7 +198,7 @@ async function addSchool() {
 
 /**
  * 학교를 마감한다. **확인을 한 번 거치되 "지웁니다"라고 말하지 않는다** —
- * 지난 기록이 이 학교를 가리키므로 행은 그대로 남고 목록에서만 내려간다.
+ * 지난 기록이 이 학교를 가리키므로 행은 그대로 남고 목록에서만 사라진다.
  */
 async function confirmRetireSchool() {
     const target = closingSchool.value
@@ -249,7 +249,7 @@ async function addTag() {
 }
 
 /**
- * 강좌 묶음을 만든다. **만든 묶음을 곧바로 고른다** — 묶음을 만드는 이유가 지금 더하는
+ * 강좌 묶음을 만든다. **만든 묶음을 곧바로 선택한다** — 묶음을 만드는 이유가 지금 더하는
  * 강좌를 거기 넣으려는 것이라, 만들고 다시 누르게 하면 클릭이 한 번 더 든다.
  */
 async function addClassTag() {
@@ -261,7 +261,7 @@ async function addClassTag() {
     if (id != null) newSubject.value.groupTagId = id
 }
 
-/** 묶음 이름을 고친다. **빈 이름은 되돌린다** — 이름 없는 묶음은 고를 수 없다. */
+/** 묶음 이름을 고친다. **빈 이름은 되돌린다** — 이름 없는 묶음은 선택할 수 없다. */
 async function renameClassTag(tag, event) {
     const name = event.target.value.trim()
     if (!name || name === tag.name) {
@@ -287,12 +287,12 @@ async function confirmDropClassTag() {
 /**
  * 담당 학급 · 강좌를 더한다. **더하는 것은 옮겨 가는 일이 아니다.**
  *
- * 새로 만든 것을 곧바로 고르는 동작은 첫 실행 화면을 위한 것이라, 설정에서는 보던
+ * 새로 만든 것을 곧바로 선택하는 동작은 첫 실행 화면을 위한 것이라, 설정에서는 보던
  * 학급으로 되돌린다 — 교과 강좌 하나를 더했다고 화면 전체가 교과 모드로 넘어가면
  * 교사는 무엇을 잘못 눌렀는지 확인하게 된다.
  */
 async function addClass(spec) {
-    // **고르지 않는다.** 고르면 `app.classId`가 바뀌고, App.vue의 `RouterView :key`가
+    // **선택하지 않는다.** 선택하면 `app.classId`가 바뀌고, App.vue의 `RouterView :key`가
     // 이 화면을 통째로 다시 만든다 — 열어 둔 명렬표 미리보기가 함께 날아간다.
     await school.createClass({schoolId: app.schoolId, ...spec, select: false})
         .catch(() => {
@@ -324,7 +324,7 @@ async function addSubject() {
 }
 
 /**
- * 이름을 고친다. **빈 이름은 되돌린다** — 이름 없는 학급은 목록에서 고를 수 없다.
+ * 이름을 고친다. **빈 이름은 되돌린다** — 이름 없는 학급은 목록에서 선택할 수 없다.
  * 묶음은 함께 실어 보낸다. 빼면 이름만 고쳐도 묶음이 벗겨진다.
  */
 async function renameClass(cls, event) {
@@ -359,13 +359,13 @@ async function setGroup(cls, groupTagId) {
 
 /**
  * 담당 학급 · 강좌를 마감한다. **확인을 한 번 거치되 "지웁니다"라고 말하지 않는다** —
- * 지난 출결이 이 학급을 가리키므로 행은 그대로 남고 목록에서만 내려간다.
+ * 지난 출결이 이 학급을 가리키므로 행은 그대로 남고 목록에서만 사라진다.
  */
 async function confirmRetireClass() {
     const target = closingClass.value
     closingClass.value = null
     if (!target) return
-    // 명렬표 고르개가 마감한 학급을 가리킨 채 남지 않게 한다.
+    // 명렬표 선택 단추가 마감한 학급을 가리킨 채 남지 않게 한다.
     if (rosterClassId.value === target.id) rosterClassId.value = null
     await school.retireClass(target.id).catch(() => {
     })
@@ -436,7 +436,7 @@ onMounted(async () => {
                         {{ year.year }}학년도
                     </button>
                     <span class="set__hint">
-                        학년도를 옮기면 학교부터 다시 고릅니다. 지난해 학교와 학급 · 강좌는
+                        학년도를 옮기면 학교부터 다시 선택합니다. 지난해 학교와 학급 · 강좌는
                         지난 학년도에 그대로 남습니다
                     </span>
                 </span>
@@ -447,7 +447,7 @@ onMounted(async () => {
                 <span class="set__value">
                     <input v-model="newYear" class="field num" min="1900" type="number"
                            @keyup.enter="addYear"/>
-                    <UiButton size="tight" variant="primary" @click="addYear">만들기</UiButton>
+                    <UiButton size="tight" variant="primary" @click="addYear">추가</UiButton>
                     <span class="set__hint">
                         학년도는 3월에 열립니다 —
                         <span class="num">{{ newYearSpan.startsOn }}</span> ~
@@ -471,7 +471,7 @@ onMounted(async () => {
                            type="text" @keyup.enter="addSchool"/>
                     <UiButton size="tight" @click="addSchool">학교 추가</UiButton>
                     <span class="set__hint">
-                        고른 학교에 아래의 설정과 학급 · 강좌가 붙습니다 — 순회 교사는 학교를 둘 이상 담당합니다
+                        선택한 학교에 아래의 설정과 학급 · 강좌가 붙습니다 — 순회 교사는 학교를 둘 이상 담당합니다
                     </span>
                 </span>
             </div>
@@ -481,7 +481,7 @@ onMounted(async () => {
                 <span class="set__label">아직 없습니다</span>
                 <span class="set__value">
                     <span class="set__hint">
-                        {{ yearLabel }}에 등록한 학교가 없습니다. 위에 이름을 적어 만들면
+                        {{ yearLabel }}에 추가한 학교가 없습니다. 위에 이름을 적어 추가하면
                         최대 교시 · 제출 기한과 담당 학급 · 강좌를 여기서 설정합니다
                     </span>
                 </span>
@@ -525,7 +525,7 @@ onMounted(async () => {
                         <span class="set__hint">일</span>
                         <UiToggle v-model="skipOffDays" off-label="달력 그대로"
                                   on-label="주말 · 휴업일 제외"/>
-                        <span class="set__hint">결석일로부터 센다. 미제출자 명단의 마감이 이 값으로 계산된다</span>
+                        <span class="set__hint">결석일로부터 센다. 미제출자 목록의 기한이 이 값으로 계산된다</span>
                     </span>
                 </div>
 
@@ -570,7 +570,7 @@ onMounted(async () => {
                     <span class="set__value">
                         <UiButton size="tight" @click="closingSchool = school.school">마감</UiButton>
                         <span class="set__hint">
-                            목록에서 내려갑니다. 이 학교에 쌓인 기록은 그대로 남습니다
+                            목록에서 사라집니다. 이 학교에 쌓인 기록은 그대로 남습니다
                         </span>
                     </span>
                 </div>
@@ -716,7 +716,7 @@ onMounted(async () => {
         </UiLedger>
 
         <UiLedger v-if="school.school"
-                  :hint="rosterClass ? `${rosterClass.name} 명단에 넣습니다` : '학급을 먼저 만들어주세요'"
+                  :hint="rosterClass ? `${rosterClass.name} 명단에 등록합니다` : '학급을 먼저 추가해주세요'"
                   title="명렬표">
             <div class="set__row">
                 <span class="set__label">파일 열기</span>
@@ -753,8 +753,8 @@ onMounted(async () => {
                 <span class="modal__val">{{ droppingOffDay.label || '—' }}</span>
             </div>
             <p class="modal__note">
-                지운 휴업일은 되돌릴 수 없습니다. 이미 계산해 둔 마감일은 그대로 남고,
-                앞으로 만드는 출결의 마감만 이 날을 일수에 포함합니다.
+                지운 휴업일은 되돌릴 수 없습니다. 이미 계산해 둔 기한일은 그대로 남고,
+                앞으로 만드는 출결의 기한만 이 날을 일수에 포함합니다.
             </p>
 
             <template #foot>
@@ -774,7 +774,7 @@ onMounted(async () => {
                 <span class="modal__val num">{{ droppingClassTag.classCount ?? 0 }}개</span>
             </div>
             <p class="modal__note">
-                강좌는 지워지지 않습니다. 이 묶음에 들어 있던 강좌는 묶음 없음으로 내려가고,
+                강좌는 지워지지 않습니다. 이 묶음에 들어 있던 강좌는 묶음 없음으로 옮겨지고,
                 지운 묶음은 되돌릴 수 없습니다.
             </p>
 
@@ -786,7 +786,7 @@ onMounted(async () => {
             </template>
         </UiModal>
 
-        <UiModal :open="Boolean(closingSchool)" title="이 학교를 목록에서 내립니다"
+        <UiModal :open="Boolean(closingSchool)" title="이 학교를 마감합니다"
                  @close="closingSchool = null">
             <div v-if="closingSchool" class="modal__what">
                 <span class="modal__key">학교</span>
@@ -795,7 +795,7 @@ onMounted(async () => {
                 <span class="modal__val">{{ yearLabel }}</span>
             </div>
             <p class="modal__note">
-                지우는 것이 아닙니다. 목록에서 내려가 더 고를 수 없게 될 뿐이고,
+                지우는 것이 아닙니다. 마감되어 더 선택할 수 없게 될 뿐이고,
                 이 학교에 쌓인 학급 · 강좌와 지난 기록은 그대로 남습니다.
             </p>
 
@@ -805,18 +805,20 @@ onMounted(async () => {
             </template>
         </UiModal>
 
-        <UiModal :open="Boolean(closingClass)" title="이 학급을 목록에서 내립니다"
+        <!-- **제목이 담임인지 교과인지 말한다.** 안에 항목을 하나 더 두면 `구분`이라는
+             이름을 붙이게 되는데, 그 말은 출결의 질병 · 미인정 · 출석인정 · 기타를
+             가리킨다. 같은 낱말이 한 화면에서 두 가지를 뜻하면 안 된다. -->
+        <UiModal :open="Boolean(closingClass)"
+                 :title="`이 ${closingClass?.role === 'homeroom' ? '담임 학급을' : '교과 강좌를'} 마감합니다`"
                  @close="closingClass = null">
             <div v-if="closingClass" class="modal__what">
-                <span class="modal__key">학급 · 강좌</span>
+                <span class="modal__key">이름</span>
                 <span class="modal__val">{{ closingClass.name }}</span>
-                <span class="modal__key">구분</span>
-                <span class="modal__val">
-                    {{ closingClass.role === 'homeroom' ? '담임 학급' : '교과 강좌' }}
-                </span>
+                <span class="modal__key">학교</span>
+                <span class="modal__val">{{ school.school?.name ?? '—' }}</span>
             </div>
             <p class="modal__note">
-                지우는 것이 아닙니다. 목록에서 내려가 더 고를 수 없게 될 뿐이고,
+                지우는 것이 아닙니다. 마감되어 더 선택할 수 없게 될 뿐이고,
                 이 학급에 쌓인 지난 기록은 그대로 남습니다.
             </p>
 

@@ -6,7 +6,7 @@
  * 사이드바에서 지우는 것만으로는 겉모양뿐이라 주소로 들어오는 길도 함께 막는다.
  *
  * 잠긴 화면은 **지우지 않고 개요로 되돌린다** — 담임 학급이 없는 담임 모드는
- * 정상 상태이고, 개요가 그 자리에서 무엇을 등록해야 하는지 알린다.
+ * 정상 상태이고, 개요가 그 자리에서 무엇을 추가해야 하는지 알린다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {createPinia, setActivePinia} from 'pinia'
@@ -102,7 +102,7 @@ describe('모드 가드', () => {
 
         expect(app.mode).toBe('homeroom')
         expect(modeRedirect(app, {meta: {mode: 'homeroom'}})).toEqual({name: 'overview'})
-        // 개요 · 이동 · 설정은 그대로 열린다. 등록하러 갈 길이 막히면 안 된다.
+        // 개요 · 이동 · 설정은 그대로 열린다. 추가하러 갈 길이 막히면 안 된다.
         expect(modeRedirect(app, {meta: {}})).toBe(true)
     })
 
@@ -114,7 +114,7 @@ describe('모드 가드', () => {
 })
 
 describe('Welcome 가드', () => {
-    it('담당 학급 · 강좌가 있으면 붙잡지 않는다 — 고른 학급이 없어도', () => {
+    it('담당 학급 · 강좌가 있으면 붙잡지 않는다 — 선택한 학급이 없어도', () => {
         const app = scope({classes: [SUBJECT], classId: null, mode: 'homeroom'})
 
         expect(welcomeRedirect(app, {name: 'overview'})).toBe(true)

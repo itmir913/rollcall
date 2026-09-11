@@ -88,10 +88,10 @@ async function setTag(span, tagId) {
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급과 명렬표를 넣어주세요."/>
+    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급을 추가하고 명렬표를 등록해주세요."/>
 
     <UiPage v-else
-            :subtitle="`못 받은 것 ${pending.docLeft}건 · 모은 명단 ${pending.docRows.length}건`"
+            :subtitle="`못 받은 것 ${pending.docLeft}건 · 모은 목록 ${pending.docRows.length}건`"
             title="서류 미제출자">
         <template #actions>
             <UiButton variant="download"
@@ -113,7 +113,7 @@ async function setTag(span, tagId) {
 
         <UiLedger :empty="pending.docRows.length === 0" class="list--docs"
                   empty-text="못 받은 서류가 없습니다."
-                  hint="마감이 지난 것부터" title="서류 미제출">
+                  hint="기한이 지난 것부터" title="서류 미제출">
             <SpanRow v-for="span in pending.docRows" :key="span.id"
                      :expanded="expanded === span.id" :memos="axis.memos" :span="span"
                      :tags="school.tags"
@@ -124,7 +124,7 @@ async function setTag(span, tagId) {
                 <template #tail>
                     <span class="row__date num">{{ span.dateLabel }}</span>
                     <span class="row__due num">
-                        {{ span.docDue ? `마감 ${span.docDue}` : '마감 없음' }}
+                        {{ span.docDue ? `기한 ${span.docDue}` : '기한 없음' }}
                         <b class="row__flag">{{ overdueLabel(span) }}</b>
                     </span>
                     <span class="row__mark">

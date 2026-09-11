@@ -62,7 +62,7 @@ function saveCsv(kind, args, suggested) {
 </script>
 
 <template>
-    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급과 명렬표를 넣어주세요."/>
+    <UiNotice v-if="!app.ready" kind="warn" text="먼저 설정에서 학급을 추가하고 명렬표를 등록해주세요."/>
 
     <UiPage v-else :subtitle="app.currentClass?.name ?? ''" title="통계">
         <template #actions>

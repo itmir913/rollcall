@@ -6,7 +6,7 @@
  * 입력된다. 되돌리기 어려운 것은 삭제뿐이라 거기에만 한 번 묻는다.
  *
  * `dismissible`이 false면 ESC와 바깥 클릭으로 닫히지 않는다 — 집중 등재처럼
- * 저장인지 취소인지 반드시 골라야 하는 경우다.
+ * 저장인지 취소인지 반드시 선택해야 하는 경우다.
  */
 import {nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue'
 

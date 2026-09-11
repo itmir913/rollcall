@@ -49,7 +49,7 @@ export function matchColumn(header) {
 }
 
 // 나이스 출결 파일의 열 별칭은 **여기 없다.** `data/neisFormats.json`에 있고
-// `services/neisFormat.js`가 읽는다. 명렬표 별칭과 나눠 둔 이유는 갱신 주기가 다르기
+// `services/neisFormat.js`가 읽는다. 명렬표 별칭과 나눠 둔 이유는 바뀌는 주기가 다르기
 // 때문이다 — 명렬표는 교사가 직접 만드는 파일이라 학교마다 다르고 좀처럼 바뀌지 않지만,
 // 나이스 서식은 나이스가 바꾼다. 그쪽만 데이터로 빼 두면 앱을 다시 배포하지 않고
 // JSON 한 장으로 새 서식에 맞출 수 있다.

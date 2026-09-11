@@ -5,11 +5,11 @@
 //! 바뀐다. 무엇을 받기로 했는지는 메모에 적고, 앱은 그 문장을 해석하지 않는다.
 //!
 //! 두 표시는 성격이 다르고, 그래서 목록의 모양도 다르다.
-//!   · 서류는 **건별**이다. 학생마다 받아 오는 시점이 다르므로 마감이 지난 것부터 본다.
+//!   · 서류는 **건별**이다. 학생마다 받아 오는 시점이 다르므로 기한이 지난 것부터 본다.
 //!   · 나이스는 **하루씩** 입력한다. 그래서 날짜로 묶고 오래된 날부터 위에서 아래로 옮겨 적는다.
 //!
 //! 구간 목록은 `attendance::load_spans`가 만든다. 같은 `SpanItem`을 두 번 만들면
-//! 겹침 표시나 마감 계산이 화면마다 달라진다. 조건과 별칭은 아래 상수 한 묶음에
+//! 겹침 표시나 기한 계산이 화면마다 달라진다. 조건과 별칭은 아래 상수 한 묶음에
 //! 모아 두었다 — 그쪽 질의가 별칭을 바꾸면 고칠 자리가 거기뿐이다.
 //!
 //! 집중 등재의 저장도 여기 있다. 한 명분이 축 · 기간 · 사유 · 태그 · 등재 표시이고,
@@ -46,16 +46,16 @@ const CLASS_CLAUSE: &str = "s.class_id = ?1";
 const DOC_UNDONE: &str = "s.doc_done = 0";
 const NEIS_UNDONE: &str = "s.neis_done = 0";
 
-/// 월 필터. 날짜가 ISO라 앞자리 비교로 그 달이 구분된다.
+/// 월 필터. 날짜가 ISO라 앞자리 비교로 그 달이 구별된다.
 const MONTH_LIKE: &str = "s.date LIKE ?2";
 
-/// 목록의 기본 순서. 서류는 이 뒤에 마감 순으로 다시 정렬한다.
+/// 목록의 기본 순서. 서류는 이 뒤에 기한 순으로 다시 정렬한다.
 const SPAN_ORDER: &str = "ORDER BY s.date, st.number, s.id";
 
 /// 월 필터를 날짜 앞자리 패턴으로 바꾼다. 연도만 주면 그 해 전체다.
 ///
-/// 달만 넘어오면 거절한다. 어느 해의 그 달인지 앱이 고르면, 학년도가 걸친 1·2월에
-/// 교사가 고른 것과 다른 달이 나온다.
+/// 달만 넘어오면 거절한다. 어느 해의 그 달인지 앱이 선택하면, 학년도가 걸친 1·2월에
+/// 교사가 선택한 것과 다른 달이 나온다.
 fn period_like(year: Option<i64>, month: Option<i64>) -> Result<Option<String>, String> {
     match (year, month) {
         (Some(y), Some(m)) => {
@@ -78,7 +78,7 @@ fn iso(date: &str) -> Result<String, String> {
     Ok(format_date(parse_date(date)?))
 }
 
-/// 마감 경과일. 마감일이 없으면 None이다.
+/// 기한 경과일. 기한일이 없으면 None이다.
 ///
 /// `SpanItem.days_overdue`는 이미 받은 건에서 비어 있다. 정렬에는 그 값을 쓰지 않고
 /// `doc_due`로 다시 센다 — 교사가 체크한 줄이 그 자리에 남아야 하기 때문이다.
@@ -108,7 +108,7 @@ pub fn set_doc_done_impl(
         )
         .map_err(|e| e.to_string())?;
     if changed == 0 {
-        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+        return Err(format!("출결 한 건을 찾을 수 없습니다: {span_id}"));
     }
     Ok(())
 }
@@ -129,7 +129,7 @@ pub fn set_neis_done_impl(
         )
         .map_err(|e| e.to_string())?;
     if changed == 0 {
-        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+        return Err(format!("출결 한 건을 찾을 수 없습니다: {span_id}"));
     }
     Ok(())
 }
@@ -165,7 +165,7 @@ pub fn mark_day_neis_impl(
 
 // ── 집중 등재 저장 ────────────────────────────────────────────
 
-/// 그 구간이 속한 학교와, 고른 종류가 물어야 하는 기간이 어느 쪽인지.
+/// 그 구간이 속한 학교와, 선택한 종류가 물어야 하는 기간이 어느 쪽인지.
 ///
 /// 종류는 **DB에서 읽는다** — 라벨 '결석'으로 비교하면 교사가 종류를 추가하는 순간 틀린다.
 fn span_context(
@@ -181,7 +181,7 @@ fn span_context(
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => {
-                format!("출결 기록을 찾을 수 없습니다: {span_id}")
+                format!("출결 한 건을 찾을 수 없습니다: {span_id}")
             }
             other => other.to_string(),
         })?;
@@ -208,10 +208,10 @@ fn span_context(
 /// 연다. SQLite는 트랜잭션을 겹쳐 열 수 없어, 여러 건을 한 트랜잭션으로 묶는 이 경로에서는
 /// 그대로 부를 수 없다. **`edit_span_impl`에서 트랜잭션을 분리하면 이 함수는 지운다.**
 ///
-/// 고른 교시를 구간으로 바꾸는 판단은 그쪽과 **같은 `ranges_for`**를 쓴다. 그 규칙까지
+/// 선택한 교시를 구간으로 바꾸는 판단은 그쪽과 **같은 `ranges_for`**를 쓴다. 그 규칙까지
 /// 한 벌 더 두면 수정 모달로 고친 것과 이 화면으로 고친 것이 조용히 달라진다.
 ///
-/// 마감은 다시 계산하지 않는다 — `edit_span_impl`과 같다. 이미 교사가 학부모에게
+/// 기한은 다시 계산하지 않는다 — `edit_span_impl`과 같다. 이미 교사가 학부모에게
 /// 말해 둔 날짜라, 축을 고쳤다고 소급해 움직이면 그 약속이 달라진다.
 fn edit_axis_in_tx(conn: &Connection, edit: &SpanEdit) -> Result<(), String> {
     let (school_id, prompt) = span_context(conn, edit.span_id, edit.type_id)?;
@@ -242,7 +242,7 @@ fn edit_axis_in_tx(conn: &Connection, edit: &SpanEdit) -> Result<(), String> {
         )
         .map_err(|e| constraint_err(&e, "이미 같은 구간이 있습니다."))?;
     if changed == 0 {
-        return Err(format!("출결 기록을 찾을 수 없습니다: {}", edit.span_id));
+        return Err(format!("출결 한 건을 찾을 수 없습니다: {}", edit.span_id));
     }
     Ok(())
 }
@@ -275,7 +275,7 @@ pub fn save_focus_entries_impl(
 
 // ── 미제출 목록 ───────────────────────────────────────────────
 
-/// 서류 미제출 목록. 마감이 지난 것부터 보여준다.
+/// 서류 미제출 목록. 기한이 지난 것부터 보여준다.
 ///
 /// `include_done`이 true면 이미 받은 건도 함께 돌려준다. 화면에서 체크한 줄이
 /// 곧바로 사라지면 잘못 눌렀을 때 되돌릴 자리가 없기 때문이다.
@@ -305,7 +305,7 @@ pub fn get_doc_pending_impl(
 
     let mut spans = load_spans(conn, &where_sql, &params, &today)?;
 
-    // 마감이 지난 것이 위다. 마감이 없는 건은 맨 아래로 보낸다 — 재촉할 근거가 없다.
+    // 기한이 지난 것이 위다. 기한이 없는 건은 맨 아래로 보낸다 — 재촉할 근거가 없다.
     spans.sort_by(|a, b| {
         let left = overdue_of(a, today_date).unwrap_or(i64::MIN);
         let right = overdue_of(b, today_date).unwrap_or(i64::MIN);

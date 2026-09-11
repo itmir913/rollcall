@@ -68,7 +68,7 @@ fn add_rule(
     conn.last_insert_rowid()
 }
 
-/// 규정 하나만 골라 집계한다.
+/// 규정 하나만 선택해 집계한다.
 fn report(conn: &Connection, class_id: i64, rule: i64) -> QuotaReport {
     let mut all = get_quota_reports_impl(conn, class_id, Some(rule), None, None).unwrap();
     assert_eq!(all.len(), 1, "규정을 지정했으면 보고서도 하나다");
@@ -478,7 +478,7 @@ fn 태그가_빠진_구간을_따로_모은다() {
     let (sick, _) = axes(&conn, "질병", "결석");
 
     add_span(&conn, class, s, "2026-05-11", recognized, absent, Some(tag)); // 태그 있음
-    let missing = add_span(&conn, class, s, "2026-05-12", recognized, absent, None); // 태그 빠짐
+    let missing = add_span(&conn, class, s, "2026-05-12", recognized, absent, None); // 태그 없음
     add_span(&conn, class, s, "2026-05-13", sick, absent, None); // 질병은 목록에 넣지 않는다
 
     let rule = add_rule(&conn, "체험학습 연 20일", Some(tag), None, None, "year", 20, "day");

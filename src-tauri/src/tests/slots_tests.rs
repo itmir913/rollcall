@@ -76,7 +76,7 @@ fn vectors() -> Vectors {
 }
 
 /// 실패 메시지에 벡터의 설명을 함께 적는다. 어느 줄이 왜 있는지 모르면
-/// 다음 사람이 기대값을 고쳐 통과시키는 쪽을 고른다.
+/// 다음 사람이 기대값을 고쳐 통과시키는 쪽을 선택한다.
 fn why(note: &Option<String>) -> String {
     note.as_deref().map(|n| format!(" — {n}")).unwrap_or_default()
 }
