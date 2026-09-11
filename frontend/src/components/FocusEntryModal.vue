@@ -10,6 +10,7 @@
  */
 import {computed, ref, watch} from 'vue'
 import AxisCard from './AxisCard.vue'
+import {picksOf} from '../services/slots'
 import {UiButton, UiModal} from './ui'
 
 const props = defineProps({
@@ -40,7 +41,7 @@ watch(
                 name: s.name,
                 reasonId: s.reasonId ?? null,
                 typeId: s.typeId ?? null,
-                slots: slotsOf(s),
+                slots: picksOf(s, props.maxSlot),
                 memo: s.memo ?? '',
                 tagId: s.tagId ?? null,
                 touched: false,
@@ -63,21 +64,6 @@ const draft = computed({
         Object.assign(current.value, value, {touched: true})
     },
 })
-
-function slotsOf(span) {
-    if (span.slotPrompt === 'none') return []
-    if (span.slotPrompt === 'end') return span.endSlot ? [span.endSlot] : []
-    if (span.slotPrompt === 'start') return span.startSlot ? [span.startSlot] : []
-    if (span.slotPrompt === 'multi') {
-        const from = Number(span.startSlot)
-        const to = Number(span.endSlot)
-        if (!Number.isInteger(from) || !Number.isInteger(to)) return []
-        const out = []
-        for (let n = from; n <= to; n += 1) out.push(String(n))
-        return out
-    }
-    return span.startSlot ? [span.startSlot] : []
-}
 
 function move(step) {
     if (current.value) current.value.touched = true

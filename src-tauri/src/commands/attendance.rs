@@ -195,6 +195,17 @@ pub(crate) fn ranges_for(
         return Ok(vec![(None, None)]);
     }
 
+    // `?`는 **묻고 있는 쪽이 열려 있다**는 뜻이다(`slots.rs`: "저장은 NULL이다").
+    // 지각이면 조회부터 언제까지인지 모르는 것이고, 조퇴면 언제부터인지 모르는 채
+    // 종례까지다. 이 길이 없으면 화면의 `?` 버튼이 눌러도 저장되지 않는다.
+    if picked.iter().any(|s| s == UNKNOWN) {
+        return match slot_prompt {
+            Some("end") => Ok(vec![(Some(HOMEROOM.to_string()), None)]),
+            Some("start") => Ok(vec![(None, Some(CLOSING.to_string()))]),
+            _ => Err(format!("여기서는 {UNKNOWN}를 고를 수 없습니다.")),
+        };
+    }
+
     let mut ordinals = Vec::with_capacity(picked.len());
     for slot in picked {
         let o = slots::ordinal(slot, max_slot)
@@ -708,6 +719,40 @@ pub fn get_day_grid_impl(
     })
 }
 
+/// 두 날짜 사이의 기록. **달이 아니라 기간으로 묻는다.**
+///
+/// NEIS 검증이 이것을 쓴다. 나이스 파일의 기간은 달에 맞춰 떨어지지 않고(월별 파일도
+/// 학기 중 임의 구간일 수 있다), 화면이 마지막에 보던 달로 대조하면 6월 파일을 9월
+/// 기록과 맞춰 보고는 "전부 앱에 없음"이라고 말한다.
+#[allow(clippy::too_many_arguments)]
+pub fn get_spans_between_impl(
+    conn: &Connection,
+    school_id: i64,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
+    from: &str,
+    to: &str,
+    today: &str,
+) -> Result<Vec<SpanItem>, String> {
+    // 자리를 채운 ISO로 맞춘다. 날짜 비교가 문자열 비교라 `2026-9-1`이 오면
+    // 그 달의 기록이 통째로 빠진다.
+    let from = format_date(parse_date(from)?);
+    let to = format_date(parse_date(to)?);
+    if to < from {
+        return Err("끝 날짜가 시작 날짜보다 앞입니다.".to_string());
+    }
+    load_spans(
+        conn,
+        "WHERE s.date >= ?1 AND s.date <= ?2
+           AND st.school_id = ?3 AND st.year_id = ?4
+           AND st.grade = ?5 AND st.class_no = ?6
+         ORDER BY s.date, st.number, s.id",
+        &[&from, &to, &school_id, &year_id, &grade, &class_no],
+        today,
+    )
+}
+
 /// 한 달치 기록을 날짜별로 묶는다. 최신 날짜가 먼저다.
 ///
 /// 전출한 학생의 지난 기록도 그대로 나온다 — 그날 그 학생은 이 반이었다.
@@ -940,6 +985,23 @@ pub fn delete_span(db: State<DbState>, span_id: i64) -> Result<(), String> {
 #[tauri::command]
 pub fn set_span_memo(db: State<DbState>, span_id: i64, memo: String) -> Result<(), String> {
     with_conn(&db, |c| set_span_memo_impl(c, span_id, &memo))
+}
+
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub fn get_spans_between(
+    db: State<DbState>,
+    school_id: i64,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
+    from: String,
+    to: String,
+    today: String,
+) -> Result<Vec<SpanItem>, String> {
+    with_conn(&db, |c| {
+        get_spans_between_impl(c, school_id, year_id, grade, class_no, &from, &to, &today)
+    })
 }
 
 #[tauri::command]

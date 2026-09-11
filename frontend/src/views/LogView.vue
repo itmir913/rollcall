@@ -25,7 +25,7 @@ import SpanDeleteModal from '../components/SpanDeleteModal.vue'
 import SpanEditModal from '../components/SpanEditModal.vue'
 import {useNeisImportStore} from '../stores/neisImport'
 import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
-import {exportCsv} from '../services/download'
+import {useDownloadStore} from '../stores/download'
 
 const app = useAppStore()
 const axis = useAxisStore()
@@ -34,6 +34,7 @@ const log = useLogStore()
 const pending = usePendingStore()
 const school = useSchoolStore()
 const neis = useNeisImportStore()
+const download = useDownloadStore()
 
 const importing = ref(false)
 const fileInput = ref(null)
@@ -69,28 +70,44 @@ async function confirmDrop() {
     await log.fetchMonth()
 }
 
+// 아래 넷은 **저장이 끝난 뒤에만** 줄을 바꾼다. 실패했는데 켜진 토글을 두면 교사는
+// 저장된 것으로 읽고, 나중에 배지 숫자가 안 맞는 것을 배지의 문제로 본다.
+// 실패는 화면 아래 `day.error` · `pending.error`가 그대로 말한다.
+
 async function setMemo(span, memo) {
-    await day.setMemo(span.id, memo).catch(() => {
-    })
-    span.memo = memo
+    try {
+        await day.setMemo(span.id, memo)
+        span.memo = memo
+    } catch {
+        // day.error에 담겨 화면에 나온다.
+    }
 }
 
 async function setTag(span, tagId) {
-    await day.setTag(span.id, tagId).catch(() => {
-    })
-    await log.fetchMonth()
+    try {
+        await day.setTag(span.id, tagId)
+        await log.fetchMonth()
+    } catch {
+        // day.error에 담겨 화면에 나온다.
+    }
 }
 
 async function toggleDoc(span, value) {
-    await pending.setDoc(span.id, value).catch(() => {
-    })
-    span.docDone = value
+    try {
+        await pending.setDoc(span.id, value)
+        span.docDone = value
+    } catch {
+        // pending.error에 담겨 화면에 나온다.
+    }
 }
 
 async function toggleNeis(span, value) {
-    await pending.setNeis(span.id, value).catch(() => {
-    })
-    span.neisDone = value
+    try {
+        await pending.setNeis(span.id, value)
+        span.neisDone = value
+    } catch {
+        // pending.error에 담겨 화면에 나온다.
+    }
 }
 
 /**
@@ -127,9 +144,12 @@ async function applyImport() {
         importing.value = false
         neis.reset()
         await log.fetchMonth()
-        messageKind.value = 'ok'
+        // 고른 것이 적용되지 않았으면 그 사실을 먼저 말한다. 미리보기 이후에 그 기록이
+        // 바뀐 경우인데, 숫자가 줄어든 것만으로는 교사가 알 수 없다.
+        messageKind.value = out.skipped ? 'warn' : 'ok'
         message.value =
             `가져왔습니다 — 넣기 ${out.added}건 · 고치기 ${out.replaced}건 · 등재 표시 ${out.marked}건`
+            + (out.skipped ? ` · 그 사이에 바뀌어 건너뛴 것 ${out.skipped}건` : '')
     } catch {
         messageKind.value = 'error'
         message.value = neis.error
@@ -149,6 +169,11 @@ onMounted(async () => {
         }),
     ])
 })
+/** 내보내기 실패를 화면에 남긴다. 눌러도 아무 일이 없는 단추를 두지 않는다. */
+function saveCsv(kind, args, suggested) {
+    download.csv(kind, args, suggested).catch(() => {
+    })
+}
 </script>
 
 <template>
@@ -160,7 +185,7 @@ onMounted(async () => {
             <UiButton variant="upload" @click="importNeis">NEIS 가져오기</UiButton>
             <input ref="fileInput" accept=".xlsx" hidden type="file" @change="onPick"/>
             <UiButton variant="download"
-                      @click="exportCsv('spans', {...app.scope, from: `${log.year}-${String(log.month).padStart(2,'0')}-01`, to: `${log.year}-${String(log.month).padStart(2,'0')}-31`}, `출결_${log.year}-${log.month}.csv`)">
+                      @click="saveCsv('spans', {...app.scope, from: `${log.year}-${String(log.month).padStart(2,'0')}-01`, to: `${log.year}-${String(log.month).padStart(2,'0')}-31`}, `출결_${log.year}-${log.month}.csv`)">
                 {{ log.month }}월 CSV
             </UiButton>
         </template>
@@ -228,6 +253,8 @@ onMounted(async () => {
         </div>
 
         <UiNotice :text="log.error" kind="error"/>
+        <UiNotice :text="day.error" kind="error"/>
+        <UiNotice :text="pending.error" kind="error"/>
 
         <SpanEditModal :max-slot="app.maxSlot" :open="Boolean(fixing)" :reasons="axis.reasons"
                        :span="fixing" :types="axis.types"
@@ -236,5 +263,7 @@ onMounted(async () => {
                          @close="dropping = null" @confirm="confirmDrop"/>
         <NeisImportModal :open="importing"
                          @apply="applyImport" @close="importing = false; neis.reset()"/>
+        <UiNotice :text="download.error" kind="error"/>
+        <UiNotice :text="download.done" kind="ok"/>
     </UiPage>
 </template>

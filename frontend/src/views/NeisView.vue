@@ -18,13 +18,14 @@ import {usePendingStore} from '../stores/pending'
 import {useSchoolStore} from '../stores/school'
 import FocusEntryModal from '../components/FocusEntryModal.vue'
 import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
-import {exportCsv} from '../services/download'
+import {useDownloadStore} from '../stores/download'
 
 const app = useAppStore()
 const axis = useAxisStore()
 const day = useDayStore()
 const pending = usePendingStore()
 const school = useSchoolStore()
+const download = useDownloadStore()
 
 const focusDay = ref(null)
 const copied = ref(null)
@@ -69,6 +70,11 @@ onMounted(async () => {
         }),
     ])
 })
+/** 내보내기 실패를 화면에 남긴다. 눌러도 아무 일이 없는 단추를 두지 않는다. */
+function saveCsv(kind, args, suggested) {
+    download.csv(kind, args, suggested).catch(() => {
+    })
+}
 </script>
 
 <template>
@@ -78,7 +84,7 @@ onMounted(async () => {
             title="NEIS 미등재">
         <template #actions>
             <UiButton variant="download"
-                      @click="exportCsv('pending', {...app.scope, kind: 'neis', today: app.today}, 'NEIS_미등재.csv')">
+                      @click="saveCsv('pending', {...app.scope, kind: 'neis', today: app.today}, 'NEIS_미등재.csv')">
                 미등재 CSV
             </UiButton>
         </template>
@@ -133,5 +139,7 @@ onMounted(async () => {
                          :open="Boolean(focusDay)" :reasons="axis.reasons" :tags="school.tags"
                          :types="axis.types"
                          @cancel="focusDay = null" @save="saveFocus"/>
+        <UiNotice :text="download.error" kind="error"/>
+        <UiNotice :text="download.done" kind="ok"/>
     </UiPage>
 </template>

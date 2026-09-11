@@ -79,6 +79,7 @@ fn main() {
             set_span_memo,
             set_span_tag,
             get_month_log,
+            get_spans_between,
             preview_bulk,
             apply_bulk,
             // 서류 · 나이스 표시

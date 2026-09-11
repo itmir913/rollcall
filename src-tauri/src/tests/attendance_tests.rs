@@ -811,6 +811,22 @@ fn 구간_묶기는_이어진_것끼리만_묶는다() {
     );
     // 종류를 아직 안 정했고 교시도 안 골랐으면 기간 미정이다.
     assert_eq!(ranges_for(None, &[], 7).unwrap(), vec![(None, None)]);
+
+    // `?`는 **묻고 있는 쪽이 열려 있다**는 뜻이고, 저장은 NULL이다(`slots.rs`).
+    // 이 길이 없으면 화면의 `?` 버튼이 눌러도 언제나 실패한다.
+    assert_eq!(
+        ranges_for(Some("end"), &picked(&["?"]), 7).unwrap(),
+        vec![(Some("조회".to_string()), None)],
+        "지각은 조회부터 언제까지인지 모르는 것이다"
+    );
+    assert_eq!(
+        ranges_for(Some("start"), &picked(&["?"]), 7).unwrap(),
+        vec![(None, Some("종례".to_string()))],
+        "조퇴는 언제부터인지 모르는 채 종례까지다"
+    );
+    // 종류가 미정이면 어느 쪽을 묻는지 정해지지 않아 저장할 수 없다.
+    assert!(ranges_for(None, &picked(&["?"]), 7).is_err());
+    assert!(ranges_for(Some("multi"), &picked(&["?"]), 7).is_err());
 }
 
 // ── 날짜 표기 ─────────────────────────────────────────────────

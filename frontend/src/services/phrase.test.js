@@ -44,9 +44,13 @@ describe('spanPhrase — 아직 저장하지 않은 조합', () => {
         expect(spanPhrase({slotPrompt: null, slots: []})).toBe(spanTextOf(null, null, null))
     })
 
-    it('결과는 이어진 것끼리 묶어 적는다', () => {
-        expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '2', '3']})).toBe('1~3교시')
-        expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '3', '5']})).toBe('1교시 · 3교시 · 5교시')
+    it('결과는 이어진 것끼리 묶어 적고, 저장 후 문구와 같은 말을 쓴다', () => {
+        // 묶음 하나가 구간 하나로 저장되므로, 각 묶음의 문구가 spanTextOf와 같아야 한다.
+        expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '2', '3']}))
+            .toBe(spanTextOf('multi', '1', '3'))
+        expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '3', '5']}))
+            .toBe([spanTextOf('multi', '1', '1'), spanTextOf('multi', '3', '3'),
+                spanTextOf('multi', '5', '5')].join(' · '))
     })
 })
 

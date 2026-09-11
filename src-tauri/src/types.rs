@@ -410,7 +410,7 @@ pub struct BulkApplyResult {
 
 /// 나이스 파일에서 읽은 출결 한 건.
 ///
-/// 구분 · 종류는 이미 갈라져 온다. 못 가른 경우 `code_label`만 채워져 오고,
+/// 구분 · 종류는 이미 나뉘어 온다. 나누지 못한 경우 `code_label`만 채워져 오고,
 /// Rust가 `code_alias`로 한 번 더 찾아본다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -481,4 +481,6 @@ pub struct NeisImportResult {
     pub added: i64,
     pub replaced: i64,
     pub marked: i64,
+    /// 교사가 골랐는데 적용되지 않은 건수. 미리보기 이후에 그 기록이 바뀐 경우다.
+    pub skipped: i64,
 }

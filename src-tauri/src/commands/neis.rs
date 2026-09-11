@@ -15,6 +15,7 @@ use super::attendance::{load_spans, school_settings, span_text};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::due::{self, format_date, format_korean, parse_date};
+use crate::slots;
 use crate::state::DbState;
 use crate::types::{
     NeisDiffItem, NeisImportChoice, NeisImportPreview, NeisImportResult, NeisRowInput, SpanItem,
@@ -184,6 +185,7 @@ fn resolve(
     scope: Scope,
     rows: &[NeisRowInput],
 ) -> Result<(Vec<Resolved>, Vec<NeisDiffItem>), String> {
+    let max_slot = school_settings(conn, scope.school_id)?.max_slot as usize;
     let mut ok = Vec::new();
     let mut bad = Vec::new();
 
@@ -204,7 +206,7 @@ fn resolve(
             continue;
         };
 
-        // 프런트가 가른 것을 먼저 쓰고, 못 갈랐으면 별칭표로 한 번 더 찾는다.
+        // 프런트가 구분한 것을 먼저 쓰고, 구분하지 못했으면 별칭표로 한 번 더 찾는다.
         let mut reason_id = match row.reason_label.as_deref() {
             Some(l) => axis_by_label(conn, "attendance_reason", l, &date)?,
             None => None,
@@ -230,6 +232,18 @@ fn resolve(
                     row.code_label.as_deref().unwrap_or("")
                 ),
             ));
+            continue;
+        }
+
+        // **저장 경로는 전부 `validate_span`을 지난다.** 가져오기만 예외로 두면
+        // max_slot 밖의 교시가 그대로 들어와, 그 줄은 겹침 오탐이 뜨고 이후 수정이
+        // 영영 거부된다. 여기서 걸러 교사에게 이유를 보여준다.
+        if let Err(why) = slots::validate_span(
+            row.start_slot.as_deref(),
+            row.end_slot.as_deref(),
+            max_slot,
+        ) {
+            bad.push(unreadable(key, row, &why));
             continue;
         }
 
@@ -289,17 +303,25 @@ fn item_of(row: &Resolved, verdict: &str, mine: Option<&SpanItem>) -> NeisDiffIt
 /// 짝은 (학생, 날짜)로 맞춘다. 하루 2구간이 정상이므로 **여럿을 여럿과** 비교한다 —
 /// 똑같은 것끼리 먼저 짝을 지우고, 남은 것끼리 다름으로 본다. 하나씩 비교하면
 /// `1교시 지각`과 `5교시 조퇴`가 서로 다름으로 잡힌다.
+type Diff = (NeisImportPreview, HashMap<usize, Resolved>);
+
 fn diff(
     conn: &Connection,
     scope: Scope,
     rows: &[NeisRowInput],
     today: &str,
-) -> Result<NeisImportPreview, String> {
+) -> Result<Diff, String> {
     let (resolved, mut items) = resolve(conn, scope, rows)?;
 
-    let dates: Vec<&str> = rows.iter().map(|r| r.date.as_str()).collect();
-    let from = dates.iter().min().copied().unwrap_or("").to_string();
-    let to = dates.iter().max().copied().unwrap_or("").to_string();
+    // **자리를 채운 ISO로 잰다.** 파일이 `2026-9-1`로 주면 원본 문자열 비교에서
+    // `'2026-09-01' >= '2026-9-1'`이 거짓이라 내 기록을 하나도 못 불러오고,
+    // 이미 있는 기록이 전부 "앱에 없음"으로 잡혀 중복이 들어간다.
+    let dates: Vec<String> = rows
+        .iter()
+        .filter_map(|r| parse_date(&r.date).ok().map(format_date))
+        .collect();
+    let from = dates.iter().min().cloned().unwrap_or_default();
+    let to = dates.iter().max().cloned().unwrap_or_default();
 
     let mine = if from.is_empty() {
         Vec::new()
@@ -359,11 +381,22 @@ fn diff(
             }
         }
 
-        // 남은 짝을 먼저 모은다. 짝을 지으면서 같은 목록을 다시 걸러 볼 수는 없다.
-        let spare: Vec<&SpanItem> = ours.iter().filter(|m| !taken.contains(&m.id)).copied().collect();
-        let mut spare = spare.into_iter();
+        // 남은 것끼리 짝을 짓되 **같은 종류 · 구분을 먼저 맞춘다.**
+        //
+        // 순서대로만 엮으면 하루에 지각과 조퇴가 하나씩 있을 때 짝이 서로 바뀐다.
+        // 교사가 둘 다 "나이스 것으로"를 고르면 메모 · 태그 · 마감이 엉뚱한 기록으로
+        // 넘어가는데, 그 교환은 화면에 보이지 않는다. 앱이 못 보는 곳에서 짝을
+        // 정하는 것이 곧 판정이므로, 적어도 눈에 보이는 근거(종류 · 구분)를 먼저 쓴다.
+        let mut spare: Vec<&SpanItem> =
+            ours.iter().filter(|m| !taken.contains(&m.id)).copied().collect();
         for row in leftovers {
-            match spare.next() {
+            let at = spare
+                .iter()
+                .position(|m| m.type_id == row.type_id && m.reason_id == row.reason_id)
+                .or_else(|| spare.iter().position(|m| m.type_id == row.type_id))
+                .or_else(|| spare.iter().position(|m| m.reason_id == row.reason_id))
+                .or(if spare.is_empty() { None } else { Some(0) });
+            match at.map(|at| spare.remove(at)) {
                 Some(hit) => {
                     paired.insert(hit.id);
                     items.push(item_of(row, "differ", Some(hit)));
@@ -375,7 +408,8 @@ fn diff(
 
     items.sort_by_key(|i| i.key);
     let count = |v: &str| items.iter().filter(|i| i.verdict == v).count() as i64;
-    Ok(NeisImportPreview {
+    let by_key: HashMap<usize, Resolved> = resolved.into_iter().map(|r| (r.key, r)).collect();
+    Ok((NeisImportPreview {
         only_mine: mine.iter().filter(|m| !paired.contains(&m.id)).count() as i64,
         same: count("same"),
         add: count("add"),
@@ -384,7 +418,7 @@ fn diff(
         items,
         from,
         to,
-    })
+    }, by_key))
 }
 
 // ── 적용 ──────────────────────────────────────────────────────
@@ -400,7 +434,7 @@ pub fn apply_neis_import_impl(
     choice: &NeisImportChoice,
     today: &str,
 ) -> Result<NeisImportResult, String> {
-    let preview = diff(conn, scope, rows, today)?;
+    let (preview, resolved) = diff(conn, scope, rows, today)?;
     let settings = school_settings(conn, scope.school_id)?;
     let off_days = super::attendance::off_days_of(conn, scope.school_id)?;
     let picked_add: HashSet<usize> = choice.add.iter().copied().collect();
@@ -410,16 +444,19 @@ pub fn apply_neis_import_impl(
         let mut added = 0;
         let mut replaced = 0;
         let mut marked = 0;
+        let mut done: HashSet<usize> = HashSet::new();
 
         for item in &preview.items {
-            let row = rows
-                .get(item.key)
-                .ok_or_else(|| "미리보기와 파일이 어긋납니다.".to_string())?;
-            let resolved = preview_row(conn, scope, row)?;
+            // 못 읽은 줄은 여기 없다. **건너뛰는 것이지 실패가 아니다** — 모르는 표기
+            // 한 줄 때문에 교사가 고른 나머지가 통째로 막히면 안 된다. 그 줄은 이미
+            // 미리보기에서 이유와 함께 보여 주었다.
+            let Some(hit) = resolved.get(&item.key) else {
+                continue;
+            };
 
             match item.verdict.as_str() {
                 "add" if picked_add.contains(&item.key) => {
-                    let date = parse_date(&item.date)?;
+                    let date = parse_date(&hit.date)?;
                     let due = format_date(due::due_date(
                         date,
                         settings.due_days,
@@ -432,18 +469,19 @@ pub fn apply_neis_import_impl(
                             memo, doc_due, neis_done, neis_done_on)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9)",
                         params![
-                            resolved.0,
-                            item.date,
-                            resolved.1,
-                            resolved.2,
-                            row.start_slot,
-                            row.end_slot,
-                            row.detail.clone().unwrap_or_default(),
+                            hit.student_id,
+                            hit.date,
+                            hit.reason_id,
+                            hit.type_id,
+                            hit.start_slot,
+                            hit.end_slot,
+                            hit.detail.clone().unwrap_or_default(),
                             due,
                             today
                         ],
                     )
                     .map_err(|e| e.to_string())?;
+                    done.insert(item.key);
                     added += 1;
                 }
                 "differ" if picked_replace.contains(&item.key) => {
@@ -457,16 +495,17 @@ pub fn apply_neis_import_impl(
                                 neis_done = 1, neis_done_on = ?6
                           WHERE id = ?7",
                         params![
-                            resolved.1,
-                            resolved.2,
-                            row.start_slot,
-                            row.end_slot,
-                            row.detail.clone().unwrap_or_default(),
+                            hit.reason_id,
+                            hit.type_id,
+                            hit.start_slot,
+                            hit.end_slot,
+                            hit.detail.clone().unwrap_or_default(),
                             today,
                             span_id
                         ],
                     )
                     .map_err(|e| e.to_string())?;
+                    done.insert(item.key);
                     replaced += 1;
                 }
                 "same" if choice.mark_neis && !item.neis_done => {
@@ -481,26 +520,19 @@ pub fn apply_neis_import_impl(
                 _ => {}
             }
         }
+        // 교사가 골랐는데 적용되지 않은 것. 미리보기 이후에 다른 화면에서 그 기록이
+        // 바뀌어 판정이 달라진 경우다. **조용히 넘기지 않고 세어서 돌려준다.**
+        let skipped = picked_add
+            .union(&picked_replace)
+            .filter(|key| !done.contains(key))
+            .count() as i64;
         Ok(NeisImportResult {
             added,
             replaced,
             marked,
+            skipped,
         })
     })
-}
-
-/// 한 줄의 (학생 · 구분 · 종류). 적용 시점에 다시 찾는다 — 미리보기 이후에 명렬표가
-/// 바뀌었을 수 있고, 그때는 넣지 않는 편이 조용히 다른 학생에게 붙는 것보다 낫다.
-fn preview_row(
-    conn: &Connection,
-    scope: Scope,
-    row: &NeisRowInput,
-) -> Result<(i64, Option<i64>, Option<i64>), String> {
-    let (mut ok, _) = resolve(conn, scope, std::slice::from_ref(row))?;
-    let hit = ok
-        .pop()
-        .ok_or_else(|| format!("{}번 {} 줄을 다시 읽지 못했습니다.", row.number, row.date))?;
-    Ok((hit.student_id, hit.reason_id, hit.type_id))
 }
 
 pub fn preview_neis_import_impl(
@@ -509,7 +541,7 @@ pub fn preview_neis_import_impl(
     rows: &[NeisRowInput],
     today: &str,
 ) -> Result<NeisImportPreview, String> {
-    diff(conn, scope, rows, today)
+    Ok(diff(conn, scope, rows, today)?.0)
 }
 
 // ── 커맨드 ────────────────────────────────────────────────────

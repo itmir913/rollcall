@@ -64,14 +64,18 @@ async function onDrop(event) {
 async function load(bytes) {
     error.value = ''
     try {
-        // 구분 · 종류는 DB에서 온다. 파일의 `질병조퇴`를 두 축으로 가르는 후보다.
+        // 구분 · 종류는 DB에서 온다. 파일의 `질병조퇴`를 두 축으로 구분하는 후보다.
         if (axis.types.length === 0) await axis.fetchAll()
         const read = await readNeisFile(bytes, {reasons: axis.reasons, types: axis.types})
         meta.value = read.meta
         step.value = 2
-        await log.fetchMonth().catch(() => {
-        })
-        result.value = compareRecords(log.spans, read.rows)
+        // **파일의 기간으로 대조한다.** 출결 기록 화면이 마지막에 보던 달로 맞추면
+        // 6월 파일을 9월 기록과 견주고는 전부 어긋났다고 말한다. 그 화면을 한 번도
+        // 열지 않았으면 아예 빈 목록과 견준다.
+        const mine = read.meta.from
+            ? await log.fetchBetween(read.meta.from, read.meta.to)
+            : []
+        result.value = compareRecords(mine, read.rows)
         step.value = 3
     } catch (e) {
         // 못 읽었다는 사실을 조용히 넘기지 않는다.

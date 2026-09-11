@@ -131,7 +131,8 @@ describe('월별 출결 현황', () => {
         expect(merged).toHaveLength(2)
         expect(merged[0]).toMatchObject({startSlot: '조회', endSlot: '1'})
         expect(merged[1]).toMatchObject({startSlot: '6', endSlot: '종례'})
-        expect(out.meta.merged).toBe(2)
+        // 갈라져 나온 구간은 둘이지만 **합쳐진 줄은 하나다.** 교사에게는 줄 수로 말한다.
+        expect(out.meta.merged).toBe(1)
     })
 })
 
@@ -179,7 +180,7 @@ describe('교시 표기', () => {
 })
 
 describe('splitCodeLabel', () => {
-    it('구분과 종류로 가른다', () => {
+    it('구분과 종류로 나눈다', () => {
         expect(splitCodeLabel('질병조퇴', REASONS, TYPES))
             .toEqual({reasonLabel: '질병', typeLabel: '조퇴'})
     })
@@ -194,7 +195,7 @@ describe('splitCodeLabel', () => {
             .toEqual({reasonLabel: null, typeLabel: null})
     })
 
-    it('후보는 DB에서 온다 — 목록이 비면 아무것도 가르지 못한다', () => {
+    it('후보는 DB에서 온다 — 목록이 비면 아무것도 구분하지 못한다', () => {
         expect(splitCodeLabel('질병조퇴', [], [])).toEqual({reasonLabel: null, typeLabel: null})
     })
 })
@@ -379,5 +380,82 @@ describe('파일 읽기 도구', () => {
     it('읽을 수 없는 날짜는 조용히 넘기지 않고 null로 알린다', () => {
         expect(toIso('지난주')).toBeNull()
         expect(toIso('')).toBeNull()
+    })
+})
+
+// ── 감사가 찾은 결함들 ──────────────────────────────────────────
+
+describe('삼켜서는 안 되는 줄', () => {
+    it('사유에 ※를 쓴 줄을 캡션으로 오인하지 않는다', () => {
+        // `※ 진단서 제출`은 한국어 메모에서 흔하다. 캡션으로 삼으면 그 출결이 사라진다.
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병결석', '조회,1교시,종례,', '※ 진단서 제출'],
+        ])
+        expect(out.rows).toHaveLength(1)
+        expect(out.rows[0]).toMatchObject({number: 2, detail: '※ 진단서 제출'})
+        expect(out.meta.skipped).toEqual([])
+    })
+
+    it('일일출석부에서도 ※ 메모가 캡션의 일자를 지우지 않는다', () => {
+        // 지우면 그 페이지의 뒤따르는 학생이 전부 "일자를 읽지 못했습니다"가 된다.
+        const out = read([
+            [' ※ 3학년 6반 2026.09.01.(화)'],
+            DAILY_HEAD,
+            ['1', '학생1', '질병결석', '/', '/', '/', '/', '/', '※ 진단서 받기로 함'],
+            ['2', '학생2', '질병결석', '/', '/', '/', '/', '/', '몸살'],
+        ])
+        expect(out.rows.map((r) => r.date)).toEqual(['2026-09-01', '2026-09-01'])
+        expect(out.meta.skipped).toEqual([])
+    })
+
+    it('사유가 `9 / 1`이어도 페이지 꼬리로 보지 않는다', () => {
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병결석', '조회,1교시,종례,', '9 / 1'],
+        ])
+        expect(out.rows).toHaveLength(1)
+    })
+})
+
+describe('번호 이어받기', () => {
+    it('읽을 수 없는 번호를 앞 학생에게 붙이지 않는다', () => {
+        // 이어받기는 **세로 병합**을 위한 것이다. 빈칸이 아닌데 못 읽었다면 그것은
+        // 오류이고, 앞 학생에게 붙이면 엉뚱한 학생이 결석 처리된다.
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병결석', '조회,1교시,종례,', ''],
+            ['2026.06.03.(수)', '３', '학생3', '질병지각', '조회,', ''],
+        ])
+        expect(out.rows).toHaveLength(1)
+        expect(out.rows[0].number).toBe(2)
+        expect(out.meta.skipped).toEqual([{line: 3, why: '번호를 읽지 못했습니다: ３'}])
+    })
+
+    it('빈칸은 세로 병합이므로 그대로 이어받는다', () => {
+        const out = read(MONTHLY)
+        expect(out.rows[1]).toMatchObject({number: 2, name: '학생2'})
+    })
+
+    it('페이지가 바뀌면 앞 페이지의 마지막 학생을 이어받지 않는다', () => {
+        const out = read([
+            [' ※ 3학년 6반 2026.09.01.(화)'],
+            DAILY_HEAD,
+            ['1', '학생1', '질병결석', '/', '/', '/', '/', '/', ''],
+            [' ※ 3학년 6반 2026.09.01.(화)'],
+            DAILY_HEAD,
+            ['', '', '질병결석', '/', '/', '/', '/', '/', ''],
+        ])
+        expect(out.rows.map((r) => r.number)).toEqual([1])
+        expect(out.meta.skipped).toEqual([{line: 6, why: '번호를 읽지 못했습니다.'}])
+    })
+})
+
+describe('파서 둘', () => {
+    it('둘 다 실패하면 두 이유를 모두 말한다', async () => {
+        // zip 서명은 맞지만 엑셀이 아닌 파일.
+        const bytes = new Uint8Array(64)
+        bytes.set([0x50, 0x4b, 0x03, 0x04])
+        await expect(readNeisFile(bytes, AXIS)).rejects.toThrow(/exceljs:.*SheetJS:/s)
     })
 })

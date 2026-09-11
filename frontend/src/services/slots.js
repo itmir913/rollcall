@@ -32,11 +32,11 @@ export function slotLabel(slot) {
 }
 
 /**
- * 그 구분에서 고를 수 있는 기간.
+ * 그 종류에서 고를 수 있는 기간.
  *
  * 결석은 하루 종일이라 고를 것이 없고, 지각은 온 때 하나(조회일 수 없다),
  * 조퇴는 나간 때 하나(종례일 수 없다), 결과는 빠진 교시 여러 개(조회·종례·?는 아니다).
- * 구분이 미정이면 전부 열어 둔다.
+ * 종류가 미정이면 교시를 전부 열어 둔다.
  */
 export function allowedSlots(slotPrompt, maxSlot) {
     const periods = slotList(maxSlot).slice(1, -1)
@@ -50,7 +50,9 @@ export function allowedSlots(slotPrompt, maxSlot) {
         case 'multi':
             return periods
         default:
-            return [HOMEROOM, ...periods, UNKNOWN, CLOSING]
+            // 종류가 미정이면 `?`를 열지 않는다. `?`는 **묻고 있는 쪽이 열려 있다**는
+            // 뜻인데, 종류가 없으면 어느 쪽을 묻는지 정해지지 않아 저장할 수 없다.
+            return [HOMEROOM, ...periods, CLOSING]
     }
 }
 
@@ -87,9 +89,45 @@ export function groupRuns(slots) {
     return out
 }
 
-/** 고른 기간이 그 구분에서 여전히 쓸 수 있는가. 못 쓰면 화면이 미정으로 되돌린다. */
+/** 고른 기간이 그 종류에서 여전히 쓸 수 있는가. 못 쓰면 화면이 미정으로 되돌린다. */
 export function keepUsable(slots, slotPrompt, maxSlot) {
     const allowed = allowedSlots(slotPrompt, maxSlot)
     const kept = slots.filter((v) => allowed.includes(v))
     return isMulti(slotPrompt) ? kept : kept.slice(0, 1)
+}
+
+/**
+ * 저장된 구간을 버튼 선택으로 되돌린다. Rust `ranges_for`의 역이다.
+ *
+ * **아무것도 건드리지 않고 저장해도 기간이 바뀌지 않아야 한다.** 수정 모달은 이 목록을
+ * 그대로 다시 보내므로, 되돌리지 못한 값을 빈 목록으로 내놓으면 모달을 열었다 저장만
+ * 해도 기간이 미정으로 날아간다. 그래서 결과(multi)는 표현할 수 없는 끝(조회 · 종례)을
+ * 버리지 않고 **고를 수 있는 교시 범위로 좁힌다** — 경계 하나가 옮겨지는 것이
+ * 기간 전체가 사라지는 것보다 낫다.
+ *
+ * 열린 쪽(NULL)은 `?`로 되돌린다. 그러지 않으면 `조회부터 ?까지`로 저장된 지각이
+ * 모달에서 기간 미정으로 보인다.
+ */
+export function picksOf(span, maxSlot) {
+    const prompt = span?.slotPrompt ?? null
+    const start = span?.startSlot ?? null
+    const end = span?.endSlot ?? null
+
+    if (prompt === 'none') return []
+    if (!start && !end) return []
+    if (prompt === 'end') return end ? [end] : [UNKNOWN]
+    if (prompt === 'start') return start ? [start] : [UNKNOWN]
+    if (prompt === 'multi') {
+        if (!start || !end) return []
+        const a = slotOrder(start, maxSlot)
+        const b = slotOrder(end, maxSlot)
+        if (a < 0 || b < 0) return []
+        const from = Math.max(1, a)
+        const to = Math.min(maxSlot, b)
+        if (to < from) return []
+        const out = []
+        for (let n = from; n <= to; n += 1) out.push(String(n))
+        return out
+    }
+    return start ? [start] : []
 }

@@ -17,12 +17,13 @@ import {useAppStore} from '../stores/app'
 import {useSchoolStore} from '../stores/school'
 import {useStatsStore} from '../stores/stats'
 import {UiButton, UiLedger, UiNotice, UiPage} from '../components/ui'
-import {exportCsv} from '../services/download'
+import {useDownloadStore} from '../stores/download'
 import {countOf, monthClass, quotaCells, remainLabel} from '../services/quota'
 
 const app = useAppStore()
 const school = useSchoolStore()
 const stats = useStatsStore()
+const download = useDownloadStore()
 
 const MONTH_KEYS = [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2]
 
@@ -51,6 +52,11 @@ onMounted(async () => {
         }),
     ])
 })
+/** 내보내기 실패를 화면에 남긴다. 눌러도 아무 일이 없는 단추를 두지 않는다. */
+function saveCsv(kind, args, suggested) {
+    download.csv(kind, args, suggested).catch(() => {
+    })
+}
 </script>
 
 <template>
@@ -60,7 +66,7 @@ onMounted(async () => {
             title="통계">
         <template #actions>
             <UiButton v-if="stats.ruleId" variant="download"
-                      @click="exportCsv('quota', {...app.scope, ruleId: stats.ruleId}, '한도.csv')">
+                      @click="saveCsv('quota', {...app.scope, ruleId: stats.ruleId}, '한도.csv')">
                 이 표 CSV
             </UiButton>
         </template>
@@ -150,5 +156,7 @@ onMounted(async () => {
         </UiLedger>
 
         <UiNotice :text="stats.error" kind="error"/>
+        <UiNotice :text="download.error" kind="error"/>
+        <UiNotice :text="download.done" kind="ok"/>
     </UiPage>
 </template>

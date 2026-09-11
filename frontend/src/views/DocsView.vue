@@ -20,13 +20,14 @@ import SpanRow from '../components/SpanRow.vue'
 import SpanEditModal from '../components/SpanEditModal.vue'
 import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
 import {overdueLabel} from '../services/overdue'
-import {exportCsv} from '../services/download'
+import {useDownloadStore} from '../stores/download'
 
 const app = useAppStore()
 const axis = useAxisStore()
 const day = useDayStore()
 const pending = usePendingStore()
 const school = useSchoolStore()
+const download = useDownloadStore()
 
 const expanded = ref(null)
 const fixing = ref(null)
@@ -58,6 +59,30 @@ onMounted(async () => {
         }),
     ])
 })
+/** 내보내기 실패를 화면에 남긴다. 눌러도 아무 일이 없는 단추를 두지 않는다. */
+function saveCsv(kind, args, suggested) {
+    download.csv(kind, args, suggested).catch(() => {
+    })
+}
+// 템플릿에서 스토어를 바로 부르면 실패가 처리되지 않은 거부로 흩어진다.
+// 메모는 이 앱이 "무엇을 받기로 했는지"를 담는 유일한 자리라 조용히 사라지면 안 된다.
+async function setMemo(span, memo) {
+    try {
+        await day.setMemo(span.id, memo)
+        span.memo = memo
+    } catch {
+        // day.error에 담겨 화면에 나온다.
+    }
+}
+
+async function setTag(span, tagId) {
+    try {
+        await day.setTag(span.id, tagId)
+        await pending.fetchDocs()
+    } catch {
+        // day.error에 담겨 화면에 나온다.
+    }
+}
 </script>
 
 <template>
@@ -68,7 +93,7 @@ onMounted(async () => {
             title="서류 미제출자">
         <template #actions>
             <UiButton variant="download"
-                      @click="exportCsv('pending', {...app.scope, kind: 'doc', today: app.today}, '서류_미제출자.csv')">
+                      @click="saveCsv('pending', {...app.scope, kind: 'doc', today: app.today}, '서류_미제출자.csv')">
                 미제출자 CSV
             </UiButton>
         </template>
@@ -92,8 +117,8 @@ onMounted(async () => {
                      :tags="school.tags"
                      @fix="fixing = span"
                      @toggle-expand="expanded = expanded === span.id ? null : span.id"
-                     @update-memo="day.setMemo(span.id, $event); span.memo = $event"
-                     @update-tag="day.setTag(span.id, $event); pending.fetchDocs()">
+                     @update-memo="setMemo(span, $event)"
+                     @update-tag="setTag(span, $event)">
                 <template #tail>
                     <span class="row__date num">{{ span.dateLabel }}</span>
                     <span class="row__due num">
@@ -110,9 +135,12 @@ onMounted(async () => {
         </UiLedger>
 
         <UiNotice :text="pending.error" kind="error"/>
+        <UiNotice :text="day.error" kind="error"/>
 
         <SpanEditModal :max-slot="app.maxSlot" :open="Boolean(fixing)" :reasons="axis.reasons"
                        :span="fixing" :types="axis.types"
                        @close="fixing = null" @save="saveFix"/>
+        <UiNotice :text="download.error" kind="error"/>
+        <UiNotice :text="download.done" kind="ok"/>
     </UiPage>
 </template>

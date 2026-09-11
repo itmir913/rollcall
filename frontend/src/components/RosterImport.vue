@@ -10,7 +10,7 @@
  */
 import {ref} from 'vue'
 import {save} from '@tauri-apps/plugin-dialog'
-import {invoke} from '@tauri-apps/api/core'
+import {useDownloadStore} from '../stores/download'
 import {
     bufferToBase64,
     buildSampleWorkbook,
@@ -21,6 +21,8 @@ import {COL_LABELS} from '../data/columnAliases'
 import {UiButton, UiNotice} from './ui'
 
 const emit = defineEmits(['loaded'])
+
+const download = useDownloadStore()
 
 const dragging = ref(false)
 const busy = ref(false)
@@ -85,7 +87,7 @@ async function downloadSample() {
         })
         if (!path) return
         const buffer = await buildSampleWorkbook()
-        await invoke('write_bytes_file', {path, data: bufferToBase64(buffer)})
+        await download.saveBytes(path, bufferToBase64(buffer))
         notice.value = `양식을 저장했습니다: ${path}`
     } catch (e) {
         error.value = `양식을 저장하지 못했습니다: ${e}`

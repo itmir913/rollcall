@@ -14,6 +14,7 @@ import {
     isMulti,
     keepUsable,
     slotLabel,
+    picksOf,
     slotList,
     slotOrder,
 } from './slots'
@@ -52,8 +53,12 @@ describe('allowedSlots', () => {
         expect(allowedSlots('multi', 7)).toEqual(['1', '2', '3', '4', '5', '6', '7'])
     })
 
-    it('구분이 미정이면 전부 열려 있다', () => {
-        expect(allowedSlots(null, 7)).toHaveLength(10)
+    it('종류가 미정이면 교시는 전부 열리되 `?`는 열지 않는다', () => {
+        // `?`는 **묻고 있는 쪽이 열려 있다**는 뜻이라, 종류가 없으면 어느 쪽을
+        // 묻는지 정해지지 않아 저장할 수 없다. Rust `ranges_for`도 이때는 거절한다.
+        const allowed = allowedSlots(null, 7)
+        expect(allowed).toEqual(['조회', '1', '2', '3', '4', '5', '6', '7', '종례'])
+        expect(allowed).not.toContain(UNKNOWN)
     })
 })
 
@@ -76,7 +81,7 @@ describe('groupRuns', () => {
 })
 
 describe('keepUsable', () => {
-    it('구분을 바꿔 못 쓰는 기간이 되면 남기지 않는다', () => {
+    it('종류를 바꿔 못 쓰는 기간이 되면 남기지 않는다', () => {
         expect(keepUsable([CLOSING], 'start', 7)).toEqual([])
     })
 
@@ -131,7 +136,8 @@ describe('spanPhrase', () => {
     })
 
     it('결과는 이어진 것끼리 묶어 말한다', () => {
-        expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '2', '3']})).toBe('1~3교시')
+        expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '2', '3']}))
+            .toBe('1교시부터 3교시까지')
         expect(spanPhrase({slotPrompt: 'multi', slots: ['1', '3', '5']})).toBe('1교시 · 3교시 · 5교시')
     })
 })
@@ -146,5 +152,67 @@ describe('axisPhrase · stampPhrase', () => {
         expect(
             stampPhrase({reasonLabel: '질병', typeLabel: '지각', slotPrompt: 'end', slots: ['2']}),
         ).toBe('질병 지각 · 조회부터 2교시까지')
+    })
+})
+
+describe('picksOf — 저장된 구간을 버튼 선택으로', () => {
+    const span = (over) => ({slotPrompt: null, startSlot: null, endSlot: null, ...over})
+
+    it('결석은 고를 것이 없다', () => {
+        expect(picksOf(span({slotPrompt: 'none', startSlot: HOMEROOM, endSlot: CLOSING}), 7))
+            .toEqual([])
+    })
+
+    it('지각은 끝만, 조퇴는 시작만 되돌린다', () => {
+        expect(picksOf(span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: '2'}), 7))
+            .toEqual(['2'])
+        expect(picksOf(span({slotPrompt: 'start', startSlot: '5', endSlot: CLOSING}), 7))
+            .toEqual(['5'])
+    })
+
+    it('열린 쪽은 `?`로 되돌린다 — 기간 미정과 구별되어야 한다', () => {
+        expect(picksOf(span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: null}), 7))
+            .toEqual([UNKNOWN])
+        expect(picksOf(span({slotPrompt: 'start', startSlot: null, endSlot: CLOSING}), 7))
+            .toEqual([UNKNOWN])
+    })
+
+    it('양쪽이 비면 기간 미정이다', () => {
+        expect(picksOf(span({slotPrompt: 'end'}), 7)).toEqual([])
+    })
+
+    it('결과의 끝이 조회·종례여도 기간을 지우지 않는다', () => {
+        // 지우면 수정 모달을 열었다 저장만 해도 기간이 통째로 날아간다.
+        expect(picksOf(span({slotPrompt: 'multi', startSlot: '6', endSlot: CLOSING}), 7))
+            .toEqual(['6', '7'])
+        expect(picksOf(span({slotPrompt: 'multi', startSlot: HOMEROOM, endSlot: '2'}), 7))
+            .toEqual(['1', '2'])
+    })
+
+    it('아무것도 건드리지 않고 저장해도 기간이 그대로다', () => {
+        // Rust `ranges_for`가 이 목록으로 같은 구간을 다시 만들어야 한다.
+        for (const s of [
+            span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: '3'}),
+            span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: null}),
+            span({slotPrompt: 'start', startSlot: '4', endSlot: CLOSING}),
+            span({slotPrompt: 'start', startSlot: null, endSlot: CLOSING}),
+            span({slotPrompt: 'multi', startSlot: '2', endSlot: '4'}),
+        ]) {
+            const picks = picksOf(s, 7)
+            expect(keepUsable(picks, s.slotPrompt, 7)).toEqual(picks)
+        }
+    })
+
+    it('조회까지인 지각은 되돌려도 고르개가 받아 주지 않는다 — 미해결', () => {
+        // 나이스 실파일에 `질병지각 · 결시교시 조회,`가 있고, 가져오기는 그대로 저장한다.
+        // 그런데 고르개는 지각에서 조회를 열지 않기로 되어 있어(교사가 정한 규칙),
+        // 수정 모달에서 종류를 바꿨다 되돌리면 이 값이 미정으로 떨어진다.
+        //
+        // 열어야 하는지는 실무 판단이라 앱이 임의로 바꾸지 않는다. 그 사실을 여기
+        // 적어 둔다 — 규칙이 바뀌면 이 테스트가 먼저 깨져 다시 보게 된다.
+        const late = span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: HOMEROOM})
+        expect(picksOf(late, 7)).toEqual([HOMEROOM])
+        expect(allowedSlots('end', 7)).not.toContain(HOMEROOM)
+        expect(keepUsable(picksOf(late, 7), 'end', 7)).toEqual([])
     })
 })

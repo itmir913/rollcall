@@ -117,10 +117,10 @@ export function slotRuns(tokens) {
  * `질병조퇴` → 구분 `질병` + 종류 `조퇴`.
  *
  * **후보는 DB에서 온다.** 구분과 종류는 데이터라 사용자가 늘릴 수 있고, 목록을
- * 여기 적어 두면 늘린 순간 조용히 틀린다. 못 가르면 양쪽 다 null이고, 부르는 쪽이
+ * 여기 적어 두면 늘린 순간 조용히 틀린다. 구분하지 못하면 양쪽 다 null이고, 부르는 쪽이
  * 그 사실을 교사에게 알린다.
  *
- * 긴 것부터 맞춘다 — `출석인정`이 `인정`보다 먼저 걸려야 `출석인정결석`이 제대로 갈라진다.
+ * 긴 것부터 맞춘다 — `출석인정`이 `인정`보다 먼저 걸려야 `출석인정결석`이 제대로 구분된다.
  */
 export function splitCodeLabel(label, reasons = [], types = []) {
     const text = String(label ?? '').replace(/\s/g, '')
@@ -164,31 +164,36 @@ export function mapNeisColumns(row) {
     return usable ? {columns, slots} : null
 }
 
-/** ` ※ 3학년 6반 2026.09.01.(화)` — 일일출석부는 여기에만 일자가 있다. */
+/**
+ * ` ※ 3학년 6반 2026.09.01.(화)` — 일일출석부는 여기에만 일자가 있다.
+ *
+ * **학급도 일자도 없으면 캡션이 아니다.** `※`는 한국어 메모에서 흔한 기호라
+ * (`※ 진단서 제출`), 그것만 보고 캡션으로 삼으면 그 줄의 출결이 통째로 사라지고
+ * 일일출석부에서는 캡션의 일자까지 날아가 뒤따르는 학생이 전부 실패한다.
+ */
 export function captionOf(row) {
     for (const cell of row) {
-        if (!String(cell ?? '').trim().startsWith('※')) continue
-        const cls = cell.match(/(\d+)\s*학년\s*(\d+)\s*반/)
+        const text = String(cell ?? '').trim()
+        if (!text.startsWith('※')) continue
+        const cls = text.match(/(\d+)\s*학년\s*(\d+)\s*반/)
+        const date = toIso(text)
+        if (!cls && !date) continue
         return {
             grade: cls ? Number(cls[1]) : null,
             classNo: cls ? Number(cls[2]) : null,
-            date: toIso(cell),
+            date,
         }
     }
     return null
 }
 
-/** 출력물의 페이지 꼬리(`1 / 2`). 하필 교시 열 자리에 찍혀서 따로 걸러야 한다. */
-function isPageFoot(row) {
-    return row.some((cell) => /^\d+\s*\/\s*\d+$/.test(cell))
-}
-
 /**
  * 교시 열의 결시 표시인가. 일일출석부는 `/`를 쓴다.
  *
- * 길이로 한 번 더 거르는 이유는 페이지 꼬리(`1 / 2`)가 하필 교시 열 자리에 찍히기
- * 때문이다. `isPageFoot`이 먼저 걸러 주지만, 표시가 한두 글자라는 것은 서식 자체의
- * 성질이라 여기에도 남긴다.
+ * 길이로 거르는 이유는 페이지 꼬리(`1 / 2`)가 하필 교시 열 자리에 찍히기 때문이다.
+ * 표시는 한두 글자이고 꼬리는 그보다 길다. 꼬리 줄은 결국 출결 내용이 비어 있어
+ * 데이터가 아닌 줄로 걸러지므로, 꼬리를 따로 알아보는 규칙은 두지 않는다 —
+ * 두면 사유가 `9 / 1`인 줄까지 조용히 버린다.
  */
 function isMark(cell) {
     const text = String(cell ?? '').trim()
@@ -199,22 +204,28 @@ function isMark(cell) {
  * 파일을 읽어 기록 목록으로. 읽지 못하면 **던진다.**
  *
  * @param {Uint8Array} bytes
- * @param {{reasons?: Array, types?: Array}} axis DB의 구분 · 종류. 코드 라벨을 가르는 데 쓴다.
+ * @param {{reasons?: Array, types?: Array}} axis DB의 구분 · 종류. 코드 라벨을 구분하는 데 쓴다.
  */
 export async function readNeisFile(bytes, axis = {}) {
     if (!looksLikeXlsx(bytes)) {
         throw new Error('엑셀(.xlsx) 파일이 아닙니다. 나이스에서 내려받은 파일을 그대로 넣어주세요.')
     }
 
-    let table = null
-    let parser = 'exceljs'
+    // exceljs가 **읽기는 했으나 쓸 수 없는** 경우까지 폴백에 넣는다. 머리글을 못 찾은
+    // 것도 실패이므로 `buildRecords`까지 넣고 던지는지로 판단한다.
     try {
-        table = await readWithExcelJs(bytes)
-    } catch {
-        parser = 'SheetJS'
-        table = readWithSheetJs(bytes)
+        return buildRecords(await readWithExcelJs(bytes), {parser: 'exceljs', ...axis})
+    } catch (first) {
+        try {
+            return buildRecords(readWithSheetJs(bytes), {parser: 'SheetJS', ...axis})
+        } catch (second) {
+            // 두 이유를 모두 보여준다. 뒤엣것만 남기면 어느 단계에서 막혔는지 알 수 없다.
+            throw new Error(
+                `나이스 파일을 읽지 못했습니다. (exceljs: ${first.message ?? first}` +
+                ` / SheetJS: ${second.message ?? second})`,
+            )
+        }
     }
-    return buildRecords(table, {parser, ...axis})
 }
 
 /**
@@ -240,53 +251,60 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
         const row = source.map((cell) => String(cell ?? '').trim())
         if (row.every((cell) => cell === '')) return
 
-        const found = captionOf(row)
-        if (found) {
-            caption = found
-            return
-        }
-
         const header = mapNeisColumns(row)
         if (header) {
             columns = header.columns
             slotColumns = header.slots
+            // 페이지가 바뀌었다. 앞 페이지의 마지막 학생을 이어받지 않는다.
+            lastNumber = null
+            lastName = ''
             return
         }
 
-        // 머리글보다 위에 있는 제목과 출력일. 서식의 일부이지 데이터가 아니다.
-        if (!columns) return
-        if (isPageFoot(row)) return
-
-        const cell = (key) => (columns[key] === undefined ? '' : (row[columns[key]] ?? ''))
+        const cell = (key) =>
+            !columns || columns[key] === undefined ? '' : (row[columns[key]] ?? '')
         const codeText = cell('code')
-        const slotTokens =
-            columns.slots === undefined
+        const slotTokens = !columns
+            ? []
+            : columns.slots === undefined
                 ? slotColumns.filter(({index: at}) => isMark(row[at])).map(({token}) => token)
                 : parseSlotList(cell('slots'))
         const hasContent = codeText !== '' || slotTokens.length > 0
 
+        // **캡션은 출결 내용이 없는 줄에서만 읽는다.** 사유 칸의 `※ …`가 그 줄을
+        // 삼키면 출결 한 건이 조용히 사라진다.
+        if (!hasContent) {
+            const found = captionOf(row)
+            if (found) caption = found
+            // 제목 · 출력일 · 페이지 꼬리, 그리고 그날 결석이 없는 학생.
+            // 일일출석부는 전교생을 한 줄씩 싣는다 — 버린 줄이 아니다.
+            return
+        }
+        if (!columns) return
+
         // 번호 · 성명은 한 학생의 연속 행에 세로 병합되어 있다. SheetJS는 병합 아래칸을
-        // 빈칸으로 주므로 내용이 있는 줄에 한해 위에서 이어받는다.
+        // 빈칸으로 주므로 이어받는다. **빈칸일 때만 이어받는다** — 읽을 수 없는 번호까지
+        // 이어받으면 그 출결이 앞 학생에게 붙고, 아무 데도 남지 않는다.
         const numberText = cell('number')
-        let number = Number.parseInt(numberText, 10)
+        let number = null
         let name = cell('name')
 
-        if (Number.isInteger(number)) {
+        if (/^\d+$/.test(numberText)) {
+            number = Number(numberText)
             lastNumber = number
             if (name) lastName = name
-            else name = lastName
-        } else {
-            if (!hasContent) return
-            if (lastNumber === null) {
-                skipped.push({line, why: '번호를 읽지 못했습니다.'})
-                return
-            }
+        } else if (numberText === '' && lastNumber !== null) {
             number = lastNumber
             name = name || lastName
+        } else {
+            skipped.push({
+                line,
+                why: numberText === ''
+                    ? '번호를 읽지 못했습니다.'
+                    : `번호를 읽지 못했습니다: ${numberText}`,
+            })
+            return
         }
-
-        // 그날 결석이 없는 학생. 일일출석부는 전교생을 한 줄씩 싣는다.
-        if (!hasContent) return
 
         const date = columns.date === undefined ? caption?.date : toIso(cell('date'))
         if (!date) {
@@ -337,7 +355,8 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
             classNo: caption?.classNo ?? null,
             skipped,
             unknownCodes: [...unknownCodes],
-            merged: rows.filter((r) => r.merged).length,
+            // 합쳐진 **줄** 수다. 갈라져 나온 구간 수를 세면 한 줄을 두 건이라 말한다.
+            merged: new Set(rows.filter((r) => r.merged).map((r) => r.line)).size,
         },
     }
 }
@@ -358,11 +377,24 @@ async function readWithExcelJs(bytes) {
     return table
 }
 
+/**
+ * 두 파서가 **같은 모양**을 내놓아야 한다. 그러지 않으면 어느 것이 읽었느냐에 따라
+ * 결과가 달라지고, 정작 이 경로를 타는 것은 exceljs가 거부한 실제 파일이다.
+ *
+ *  · 칸 값은 `textOf`를 거친다 — 그러지 않으면 날짜 칸이 `6/1/26`으로 와서 `toIso`가 거부한다.
+ *  · 범위를 A1부터로 넓힌다 — 시트가 B2에서 시작하면 줄 번호와 열 번호가 통째로 밀린다.
+ */
 function readWithSheetJs(bytes) {
     const book = XLSX.read(bytes, {type: 'array', cellDates: true})
     const sheet = book.Sheets[book.SheetNames[0]]
     if (!sheet) throw new Error('시트가 없습니다.')
-    return XLSX.utils.sheet_to_json(sheet, {header: 1, raw: false, blankrows: true, defval: ''})
+    const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1')
+    range.s.r = 0
+    range.s.c = 0
+    const table = XLSX.utils.sheet_to_json(sheet, {
+        header: 1, raw: true, blankrows: true, defval: '', range,
+    })
+    return table.map((row) => (Array.isArray(row) ? row.map(textOf) : []))
 }
 
 /** exceljs의 칸 값은 문자열이 아닐 수 있다 — 서식 있는 글, 수식, 날짜. */
@@ -381,7 +413,7 @@ function textOf(value) {
 /**
  * 앱 기록과 나이스 기록을 대조한다. **순수 함수다.**
  *
- * 세 갈래로 가른다 — 서로 다름 / 나이스에만 / 앱에만.
+ * 세 갈래로 구분한다 — 서로 다름 / 나이스에만 / 앱에만.
  * 같은 것은 돌려주되 화면이 접어 둔다.
  *
  * 짝은 (번호, 날짜)로 맞춘다. 하루에 두 구간인 경우가 있으므로 **여럿을 여럿과**

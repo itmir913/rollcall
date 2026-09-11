@@ -9,6 +9,7 @@
  */
 import {ref, watch} from 'vue'
 import AxisCard from './AxisCard.vue'
+import {picksOf} from '../services/slots'
 import {UiButton, UiModal} from './ui'
 
 const props = defineProps({
@@ -30,32 +31,12 @@ watch(
         draft.value = {
             reasonId: props.span.reasonId ?? null,
             typeId: props.span.typeId ?? null,
-            slots: slotsOf(props.span),
+            slots: picksOf(props.span, props.maxSlot),
         }
     },
     {immediate: true},
 )
 
-/**
- * 저장된 구간을 다시 축 카드의 선택으로 되돌린다.
- *
- * 지각은 끝만, 조퇴는 시작만 고르게 되어 있으므로 그쪽 값만 집어낸다.
- * 결석은 하루 종일이라 고를 것이 없다.
- */
-function slotsOf(span) {
-    if (span.slotPrompt === 'none') return []
-    if (span.slotPrompt === 'end') return span.endSlot ? [span.endSlot] : []
-    if (span.slotPrompt === 'start') return span.startSlot ? [span.startSlot] : []
-    if (span.slotPrompt === 'multi') {
-        const from = Number(span.startSlot)
-        const to = Number(span.endSlot)
-        if (!Number.isInteger(from) || !Number.isInteger(to)) return []
-        const out = []
-        for (let n = from; n <= to; n += 1) out.push(String(n))
-        return out
-    }
-    return span.startSlot ? [span.startSlot] : []
-}
 </script>
 
 <template>

@@ -152,10 +152,15 @@ fn 고른_것만_추가한다() {
     let out = apply_neis_import_impl(&conn, scope(&conn, year), &rows, &choice, TODAY).unwrap();
 
     assert_eq!(out.added, 1);
-    let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM absence_span", [], |r| r.get(0))
+    // **어느 학생인지까지 본다.** 건수만 세면 엉뚱한 학생에게 넣어도 통과한다.
+    let number: i64 = conn
+        .query_row(
+            "SELECT st.number FROM absence_span s JOIN student st ON st.id = s.student_id",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
-    assert_eq!(count, 1);
+    assert_eq!(number, 5);
 }
 
 #[test]
@@ -291,9 +296,11 @@ fn 하루_두_구간은_여럿을_여럿과_비교한다() {
     stamp(&conn, student, "질병", "지각", &["1"]);
     stamp(&conn, student, "질병", "조퇴", &["6"]);
 
+    // **파일 순서를 뒤집어 둔다.** 저장 순서와 같으면 순서대로만 엮는 짝짓기로도
+    // 통과해 버려서, 이 테스트가 주장하는 것을 실제로는 확인하지 못한다.
     let rows = vec![
-        row(5, "질병지각", "질병", "지각", Some("조회"), Some("1")),
         row(5, "질병조퇴", "질병", "조퇴", Some("6"), Some("종례")),
+        row(5, "질병지각", "질병", "지각", Some("조회"), Some("1")),
     ];
     let out = preview_neis_import_impl(&conn, scope(&conn, year), &rows, TODAY).unwrap();
 
@@ -426,4 +433,119 @@ fn 마감은_가져올_때_계산해_박는다() {
         .unwrap();
     // 시드는 7일 · 주말 제외다. 2026-09-01(화)에서 수업일로 7일 뒤.
     assert_eq!(due.as_deref(), Some("2026-09-10"));
+}
+
+#[test]
+fn 못_읽은_줄_하나가_나머지를_막지_않는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 5, "학생5");
+
+    // 5번은 읽히고 99번은 명렬표에 없다. 교사는 읽힌 것만 골랐다.
+    let rows = vec![sick_absence(5), sick_absence(99)];
+    let choice = NeisImportChoice {
+        add: vec![0],
+        replace: vec![],
+        mark_neis: false,
+    };
+    let out = apply_neis_import_impl(&conn, scope(&conn, year), &rows, &choice, TODAY).unwrap();
+
+    assert_eq!(out.added, 1, "모르는 줄 하나 때문에 전체가 막히면 안 된다");
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM absence_span", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn 하루_두_구간이_어긋나면_같은_종류끼리_짝짓는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+    // 조퇴를 먼저 찍어 id가 작다. 순서대로만 엮으면 조퇴에 지각이 붙는다.
+    stamp(&conn, student, "질병", "조퇴", &["6"]);
+    stamp(&conn, student, "질병", "지각", &["1"]);
+    conn.execute("UPDATE absence_span SET memo = '병원' WHERE start_slot = '6'", [])
+        .unwrap();
+
+    // 파일 쪽은 두 구간 모두 기간이 조금씩 다르다 — 둘 다 '다름'으로 남는다.
+    let rows = vec![
+        row(5, "질병지각", "질병", "지각", Some("조회"), Some("2")),
+        row(5, "질병조퇴", "질병", "조퇴", Some("5"), Some("종례")),
+    ];
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &rows, TODAY).unwrap();
+    assert_eq!(out.differ, 2);
+
+    let late = out.items.iter().find(|i| i.their_axis == "질병 지각").unwrap();
+    let early = out.items.iter().find(|i| i.their_axis == "질병 조퇴").unwrap();
+    assert_eq!(late.my_axis.as_deref(), Some("질병 지각"));
+    assert_eq!(early.my_axis.as_deref(), Some("질병 조퇴"));
+
+    // 짝이 뒤바뀌면 교사가 둘 다 고쳤을 때 메모가 엉뚱한 기록으로 넘어간다.
+    let choice = NeisImportChoice {
+        add: vec![],
+        replace: vec![0, 1],
+        mark_neis: false,
+    };
+    apply_neis_import_impl(&conn, scope(&conn, year), &rows, &choice, TODAY).unwrap();
+    let memo: String = conn
+        .query_row(
+            "SELECT memo FROM absence_span s JOIN attendance_type t ON t.id = s.type_id
+              WHERE t.label = '조퇴'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(memo, "병원", "메모는 그 구간에 그대로 남아야 한다");
+}
+
+#[test]
+fn 최대_교시_밖의_교시는_읽지_못한_줄이다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 5, "학생5");
+    // 시드의 최대 교시는 7이다. 저장 경로는 전부 validate_span을 지나야 한다.
+    let rows = vec![row(5, "질병결과", "질병", "결과", Some("8"), Some("8"))];
+
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &rows, TODAY).unwrap();
+    assert_eq!(out.unreadable, 1);
+    assert!(out.items[0].why.as_deref().unwrap().contains("8"));
+}
+
+#[test]
+fn 자리를_채우지_않은_날짜도_같은_날로_본다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+    stamp(&conn, student, "질병", "결석", &[]);
+
+    // 파일이 `2026-9-1`로 주면, 원본 문자열로 기간을 재는 순간 내 기록을 하나도
+    // 못 불러와 이미 있는 건이 "앱에 없음"으로 잡히고 중복이 들어간다.
+    let mut loose = sick_absence(5);
+    loose.date = "2026-9-1".to_string();
+
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &[loose], TODAY).unwrap();
+    assert_eq!(out.same, 1);
+    assert_eq!(out.add, 0);
+    assert_eq!(out.from, "2026-09-01");
+}
+
+#[test]
+fn 고른_것이_적용되지_않으면_세어서_알린다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+    stamp(&conn, student, "질병", "결석", &[]);
+
+    // 미리보기에서는 '추가'였는데 그 사이에 같은 건이 생겨 '같음'이 된 상황이다.
+    let rows = vec![sick_absence(5)];
+    let choice = NeisImportChoice {
+        add: vec![0],
+        replace: vec![],
+        mark_neis: false,
+    };
+    let out = apply_neis_import_impl(&conn, scope(&conn, year), &rows, &choice, TODAY).unwrap();
+
+    assert_eq!(out.added, 0);
+    assert_eq!(out.skipped, 1, "조용히 넘기지 않는다");
 }

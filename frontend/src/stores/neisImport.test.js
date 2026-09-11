@@ -27,6 +27,7 @@ const ROWS = [
     {number: 6, name: '학생6', date: '2026-09-01', reasonLabel: '질병', typeLabel: '조퇴'},
 ]
 const META = {parser: 'exceljs', from: '2026-09-01', to: '2026-09-01', skipped: [], unknownCodes: [], merged: 0}
+const RESULT = {added: 1, replaced: 1, marked: 0, skipped: 0}
 const PREVIEW = {
     items: [
         {key: 0, verdict: 'add', number: 5},
@@ -136,7 +137,7 @@ describe('적용', () => {
         await store.load(new Uint8Array([1]))
         store.toggle('replace', 1)
 
-        invoke.mockResolvedValue({added: 1, replaced: 1, marked: 0})
+        invoke.mockResolvedValue(RESULT)
         await store.apply()
 
         expect(invoke).toHaveBeenLastCalledWith('apply_neis_import', {
@@ -155,5 +156,24 @@ describe('적용', () => {
         invoke.mockRejectedValue('명렬표를 먼저 맞춰주세요')
         await expect(store.apply()).rejects.toBeTruthy()
         expect(store.error).toContain('명렬표')
+    })
+})
+
+describe('파일이 말하는 것을 화면에 그대로 넘긴다', () => {
+    it('버린 줄 · 모르는 표기 · 합쳐진 줄을 store에 담는다', async () => {
+        // 이 셋이 "조용히 넘기지 않는다"의 전부다. store가 흘려보내면 창이 말할 것이 없다.
+        ready()
+        readNeisFile.mockResolvedValue({
+            rows: ROWS,
+            meta: {...META, skipped: [{line: 7, why: '번호를 읽지 못했습니다.'}],
+                unknownCodes: ['공결'], merged: 1},
+        })
+        const store = useNeisImportStore()
+        await store.load(new Uint8Array([1]))
+
+        expect(store.meta.skipped).toEqual([{line: 7, why: '번호를 읽지 못했습니다.'}])
+        expect(store.meta.unknownCodes).toEqual(['공결'])
+        expect(store.meta.merged).toBe(1)
+        expect(store.meta.parser).toBe('exceljs')
     })
 })

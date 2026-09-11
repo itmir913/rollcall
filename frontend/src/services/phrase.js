@@ -17,7 +17,11 @@ export function spanPhrase({slotPrompt, slots}) {
     if (slotPrompt === 'multi') {
         const runs = groupRuns(slots)
         if (runs.length === 0) return '기간 미정'
-        return runs.map(([a, b]) => (a === b ? `${a}교시` : `${a}~${b}교시`)).join(' · ')
+        // 저장되면 묶음 하나가 구간 하나가 되고, Rust가 그것을 `1교시부터 3교시까지`로
+        // 적는다. 여기서 `1~3교시`라고 하면 찍기 전과 후에 다른 말을 보게 된다.
+        return runs
+            .map(([a, b]) => (a === b ? `${a}교시` : `${a}교시부터 ${b}교시까지`))
+            .join(' · ')
     }
 
     const first = slots[0]

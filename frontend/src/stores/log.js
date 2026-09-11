@@ -41,6 +41,24 @@ export const useLogStore = defineStore('log', {
             this.year = calendarYearOf(academicYear, month)
         },
 
+        /**
+         * 임의 기간의 기록. **NEIS 검증이 파일의 기간으로 대조하려고 쓴다.**
+         *
+         * 달로 묻지 않는 이유는, 나이스 파일의 기간이 달에 맞춰 떨어지지 않기
+         * 때문이다. 화면이 마지막에 보던 달로 맞춰 보면 6월 파일을 9월 기록과
+         * 대조하고는 "전부 앱에 없음"이라고 말한다.
+         */
+        async fetchBetween(from, to) {
+            const app = useAppStore()
+            this.error = ''
+            try {
+                return await invoke('get_spans_between', {...app.scope, from, to, today: app.today})
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
+
         async fetchMonth() {
             const app = useAppStore()
             if (!app.ready || !this.year || !this.month) return
