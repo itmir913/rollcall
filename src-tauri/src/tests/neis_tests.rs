@@ -19,9 +19,9 @@ const DATE: &str = "2026-09-01";
 /// 담임 학급 하나를 갖춘 메모리 DB. 범위가 `classId` 하나이므로 시험도 그것부터 만든다.
 fn fixture() -> (Connection, i64, i64) {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    (conn, year, class)
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    (conn, school, class)
 }
 
 fn row(number: i64, code: &str, reason: &str, kind: &str, start: Option<&str>, end: Option<&str>)
@@ -101,8 +101,8 @@ fn nothing() -> NeisImportChoice {
 
 #[test]
 fn 앱에_없는_기록은_추가로_잡힌다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     let rows = vec![sick_absence(5)];
     let out = preview_neis_import_impl(&conn, class, &rows, TODAY).unwrap();
@@ -116,8 +116,8 @@ fn 앱에_없는_기록은_추가로_잡힌다() {
 
 #[test]
 fn 똑같은_기록은_같음이고_손대지_않는다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "질병", "결석", &[]);
 
     let rows = vec![sick_absence(5)];
@@ -130,8 +130,8 @@ fn 똑같은_기록은_같음이고_손대지_않는다() {
 
 #[test]
 fn 내용이_다르면_다름이고_교사가_고른다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
 
     let rows = vec![sick_absence(5)];
@@ -146,8 +146,8 @@ fn 내용이_다르면_다름이고_교사가_고른다() {
 
 #[test]
 fn 고르지_않으면_아무것도_바뀌지_않는다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
 
     let rows = vec![sick_absence(5)];
@@ -166,9 +166,9 @@ fn 고르지_않으면_아무것도_바뀌지_않는다() {
 
 #[test]
 fn 고른_것만_추가한다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
-    enroll(&conn, class, year, 6, "학생6");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
+    enroll(&conn, class, school, 6, "학생6");
 
     let rows = vec![sick_absence(5), sick_absence(6)];
     let choice = NeisImportChoice {
@@ -192,8 +192,8 @@ fn 고른_것만_추가한다() {
 
 #[test]
 fn 가져온_건은_나이스_등재로_들어간다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     let rows = vec![sick_absence(5)];
     let choice = NeisImportChoice {
@@ -214,8 +214,8 @@ fn 가져온_건은_나이스_등재로_들어간다() {
 
 #[test]
 fn 나이스에_있는_것으로_확인되면_등재_표시를_해준다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "질병", "결석", &[]);
 
     let rows = vec![sick_absence(5)];
@@ -237,8 +237,8 @@ fn 나이스에_있는_것으로_확인되면_등재_표시를_해준다() {
 
 #[test]
 fn 다름을_고르면_내_기록이_나이스_쪽으로_바뀐다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
 
     let rows = vec![sick_absence(5)];
@@ -264,8 +264,8 @@ fn 다름을_고르면_내_기록이_나이스_쪽으로_바뀐다() {
 
 #[test]
 fn 교사가_쓴_메모를_덮지_않는다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
     conn.execute("UPDATE absence_span SET memo = '학부모 통화함'", [])
         .unwrap();
@@ -286,9 +286,9 @@ fn 교사가_쓴_메모를_덮지_않는다() {
 
 #[test]
 fn 앱에만_있는_기록은_세기만_하고_지우지_않는다() {
-    let (conn, year, class) = fixture();
-    let student5 = enroll(&conn, class, year, 5, "학생5");
-    let student6 = enroll(&conn, class, year, 6, "학생6");
+    let (conn, school, class) = fixture();
+    let student5 = enroll(&conn, class, school, 5, "학생5");
+    let student6 = enroll(&conn, class, school, 6, "학생6");
     stamp(&conn, class, student5, "질병", "결석", &[]);
     stamp(&conn, class, student6, "질병", "조퇴", &["3"]);
 
@@ -311,13 +311,13 @@ fn 앱에만_있는_기록은_세기만_하고_지우지_않는다() {
 
 #[test]
 fn 하루_두_구간은_여럿을_여럿과_비교한다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     // 1교시까지 지각 + 6교시부터 조퇴. 나이스 실파일에 있던 하루 2구간이다.
     stamp(&conn, class, student, "질병", "지각", &["1"]);
     stamp(&conn, class, student, "질병", "조퇴", &["6"]);
 
-    // **파일 순서를 뒤집어 둔다.** 저장 순서와 같으면 순서대로만 엮는 짝짓기로도
+    // **파일 순서를 뒤집어 둔다.** 저장 순서와 같으면 순서대로만 연결하는 짝짓기로도
     // 통과해 버려서, 이 테스트가 주장하는 것을 실제로는 확인하지 못한다.
     let rows = vec![
         row(5, "질병조퇴", "질병", "조퇴", Some("6"), Some("종례")),
@@ -332,8 +332,8 @@ fn 하루_두_구간은_여럿을_여럿과_비교한다() {
 
 #[test]
 fn 결시교시가_조회_하나뿐인_지각도_들어간다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 18, "학생18");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 18, "학생18");
 
     // 나이스 실파일의 `질병지각 · 결시교시 조회,`. 화면의 교시 고르개는 지각에서
     // 조회를 열지 않지만, 파일에서 온 값은 그대로 저장한다 — 우리가 못 고르는 것과
@@ -356,8 +356,8 @@ fn 결시교시가_조회_하나뿐인_지각도_들어간다() {
 
 #[test]
 fn 명렬표에_없는_번호는_조용히_넘기지_않는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     let rows = vec![sick_absence(99)];
     let out = preview_neis_import_impl(&conn, class, &rows, TODAY).unwrap();
@@ -369,8 +369,8 @@ fn 명렬표에_없는_번호는_조용히_넘기지_않는다() {
 
 #[test]
 fn 모르는_출결_표기는_지어내지_않는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     let mut bad = sick_absence(5);
     bad.code_label = Some("공결".to_string());
@@ -384,8 +384,8 @@ fn 모르는_출결_표기는_지어내지_않는다() {
 
 #[test]
 fn 학교마다_다른_표기는_별칭표가_흡수한다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
     conn.execute(
         "INSERT INTO code_alias (code_id, raw) VALUES (?1, '인정결석')",
         rusqlite::params![code_id(&conn, "출석인정", "결석")],
@@ -404,11 +404,11 @@ fn 학교마다_다른_표기는_별칭표가_흡수한다() {
 
 #[test]
 fn 다른_반의_기록은_섞이지_않는다() {
-    let (conn, year, class) = fixture();
+    let (conn, school, class) = fixture();
     // **같은 학생을 두 학급에 넣는다.** 다른 학생을 쓰면 학적으로 거르던 옛 질의로도
     // 통과해, 이 테스트가 주장하는 것을 확인하지 못한다.
-    let student = enroll(&conn, class, year, 5, "학생5");
-    let next_door = insert_class(&conn, year, "homeroom", "3학년 7반", Some(3), Some(7));
+    let student = enroll(&conn, class, school, 5, "학생5");
+    let next_door = insert_class(&conn, school, "homeroom", "3학년 7반", Some(3), Some(7));
     join_class(&conn, next_door, student);
     // 옆 학급에 같은 학생 · 같은 날 기록. 학생으로 거르면 '이미 있음'으로 잡힌다.
     stamp(&conn, next_door, student, "질병", "결석", &[]);
@@ -421,8 +421,8 @@ fn 다른_반의_기록은_섞이지_않는다() {
 
 #[test]
 fn 마감은_가져올_때_계산해_박는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     let choice = NeisImportChoice {
         add: vec![0],
@@ -440,8 +440,8 @@ fn 마감은_가져올_때_계산해_박는다() {
 
 #[test]
 fn 못_읽은_줄_하나가_나머지를_막지_않는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     // 5번은 읽히고 99번은 명렬표에 없다. 교사는 읽힌 것만 골랐다.
     let rows = vec![sick_absence(5), sick_absence(99)];
@@ -461,9 +461,9 @@ fn 못_읽은_줄_하나가_나머지를_막지_않는다() {
 
 #[test]
 fn 하루_두_구간이_어긋나면_같은_종류끼리_짝짓는다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
-    // 조퇴를 먼저 찍어 id가 작다. 순서대로만 엮으면 조퇴에 지각이 붙는다.
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
+    // 조퇴를 먼저 찍어 id가 작다. 순서대로만 연결하면 조퇴에 지각이 붙는다.
     stamp(&conn, class, student, "질병", "조퇴", &["6"]);
     stamp(&conn, class, student, "질병", "지각", &["1"]);
     conn.execute("UPDATE absence_span SET memo = '병원' WHERE start_slot = '6'", [])
@@ -502,8 +502,8 @@ fn 하루_두_구간이_어긋나면_같은_종류끼리_짝짓는다() {
 
 #[test]
 fn 최대_교시_밖의_교시는_읽지_못한_줄이다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
     // 시드의 최대 교시는 7이다. 저장 경로는 전부 validate_span을 지나야 한다.
     let rows = vec![row(5, "질병결과", "질병", "결과", Some("8"), Some("8"))];
 
@@ -514,8 +514,8 @@ fn 최대_교시_밖의_교시는_읽지_못한_줄이다() {
 
 #[test]
 fn 자리를_채우지_않은_날짜도_같은_날로_본다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "질병", "결석", &[]);
 
     // 파일이 `2026-9-1`로 주면, 원본 문자열로 기간을 재는 순간 내 기록을 하나도
@@ -531,10 +531,10 @@ fn 자리를_채우지_않은_날짜도_같은_날로_본다() {
 
 #[test]
 fn 전출한_학생은_전출일부터_이_반이_아니다() {
-    let (conn, year, class) = fixture();
+    let (conn, school, class) = fixture();
     // 9월 5일에 전출했다. 경계는 `enrolled_from <= 날짜 < enrolled_to`다 —
     // 전출일 당일은 이미 다른 학교 학생이므로 그날 줄은 이 반의 것이 아니다.
-    let leaving = insert_student_at(&conn, year, 3, 6, 7, "전출학생");
+    let leaving = insert_student_at(&conn, school, 3, 6, 7, "전출학생");
     join_class(&conn, class, leaving);
     conn.execute(
         "UPDATE student SET enrolled_to = '2026-09-05' WHERE id = ?1",
@@ -556,8 +556,8 @@ fn 전출한_학생은_전출일부터_이_반이_아니다() {
 
 #[test]
 fn 같은_파일을_다시_가져와도_더_들어가지_않는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     let rows = vec![sick_absence(5)];
     let choice = NeisImportChoice {
@@ -582,8 +582,8 @@ fn 같은_파일을_다시_가져와도_더_들어가지_않는다() {
 
 #[test]
 fn 여러_날짜_파일은_그_기간_안에서만_센다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     // 파일 기간 안에 있지만 파일에는 없는 기록 하나 + 기간 밖의 기록 하나.
     stamp_on(&conn, class, student, "2026-09-02", "질병", "결석", &[]);
     stamp_on(&conn, class, student, "2026-09-20", "질병", "결석", &[]);
@@ -605,8 +605,8 @@ fn 여러_날짜_파일은_그_기간_안에서만_센다() {
 
 #[test]
 fn 다름을_고쳐도_태그와_서류와_마감은_그대로다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "미인정", "결석", &[]);
     // 나이스는 태그도 서류도 마감도 모른다. 가져오기가 이것들을 건드리면 교사가
     // 받아 둔 서류와 학부모에게 말해 둔 날짜가 조용히 사라진다.
@@ -640,10 +640,10 @@ fn 다름을_고쳐도_태그와_서류와_마감은_그대로다() {
 
 #[test]
 fn 마감된_코드의_별칭은_그_뒤_날짜에_맞지_않는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
     // 코드는 마감 후 추가다. 마감한 코드의 별칭이 계속 맞으면 9월 줄이 작년 코드의
-    // 두 축으로 들어가고, 그 구간은 그날 살아 있던 코드와 이어지지 않는다.
+    // 두 축으로 들어가고, 그 구간은 그날 살아 있던 코드와 연결되지 않는다.
     let code = code_id(&conn, "출석인정", "결석");
     conn.execute(
         "UPDATE attendance_code SET valid_to = '2026-08-01' WHERE id = ?1",
@@ -668,8 +668,8 @@ fn 마감된_코드의_별칭은_그_뒤_날짜에_맞지_않는다() {
 
 #[test]
 fn 별칭은_비어_있는_축만_채운다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
     conn.execute(
         "INSERT INTO code_alias (code_id, raw) VALUES (?1, '인정결석')",
         rusqlite::params![code_id(&conn, "출석인정", "결석")],
@@ -689,8 +689,8 @@ fn 별칭은_비어_있는_축만_채운다() {
 
 #[test]
 fn 한쪽_축만_맞은_줄은_절반을_버리지_않는다() {
-    let (conn, year, class) = fixture();
-    enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    enroll(&conn, class, school, 5, "학생5");
 
     // 구분은 맞았고 종류를 못 찾았다. 이것을 "질병 미정"으로 넣으면 파일이 분명히
     // 말한 절반을 앱이 버린 것이 되고, 교사는 무엇이 빠졌는지 알 방법이 없다.
@@ -707,8 +707,8 @@ fn 한쪽_축만_맞은_줄은_절반을_버리지_않는다() {
 
 #[test]
 fn 결시교시가_비어_온_결석도_하루_종일로_본다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "질병", "결석", &[]);
 
     // 결석은 기간을 묻지 않는 종류라 앱이 언제나 조회~종례로 저장한다. 나이스 파일에
@@ -726,8 +726,8 @@ fn 결시교시가_비어_온_결석도_하루_종일로_본다() {
 
 #[test]
 fn 결시교시가_비어_온_결석도_조회부터_종례까지_저장한다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
 
     let mut blank = sick_absence(5);
     blank.start_slot = None;
@@ -746,8 +746,12 @@ fn 결시교시가_비어_온_결석도_조회부터_종례까지_저장한다()
         .unwrap();
     assert_eq!((start.as_deref(), end.as_deref()), (Some("조회"), Some("종례")));
 
-    // NULL로 들어가면 같은 조합을 다시 찍어도 그 건을 찾지 못해 무르기가 멎고,
-    // 똑같은 기록이 하나 더 쌓인다.
+    // NULL로 들어가면 같은 조합을 다시 찍어도 그 건을 찾지 못해 똑같은 기록이
+    // 하나 더 쌓인다. 찾았다면 추가가 아니다.
+    //
+    // 가져온 건에는 나이스의 사유가 메모로 들어가 있어 **지우지는 않는다**(`kept`) —
+    // 교사가 적어 둔 것이 무르기로 사라지면 안 되기 때문이다. 여기서 보는 것은
+    // 그 건을 찾았는가이고, 찾지 못했다면 `added`로 한 건이 더 생겼을 것이다.
     let (reason_id, type_id) = axes(&conn, "질병", "결석");
     let out = stamp_span_impl(
         &conn,
@@ -761,13 +765,17 @@ fn 결시교시가_비어_온_결석도_조회부터_종례까지_저장한다()
         },
     )
     .unwrap();
-    assert_eq!(out.action, "cancelled");
+    assert_eq!(out.action, "kept");
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM absence_span", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1, "같은 건을 찾았으므로 한 건도 더 쌓이지 않는다");
 }
 
 #[test]
 fn 고른_것이_적용되지_않으면_세어서_알린다() {
-    let (conn, year, class) = fixture();
-    let student = enroll(&conn, class, year, 5, "학생5");
+    let (conn, school, class) = fixture();
+    let student = enroll(&conn, class, school, 5, "학생5");
     stamp(&conn, class, student, "질병", "결석", &[]);
 
     // 미리보기에서는 '추가'였는데 그 사이에 같은 건이 생겨 '같음'이 된 상황이다.

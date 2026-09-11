@@ -47,7 +47,7 @@ const download = useDownloadStore()
 const targetId = computed(() => props.classId ?? app.classId)
 const target = computed(() => app.classes.find((c) => c.id === targetId.value) ?? null)
 
-/** 교과 강좌인가. 열쇠도 화면도 이 하나로 갈린다. */
+/** 교과 강좌인가. 열쇠도 화면도 이 하나로 구분된다. */
 const isSubject = computed(() => target.value?.role === 'subject')
 
 /**
@@ -58,6 +58,8 @@ const students = ref([])
 const entries = ref([])
 const rows = ref([])
 const parser = ref('')
+/** CSV를 어느 인코딩으로 읽었는지. 엑셀은 zip 안이 언제나 UTF-8이라 빈 문자열이다. */
+const encoding = ref('')
 const detected = ref(null)
 /** 학년 · 반이 비어 위 줄에서 이어받은 줄 수. 조용히 바꾼 값은 알린다. */
 const inherited = ref(0)
@@ -79,7 +81,7 @@ const ACTION_LABEL = {
     unchanged: '그대로',
     renamed: '이름이 다름',
     withdrawn: '내 명단에서 뺌',
-    linked: '명단에만 잇기',
+    linked: '명단에만 연결',
     blocked: '넘김',
 }
 
@@ -111,7 +113,7 @@ const countNote = computed(() => {
         `이름 다름 ${c.renamed}`,
         `빠짐 ${c.withdrawn}`,
     ]
-    if (c.linked) parts.push(`잇기 ${c.linked}`)
+    if (c.linked) parts.push(`연결 ${c.linked}`)
     if (c.blocked) parts.push(`넘김 ${c.blocked}`)
     return parts.join(' · ')
 })
@@ -154,17 +156,37 @@ const seatSummary = computed(() => {
 })
 
 /**
- * 자리를 읽지 못한 줄이 있다는 것. **그 줄은 짝 찾기에 참여하지 못한다** —
- * 그러면 그 줄이 가리키던 학생이 짝을 잃어 빠진 것으로 잡히므로, 저장이
- * 한 줄 때문에 명단에서 사람을 빼지 않도록 빠짐을 자동으로 표시하지 않는다.
+ * 자리를 읽지 못한 줄이 있다는 것. **그 줄은 대조에 참여하지 못한다** —
+ * 그러면 그 줄이 가리키던 학생이 파일에 없는 것으로 판단되어 빠진 것으로 잡히므로,
+ * 저장이 한 줄 때문에 명단에서 사람을 빼지 않도록 빠짐을 자동으로 표시하지 않는다.
  */
 const blockedNote = computed(() => {
     const n = counts.value.blocked
     if (!n) return ''
-    return `자리를 읽지 못한 줄이 ${n}개 있습니다. 그 줄이 가리키던 학생이 짝을 잃어 ` +
+    return `자리를 읽지 못한 줄이 ${n}개 있습니다. 그 줄이 가리키던 학생이 대조되지 않아 ` +
         '명단에서 빠지는 것을 막으려고, 빠짐은 자동으로 표시하지 않았습니다 — ' +
         '필요하면 그 줄의 단추를 눌러주세요.'
 })
+
+/**
+ * 어느 인코딩으로 읽었는지. **파서 이름을 알리는 것과 같은 이유다** — 이름이 깨져
+ * 보일 때 파일을 의심할지 해독을 의심할지 알려주는 단서다.
+ *
+ * 엑셀은 zip 안이 언제나 UTF-8이라 물을 것이 없어 빈 문자열로 온다. 그때는 아무 말도
+ * 하지 않는다 — 언제나 붙어 있는 문구는 읽지 않게 된다.
+ */
+const encodingNote = computed(() => (encoding.value ? `${encoding.value}로 해독` : ''))
+
+/**
+ * 어느 인코딩으로도 깨끗하게 읽히지 않은 파일. **반드시 알린다** — UTF-8로 밀어붙여
+ * 읽었으므로 이름이 깨진 채 들어왔을 수 있는데, 말하지 않으면 교사는 확인할 자리조차
+ * 없다. (CSV는 BOM → UTF-16 판별 → UTF-8 → CP949 순으로 확인한다.)
+ */
+const encodingWarning = computed(() =>
+    encoding.value === '알 수 없음'
+        ? 'CSV의 인코딩을 판별하지 못해 UTF-8로 읽었습니다. 이름이 깨져 보이면 파일을 ' +
+        'UTF-8이나 CP949(euc-kr)로 다시 저장한 뒤 가져와 주세요.'
+        : '')
 
 /** 위 줄에서 학년 · 반을 이어받은 줄. 파일을 고친 값이므로 알린다. */
 const inheritedNote = computed(() =>
@@ -199,6 +221,13 @@ const foreign = computed(() => {
     return `${says}${who}막지 않고 그대로 「${cls.name}」 명단에 넣습니다.`
 })
 
+/**
+ * 머리글에 적는 "무엇으로 읽었는가". 파서와 인코딩을 한 줄에 둔다 — 둘 다 값이
+ * 이상할 때 어디를 의심할지 알려주는 단서라 같은 자리에 있어야 한다.
+ */
+const readNote = computed(() =>
+    [parser.value ? `${parser.value}로 읽음` : '', encodingNote.value].filter(Boolean).join(' · '))
+
 /** 학적 자리. 교과에서만 그린다 — 어느 반 4번인지가 곧 그 학생이다. */
 function seatOf(row) {
     if (row.grade == null || row.classNo == null) return '자리 모름'
@@ -207,7 +236,7 @@ function seatOf(row) {
 
 /**
  * 그 줄에 붙는 말. `blocked`의 이유는 **앱이 다시 해석하지 않고 그대로 적는다.**
- * 교과에서는 `4번 김하늘`이 두 줄 나란히 설 수 있으므로 파일 줄 번호를 함께 보인다.
+ * 교과에서는 `4번 김하늘`이 두 줄 나란히 표시될 수 있으므로 파일 줄 번호를 함께 보인다.
  */
 function noteOf(row) {
     if (row.action === 'renamed') return `${row.currentName} → ${row.incomingName}`
@@ -229,11 +258,12 @@ async function onLoaded(result) {
     detected.value = null
     rows.value = []
     parser.value = result.parser ?? ''
+    encoding.value = result.encoding ?? ''
     inherited.value = Number(result.inherited ?? 0)
     entries.value = result.entries ?? []
 
     // 학년 · 반 열이 통째로 없는 파일. 교과 강좌는 그 둘이 열쇠의 일부라 여기서 멈춘다 —
-    // 서른 줄을 전부 같은 이유로 세우면 그것이 곧 늘 붙어 있는 경고가 된다.
+    // 서른 줄을 전부 같은 이유로 멈추면 그것이 곧 늘 붙어 있는 경고가 된다.
     const missing = result.missing ?? []
     if (isSubject.value && missing.includes('grade') && missing.includes('classNo')) {
         seatless.value = true
@@ -254,8 +284,8 @@ async function onLoaded(result) {
  * 교사가 그 줄의 처리를 바꾼다. 프로그램이 판정하지 않는다.
  *
  * **단추는 줄마다 하나다.** 갈래마다 단추를 늘리면 서른 줄에서 무엇을 눌렀는지
- * 흐려진다. `blocked`는 넘김 ↔ 명단에만 잇기로 돈다 — 학적이 이미 있는 줄에서만
- * 이을 수 있고, 잇기는 학적을 건드리지 않고 명단에만 더한다.
+ * 흐려진다. `blocked`는 넘김 ↔ 명단에만 연결로 순환한다 — 학적이 이미 있는 줄에서만
+ * 연결할 수 있고, 연결은 학적을 건드리지 않고 명단에만 추가한다.
  */
 function toggleAction(row) {
     if (row.action === 'blocked') row.action = row.studentId ? 'linked' : 'blocked'
@@ -288,7 +318,7 @@ async function apply() {
         ]
         // 학적을 새로 만든 수는 파일이 맞는지 알려주는 값이라 생겼을 때 반드시 적는다.
         if (created) parts.push(`학적을 새로 만든 것 ${created}명`)
-        if (result.blocked) parts.push(`앉히지 못해 넘긴 줄 ${result.blocked}개`)
+        if (result.blocked) parts.push(`자리를 정하지 못해 넘긴 줄 ${result.blocked}개`)
         message.value = `${parts.join(' · ')}을 저장했습니다.`
 
         const alerts = []
@@ -377,6 +407,7 @@ watch(targetId, () => {
     entries.value = []
     detected.value = null
     parser.value = ''
+    encoding.value = ''
     inherited.value = 0
     seatless.value = false
     message.value = ''
@@ -399,20 +430,22 @@ onMounted(reload)
              같은 말이 두 곳에 남아 한쪽만 고쳐진다. -->
         <UiNotice :text="foreign" kind="warn"/>
         <UiNotice :text="warning" kind="warn"/>
+        <!-- 어느 인코딩으로도 깨끗하게 읽히지 않았다. 읽히는 만큼 읽되 숨기지 않는다. -->
+        <UiNotice :text="encodingWarning" kind="warn"/>
         <UiNotice :text="inheritedNote" kind="warn"/>
         <UiNotice :text="blockedNote" kind="warn"/>
 
         <!-- 학년 · 반 열이 통째로 없는 파일. 한 문장으로 멈추고 고칠 수단을 옆에 둔다. -->
         <div v-if="seatless" class="roster__stop">
             <span>
-                교과 강좌는 학년 · 반 · 번호로 학생을 가리는데 이 파일에는 학년 · 반 열이
+                교과 강좌는 학년 · 반 · 번호로 학생을 구별하는데 이 파일에는 학년 · 반 열이
                 없습니다 — 머리글에 학년과 반을 넣어 다시 가져와 주세요.
             </span>
             <UiButton @click="downloadSample">양식 내려받기</UiButton>
         </div>
 
         <UiLedger v-if="rows.length"
-                  :hint="parser ? `${parser}로 읽음` : ''"
+                  :hint="readNote"
                   :note="countNote"
                   :title="target ? `${target.name}에 가져올 내용` : '가져올 내용'">
             <template #actions>
@@ -476,7 +509,7 @@ onMounted(reload)
     grid-template-columns: 48px 120px 1fr auto;
 }
 
-/* 교과 강좌는 번호 하나로 학생을 가릴 수 없다. 어느 반 4번인지 보이지 않으면
+/* 교과 강좌는 번호 하나로 학생을 구별할 수 없다. 어느 반 4번인지 보이지 않으면
    같은 번호가 여럿인 목록을 눈으로 맞춰야 한다. */
 .roster--subject .row {
     grid-template-columns: 124px 48px 120px 1fr auto;

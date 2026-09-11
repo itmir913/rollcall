@@ -2,9 +2,9 @@
  * 나이스 엑셀 **서식 정의**를 읽어 쓸 수 있는 모양으로 만든다.
  *
  * 서식이 코드가 아니라 **데이터**인 이유는 하나다 — 나이스가 열 이름이나 표기를 바꿨을 때
- * 앱을 다시 빌드해 배포하지 않고 `neisFormats.json` 한 장만 갈아 끼우기 위해서다.
+ * 앱을 다시 빌드해 배포하지 않고 `neisFormats.json` 한 장만 교체하기 위해서다.
  * 그래서 정규식도 문자열로 두고 여기서 컴파일한다. `.js`나 `.ts`에 리터럴로 박으면
- * 빌드 시점에 굳어 그 길이 막힌다.
+ * 빌드 시점에 고정되어 그 길이 막힌다.
  *
  * **나중에 이 파일 하나만 바뀐다.** 지금은 번들에 든 것을 읽지만, 원격에서 받아 오게 되면
  * `load()`가 "받은 것 → 캐시 → 번들" 순으로 고르게 된다. 읽는 쪽(`neisFile.js`)은
@@ -65,7 +65,7 @@ export function compileSpec(raw) {
     const datePatterns = (raw.date?.patterns ?? []).map(compile)
     if (!datePatterns.length || datePatterns.some((re) => re === null)) return null
 
-    // 열 별칭은 한 번만 다듬어 둔다. 머리글마다 다시 다듬으면 같은 일을 수백 번 한다.
+    // 열 별칭은 한 번만 정규화해 둔다. 머리글마다 다시 정규화하면 같은 일을 수백 번 한다.
     const columnIndex = new Map()
     for (const [col, aliases] of Object.entries(columns)) {
         if (!isLabelList(aliases)) return null
@@ -113,7 +113,7 @@ export function specSource() {
 }
 
 /**
- * 밖에서 받은 서식으로 갈아 끼운다. **어긋나면 갈지 않고 false를 돌려준다.**
+ * 밖에서 받은 서식으로 교체한다. **어긋나면 교체하지 않고 false를 돌려준다.**
  *
  * 지금은 테스트만 부른다. 원격 갱신을 붙일 때 그 코드가 부를 자리다.
  */
@@ -136,7 +136,7 @@ export function resetSpec() {
 // 아래 함수들이 서식 정의와 파일 읽기 사이의 유일한 통로다. `neisFile.js`는
 // 정규식도 별칭표도 직접 보지 않는다 — 서식이 바뀌어도 그쪽은 그대로다.
 
-/** 다듬은 머리글 → 우리가 아는 열 이름. 모르는 열이면 null. */
+/** 정규화한 머리글 → 우리가 아는 열 이름. 모르는 열이면 null. */
 export function matchNeisColumn(header) {
     const key = normalizeHeader(header)
     if (!key) return null
@@ -166,7 +166,7 @@ export function looksLikePeriod(text) {
     return !!key && current.periodPattern.test(key)
 }
 
-/** `조회,1교시,종례,` 를 칸으로 쪼갠다. 꼬리 쉼표는 나이스가 늘 붙인다. */
+/** `조회,1교시,종례,` 를 칸으로 분리한다. 꼬리 쉼표는 나이스가 늘 붙인다. */
 export function splitSlotText(text) {
     return String(text ?? '').split(new RegExp(current.separatorPattern, 'g'))
 }

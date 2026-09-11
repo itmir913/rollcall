@@ -34,7 +34,7 @@ import * as XLSX from 'xlsx'
 import {CLOSING, HOMEROOM} from './slots'
 import {spanTextOf} from './phrase'
 // **서식은 데이터다.** 열 이름 · 정규식은 `data/neisFormats.json`에 있고 이 모듈은
-// 그것을 읽는 통로만 부른다. 나이스가 서식을 바꾸면 JSON 한 장만 갈아 끼운다.
+// 그것을 읽는 통로만 부른다. 나이스가 서식을 바꾸면 JSON 한 장만 교체한다.
 import {
     captionCellText,
     classInCaption,
@@ -101,7 +101,7 @@ function splitSlotText(text) {
 /**
  * 빠진 슬롯 목록을 저장할 구간들로 바꾼다. **순수 함수다.**
  *
- * 규칙은 하나다 — **이어진 것끼리 묶고, 각 묶음의 두 끝이 그 구간이다.**
+ * 규칙은 하나다 — **연속된 것끼리 묶고, 각 묶음의 두 끝이 그 구간이다.**
  *
  * · `조회,1교시,…,7교시,종례` → 조회~종례 (하루 종일)
  * · `4교시,…,종례`           → 4교시~종례 (조퇴)
@@ -111,7 +111,7 @@ function splitSlotText(text) {
  * **종례가 몇 번째인지는 그날 교시가 몇 개였는지에 달렸고, 파일은 빠진 슬롯만 준다.**
  * 학교 설정의 최대 교시로 계산하면 안 된다 — 실제 파일에서 그날 교시 수가 1 · 3 · 6 · 7로
  * 제각각이었고(단축수업 · 시험일), 7을 전제하면 `조회,1,2,3,종례`가 `조회~3교시`와 `종례`
- * 두 조각으로 갈라진다. 그래서 자리를 이렇게 정한다.
+ * 두 조각으로 분리된다. 그래서 자리를 이렇게 정한다.
  *
  *  1. **파일이 그날의 슬롯을 보여주면 그것을 쓴다.** 일일출석부는 머리글에 그날의
  *     `조회 │ 1교시 … │ 종례`가 전부 적혀 있어 종례의 자리가 확실하다(`daySlots`).
@@ -167,9 +167,9 @@ export function slotRuns(tokens, daySlots = null) {
  *
  * 긴 것부터 맞춘다 — `출석인정`이 `인정`보다 먼저 걸려야 `출석인정결석`이 제대로 구분된다.
  *
- * **띄어쓰기는 양쪽에서 지운다.** 파일의 표기만 다듬으면 `출석 인정`으로 저장한 학교에서
+ * **띄어쓰기는 양쪽에서 지운다.** 파일의 표기만 정규화하면 `출석 인정`으로 저장한 학교에서
  * 파일의 `출석인정결석`이 영영 맞지 않아 모르는 표기로 쌓인다. 다만 **돌려주는 것은
- * DB에 적힌 그대로**다 — 이 문자열로 Rust가 축을 다시 찾기 때문에, 다듬은 쪽을 넘기면
+ * DB에 적힌 그대로**다 — 이 문자열로 Rust가 축을 다시 찾기 때문에, 정규화한 쪽을 넘기면
  * 그 줄이 읽지 못한 줄이 된다.
  */
 export function splitCodeLabel(label, reasons = [], types = []) {
@@ -447,7 +447,7 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
             classNo: caption?.classNo ?? null,
             skipped,
             unknownCodes: [...unknownCodes],
-            // 합쳐진 **줄** 수다. 갈라져 나온 구간 수를 세면 한 줄을 두 건이라 말한다.
+            // 합쳐진 **줄** 수다. 분리되어 나온 구간 수를 세면 한 줄을 두 건이라 말한다.
             merged: new Set(rows.filter((r) => r.merged).map((r) => r.line)).size,
         },
     }

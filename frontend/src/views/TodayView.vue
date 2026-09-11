@@ -6,7 +6,7 @@
  * 확인 대화상자는 없다. 같은 조합을 다시 누르면 그 건이 취소된다 —
  * 실수로 두 번 누른 것과 "방금 찍은 것을 무르고 싶다"가 같은 동작이다.
  *
- * 아래 목록에 방금 찍힌 줄이 바로 쌓이고, 사유와 태그는 그 줄에서 펼쳐 고친다.
+ * 아래 목록에 방금 찍힌 줄이 바로 쌓이고, 사유와 태그는 그 줄에서 열어 고친다.
  * 구분 · 기간은 그 자리를 눌러 수정 모달로 고친다 — 화면 위쪽과 같은 축 카드다.
  */
 import {computed, onMounted, ref} from 'vue'
@@ -163,6 +163,9 @@ onMounted(async () => {
         </UiLedger>
 
         <UiNotice :text="day.error" kind="error"/>
+        <!-- 무르기가 거부된 이유. 오류가 아니므로 경고 위계로 적는다 — 교사가 잘못한
+             것이 없고, 화면은 아무 일도 일어나지 않은 것처럼 보이기 때문이다. -->
+        <UiNotice :text="day.notice" kind="warn"/>
         <UiNotice :text="axis.error" kind="error"/>
         <UiNotice :text="school.error" kind="error"/>
 

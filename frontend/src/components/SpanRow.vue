@@ -26,7 +26,7 @@ const emit = defineEmits(['fix', 'toggleExpand', 'updateMemo', 'updateTag'])
 
 const draft = ref(props.span.memo ?? '')
 
-// 펼칠 때만 원본을 다시 읽는다. 타이핑 중에 값을 덮어쓰면 커서가 튄다.
+// 열 때만 원본을 다시 읽는다. 타이핑 중에 값을 덮어쓰면 커서가 튄다.
 watch(
     () => props.expanded,
     (open) => {

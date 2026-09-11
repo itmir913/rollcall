@@ -97,14 +97,6 @@ pub fn format_korean(d: NaiveDate) -> String {
     )
 }
 
-/// 학년도 시작(3월 1일) 기준의 학기. 3~8월이 1학기, 9~2월이 2학기다.
-pub fn semester_of(d: NaiveDate) -> u32 {
-    match d.month() {
-        3..=8 => 1,
-        _ => 2,
-    }
-}
-
 /// 그 날짜가 속한 학년도. 1·2월은 전년도 학년도에 속한다.
 pub fn academic_year_of(d: NaiveDate) -> i32 {
     if d.month() >= 3 {

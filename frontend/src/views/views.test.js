@@ -88,7 +88,7 @@ function renderApp() {
     return mount(App, {global: {plugins: [router]}})
 }
 
-/** 사이드바에 실제로 보이는 항목. 모드가 갈리는 것이 여기서 드러난다. */
+/** 사이드바에 실제로 보이는 항목. 모드가 구분되는 것이 여기서 드러난다. */
 function railLabels(wrapper) {
     return wrapper.findAll('.rail__link').map((link) => link.text())
 }
@@ -158,7 +158,7 @@ describe('개요', () => {
         expect(wrapper.text()).toContain('개요')
         expect(wrapper.text()).toContain('서류 미제출')
         expect(wrapper.text()).toContain('NEIS 미등재')
-        // 칸 수만 세면 미제출(11)과 그중 마감 지남(2)을 바꿔 이어도 그대로 지나간다.
+        // 칸 수만 세면 미제출(11)과 그중 마감 지남(2)을 바꿔 연결해도 그대로 지나간다.
         // 둘은 뜻이 다른 수라 어느 숫자가 어느 이름 아래 오는지까지 본다.
         const cells = wrapper.findAll('.strip__cell')
         expect(cells).toHaveLength(5)
@@ -188,9 +188,28 @@ describe('개요', () => {
         expect(rows[1].find('.row__due').text()).toBe('마감 없음')
     })
 
-    it('명단이 없으면 무엇을 해야 하는지 알린다 — 빈 화면으로 두지 않는다', () => {
+    // **없는 것과 고르지 않은 것은 다음 걸음이 다르다.** 앞은 설정에서 만들어야 하고
+    // 뒤는 이동에서 고르기만 하면 된다. 한 문장으로 합치면 이미 학급을 만든 교사를
+    // 설정으로 보내 놓고 거기서 또 무엇을 해야 하는지 알려주지 않게 된다.
+    // 교과 쪽은 이미 두 갈래로 구분하고 있었다 — 담임도 짝을 맞춘다.
+    it('담임 학급이 하나도 없으면 등록하라고 알린다 — 빈 화면으로 두지 않는다', () => {
+        const app = useAppStore()
+        app.classes = []
+        app.classId = null
+
+        const text = render(OverviewView).text()
+        expect(text).toContain('담임 학급을 등록하지 않았습니다')
+        expect(text).toContain('담임 학급 등록하기')
+    })
+
+    it('학급은 있는데 고르지 않았으면 고르라고 알린다 — 설정으로 보내지 않는다', () => {
         useAppStore().classId = null
-        expect(render(OverviewView).text()).toContain('명단이 없습니다')
+
+        const text = render(OverviewView).text()
+        expect(text).toContain('보고 있는 학급이 없습니다')
+        expect(text).toContain('학급 고르기')
+        // 만들라는 말은 하지 않는다. 이미 만들어 둔 교사에게는 틀린 안내다.
+        expect(text).not.toContain('담임 학급 등록하기')
     })
 })
 
@@ -368,6 +387,9 @@ describe('설정', () => {
 })
 
 describe('담임 · 교과 모드', () => {
+    /** 교과 모드의 사이드바. 담임 항목이 한 줄도 없어야 한다. */
+    const SUBJECT_RAIL = ['개요', '이동', '오늘 수업', '수업 기록', '설정', '업데이트 확인']
+
     const HOMEROOM_RAIL = [
         '개요', '이동',
         '오늘의 출결', '출결 기록', '서류 미제출자', 'NEIS 미등재',
@@ -386,17 +408,42 @@ describe('담임 · 교과 모드', () => {
         app.classId = 20
         await nextTick()
 
-        expect(railLabels(wrapper)).toEqual(['개요', '이동', '설정', '업데이트 확인'])
+        expect(railLabels(wrapper)).toEqual(SUBJECT_RAIL)
         // 목록 비교만으로도 걸리지만, 무엇이 새면 안 되는지를 문장으로 남긴다.
         for (const homeroomOnly of ['오늘의 출결', '출결 기록', '서류 미제출자', 'NEIS 미등재', '통계', 'NEIS 검증']) {
             expect(wrapper.text()).not.toContain(homeroomOnly)
         }
     })
 
-    it('한쪽만 맡으면 스위치를 그리지 않는다 — 누를 것 없는 단추를 매일 보이지 않는다', async () => {
+    it('한쪽만 맡아도 스위치를 그린다 — 숨기면 그 모드가 있다는 것조차 알 수 없다', async () => {
+        // **의도 3.** 비담임 교사에게 스위치를 숨기면 담임 기능이 이 앱에 있다는 사실을
+        // 화면에서 알 길이 없고, 나중에 담임을 맡아도 들어갈 입구가 없다.
         const wrapper = renderApp()
         await flushPromises()
-        expect(wrapper.find('.rail__switch').exists()).toBe(false)
+
+        expect(wrapper.find('.rail__switch').exists()).toBe(true)
+        expect(wrapper.findAll('.rail__mode').map((b) => b.text())).toEqual(['담임', '교과'])
+    })
+
+    it('맡은 것이 없는 모드는 사이드바를 비활성화하고 등록할 길을 알린다', async () => {
+        // 지우지 않고 잠근다. 지우면 무엇이 있었는지 알 수 없다.
+        const app = useAppStore()
+        app.classes = [{
+            id: 20, schoolId: 1, role: 'subject', name: '화학Ⅰ 3반',
+            grade: null, classNo: null, validTo: null,
+        }]
+        app.lastClassId = {homeroom: null, subject: 20}
+        app.classId = 20
+
+        const wrapper = renderApp()
+        await flushPromises()
+
+        const homeroom = wrapper.findAll('.rail__mode').find((b) => b.text() === '담임')
+        await homeroom.trigger('click')
+        await flushPromises()
+
+        // 담임 항목이 사라지지 않고, 눌리지도 않는다.
+        expect(wrapper.text()).toContain('담임 학급')
     })
 
     it('둘 다 맡으면 스위치가 뜨고, 누르면 그 모드로 옮긴다', async () => {
@@ -417,7 +464,7 @@ describe('담임 · 교과 모드', () => {
         await flushPromises()
 
         expect(setMode).toHaveBeenCalledWith('subject')
-        expect(railLabels(wrapper)).toEqual(['개요', '이동', '설정', '업데이트 확인'])
+        expect(railLabels(wrapper)).toEqual(SUBJECT_RAIL)
     })
 
     it('학급 이름 자리를 누르면 이동 화면으로 간다', async () => {

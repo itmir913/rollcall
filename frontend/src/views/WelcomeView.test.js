@@ -122,6 +122,87 @@ describe('첫 실행 — 단계 오가기', () => {
     })
 })
 
+describe('첫 실행 — 학년도와 학교', () => {
+    it('학년도를 고르면 스토어 액션을 거친다 — 상태에 직접 대입하지 않는다', async () => {
+        const app = useAppStore()
+        app.years = [{id: 2, year: 2026}, {id: 3, year: 2027}]
+        const select = vi.spyOn(app, 'selectYear').mockResolvedValue()
+
+        const wrapper = await render()
+        await goStep(wrapper, 2)
+
+        const pick = wrapper.findAll('button').find((b) => b.text() === '2027학년도')
+        await pick.trigger('click')
+        await flushPromises()
+
+        // 직접 대입하면 학교 목록도 맡은 것 목록도 지난 학년도의 것으로 남는다.
+        expect(select).toHaveBeenCalledWith(3)
+        expect(app.yearId).toBe(2)
+    })
+
+    it('학교가 하나도 없는 것이 첫 실행의 정상 상태다 — 그 자리에서 만든다', async () => {
+        const app = useAppStore()
+        app.schools = []
+        const school = useSchoolStore()
+        school.school = null
+
+        const create = vi.spyOn(school, 'createSchool').mockImplementation(async ({name}) => {
+            app.schools = [{id: 1, name, maxSlot: 7, dueDays: 7, dueSkipOffdays: true}]
+            return 1
+        })
+        const select = vi.spyOn(app, 'selectSchool').mockResolvedValue()
+
+        const wrapper = await render()
+        await goStep(wrapper, 3)
+
+        expect(wrapper.text()).toContain('아직 없습니다')
+        // 고칠 것이 없으면 빈 칸을 늘어놓지 않는다. 무엇을 고치는지 알 수 없기 때문이다.
+        expect(wrapper.findAll('.pick--slot')).toHaveLength(0)
+        expect(wrapper.findAll('input[type="number"]')).toHaveLength(0)
+
+        await wrapper.find('input[placeholder="한빛고등학교"]').setValue('한빛고등학교')
+        await wrapper.findAll('button').find((b) => b.text() === '학교 추가').trigger('click')
+        await flushPromises()
+
+        // 기본 출결 태그와 한도 규정이 함께 들어가는 길은 이 액션 하나뿐이다.
+        expect(create).toHaveBeenCalledWith({name: '한빛고등학교'})
+        expect(select).toHaveBeenCalledWith(1)
+    })
+
+    it('이름 없이 만들지 않는다 — 이름이 학교를 가리키는 값이다', async () => {
+        const app = useAppStore()
+        app.schools = []
+        const school = useSchoolStore()
+        school.school = null
+        const create = vi.spyOn(school, 'createSchool').mockResolvedValue(1)
+
+        const wrapper = await render()
+        await goStep(wrapper, 3)
+        await wrapper.findAll('button').find((b) => b.text() === '학교 추가').trigger('click')
+        await flushPromises()
+
+        expect(create).not.toHaveBeenCalled()
+        expect(wrapper.text()).toContain('학교 이름을 적어주세요.')
+    })
+
+    it('학교를 고르면 그 학교의 설정을 읽는다', async () => {
+        const app = useAppStore()
+        app.schools = [
+            {id: 1, name: '한빛고등학교', maxSlot: 7, dueDays: 7, dueSkipOffdays: true},
+            {id: 2, name: '푸른중학교', maxSlot: 6, dueDays: 5, dueSkipOffdays: true},
+        ]
+        const select = vi.spyOn(app, 'selectSchool').mockResolvedValue()
+
+        const wrapper = await render()
+        await goStep(wrapper, 3)
+        await wrapper.findAll('button').find((b) => b.text() === '푸른중학교').trigger('click')
+        await flushPromises()
+
+        expect(select).toHaveBeenCalledWith(2)
+        expect(useSchoolStore().fetchAll).toHaveBeenCalled()
+    })
+})
+
 describe('첫 실행 — 맡은 것', () => {
     it('하나도 등록하지 않으면 완료로 갈 수 없다 — 잠글 뿐 숨기지 않는다', async () => {
         const wrapper = await render()

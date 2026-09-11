@@ -12,7 +12,7 @@ use rusqlite::Connection;
 
 const TODAY: &str = "2026-09-10";
 
-/// 구간은 **학급에 매단다.** 담임 기록이 가리키는 것이 학급이다.
+/// 구간은 **학급에 연결한다.** 담임 기록이 가리키는 것이 학급이다.
 fn insert_span(
     conn: &Connection,
     class_id: i64,
@@ -48,28 +48,28 @@ fn set_neis(conn: &Connection, span_id: i64, done: bool) {
 /// 학교 · 학년도 · 담임 학급 하나.
 fn fixture() -> (Connection, i64, i64) {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    (conn, class, year)
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    (conn, class, school)
 }
 
 // ── 재학 인원 ─────────────────────────────────────────────────
 
 #[test]
 fn 인원은_그날_내_명단으로_센다() {
-    let (conn, class, year) = fixture();
-    enroll(&conn, class, year, 1, "김민준");
-    enroll(&conn, class, year, 2, "이서연");
+    let (conn, class, school) = fixture();
+    enroll(&conn, class, school, 1, "김민준");
+    enroll(&conn, class, school, 2, "이서연");
     // 학적만 있고 내 명단에는 없는 학생. 학년 · 반으로 셌다면 섞여 들어온다.
-    insert_student_at(&conn, year, 3, 7, 1, "다른 반 학생");
+    insert_student_at(&conn, school, 3, 7, 1, "다른 반 학생");
 
     assert_eq!(member_count_on(&conn, class, TODAY).unwrap(), 2);
 }
 
 #[test]
 fn a_withdrawn_student_still_counts_before_the_transfer() {
-    let (conn, class, year) = fixture();
-    let leaving = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let leaving = enroll(&conn, class, school, 1, "김민준");
     conn.execute(
         "UPDATE student SET enrolled_to = '2026-09-15' WHERE id = ?1",
         rusqlite::params![leaving],
@@ -83,8 +83,8 @@ fn a_withdrawn_student_still_counts_before_the_transfer() {
 #[test]
 fn 명단에서_빠진_날_전에는_그대로_센다() {
     // 명단에서 빼는 것은 학적을 마감하는 것과 다른 일이라 기간도 따로 닫힌다.
-    let (conn, class, year) = fixture();
-    let leaving = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let leaving = enroll(&conn, class, school, 1, "김민준");
     conn.execute(
         "UPDATE class_member SET left_on = '2026-09-15' WHERE student_id = ?1",
         rusqlite::params![leaving],
@@ -99,10 +99,10 @@ fn 명단에서_빠진_날_전에는_그대로_센다() {
 
 #[test]
 fn recorded_counts_students_not_spans() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
-    let b = enroll(&conn, class, year, 2, "이서연");
-    enroll(&conn, class, year, 3, "박지호");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
+    let b = enroll(&conn, class, school, 2, "이서연");
+    enroll(&conn, class, school, 3, "박지호");
 
     let axes = axes(&conn, "질병", "조퇴");
     // 하루 2구간은 정상 입력이다. 두 명으로 세면 인원보다 많아진다.
@@ -117,8 +117,8 @@ fn recorded_counts_students_not_spans() {
 
 #[test]
 fn only_the_given_day_is_counted_as_recorded() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
     insert_span(&conn, class, a, "2026-09-09", axes);
 
@@ -128,8 +128,8 @@ fn only_the_given_day_is_counted_as_recorded() {
 
 #[test]
 fn incomplete_counts_spans_with_either_axis_missing() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let reason = Some(reason_id(&conn, "질병"));
     let kind = Some(type_id(&conn, "결석"));
 
@@ -147,8 +147,8 @@ fn incomplete_counts_spans_with_either_axis_missing() {
 
 #[test]
 fn doc_pending_counts_everything_not_yet_received() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
 
     let overdue = insert_span(&conn, class, a, "2026-08-20", axes);
@@ -168,8 +168,8 @@ fn doc_pending_counts_everything_not_yet_received() {
 
 #[test]
 fn a_due_date_that_falls_on_the_given_day_is_not_overdue_yet() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
     let today_due = insert_span(&conn, class, a, "2026-09-03", axes);
     set_doc(&conn, today_due, false, Some(TODAY));
@@ -181,8 +181,8 @@ fn a_due_date_that_falls_on_the_given_day_is_not_overdue_yet() {
 
 #[test]
 fn neis_pending_counts_records_not_yet_entered() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
 
     insert_span(&conn, class, a, "2026-09-03", axes);
@@ -196,8 +196,8 @@ fn neis_pending_counts_records_not_yet_entered() {
 
 #[test]
 fn neis_rows_start_from_the_oldest_day() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
     insert_span(&conn, class, a, "2026-09-08", axes);
     insert_span(&conn, class, a, "2026-09-01", axes);
@@ -210,8 +210,8 @@ fn neis_rows_start_from_the_oldest_day() {
 
 #[test]
 fn doc_rows_start_from_the_most_overdue() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
 
     let mild = insert_span(&conn, class, a, "2026-09-01", axes);
@@ -228,8 +228,8 @@ fn doc_rows_start_from_the_most_overdue() {
 
 #[test]
 fn limit_caps_rows_but_never_the_counts() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
     for day in ["2026-09-01", "2026-09-02", "2026-09-03"] {
         insert_span(&conn, class, a, day, axes);
@@ -244,8 +244,8 @@ fn limit_caps_rows_but_never_the_counts() {
 
 #[test]
 fn a_limit_of_zero_or_less_returns_no_rows() {
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     let axes = axes(&conn, "질병", "결석");
     insert_span(&conn, class, a, "2026-09-01", axes);
 
@@ -261,12 +261,12 @@ fn a_limit_of_zero_or_less_returns_no_rows() {
 
 #[test]
 fn another_class_never_leaks_in() {
-    let (conn, class, year) = fixture();
+    let (conn, class, school) = fixture();
     // **같은 학생이 두 학급에 있다.** 학급마다 다른 학생을 쓰면 학적(학년 · 반)으로
     // 거르던 옛 질의로도 통과해 버려서, 이 테스트가 주장하는 것을 확인하지 못한다.
     // 로컬 전용 프로그램이라 두 학급 모두 내 것이고, 내 선택과목에 내 반 학생이 있다.
-    let mine = enroll(&conn, class, year, 1, "김민준");
-    let next_door = insert_class(&conn, year, "homeroom", "3학년 7반", Some(3), Some(7));
+    let mine = enroll(&conn, class, school, 1, "김민준");
+    let next_door = insert_class(&conn, school, "homeroom", "3학년 7반", Some(3), Some(7));
     join_class(&conn, next_door, mine);
 
     let axes = axes(&conn, "질병", "결석");
@@ -318,8 +318,8 @@ fn a_broken_date_is_rejected() {
 fn a_loosely_written_date_comes_back_in_iso() {
     // chrono는 `2026-9-10`도 받아들인다. 저장된 값은 언제나 자리를 채운 형식이므로
     // 그대로 질의하면 아무것도 걸리지 않는다.
-    let (conn, class, year) = fixture();
-    let a = enroll(&conn, class, year, 1, "김민준");
+    let (conn, class, school) = fixture();
+    let a = enroll(&conn, class, school, 1, "김민준");
     insert_span(&conn, class, a, TODAY, axes(&conn, "질병", "결석"));
 
     let summary = get_home_summary_impl(&conn, class, "2026-9-10", 10).unwrap();

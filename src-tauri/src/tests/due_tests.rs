@@ -222,11 +222,3 @@ fn january_and_february_belong_to_the_previous_academic_year() {
     assert_eq!(academic_year_of(d("2027-02-28")), 2026);
 }
 
-#[test]
-fn semester_splits_at_september() {
-    assert_eq!(semester_of(d("2026-03-01")), 1);
-    assert_eq!(semester_of(d("2026-08-31")), 1);
-    assert_eq!(semester_of(d("2026-09-01")), 2);
-    assert_eq!(semester_of(d("2027-02-28")), 2);
-    assert_eq!(semester_of(d("2027-01-15")), 2);
-}

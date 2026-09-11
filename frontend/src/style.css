@@ -241,7 +241,7 @@ input, select, textarea, button {
     font-weight: 700;
 }
 
-/* 줄 하나로 세 덩어리를 가른다: 매일 하는 일 · 가끔 하는 일 · 업무가 아닌 것. */
+/* 줄 하나로 세 덩어리를 구분한다: 매일 하는 일 · 가끔 하는 일 · 업무가 아닌 것. */
 .rail__rule {
     height: 1px;
     margin: 9px 8px;
@@ -697,7 +697,7 @@ a.strip__cell:hover {
     font-weight: 700;
 }
 
-/* 후보가 정해져 있고 늘어나도 십여 개인 값은 버튼으로 펼친다.
+/* 후보가 정해져 있고 늘어나도 십여 개인 값은 버튼으로 표시한다.
  * 드롭다운은 열기 전까지 후보가 보이지 않아 클릭이 한 번 더 든다. */
 .pick {
     border: 1px solid var(--c-line);

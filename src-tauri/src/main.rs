@@ -35,10 +35,12 @@ fn main() {
             create_year,
             update_year,
             // 학교 설정 — 최대 교시 · 제출 기한 · 휴업일 · 태그 · 한도 규정
+            // 학교는 학년도 안에 있다. create_school이 기본 태그 · 한도 규정도 함께 넣는다
             get_schools,
             get_school,
             create_school,
             update_school,
+            retire_school,
             get_off_days,
             add_off_day,
             remove_off_day,
@@ -55,11 +57,17 @@ fn main() {
             create_teaching_class,
             update_teaching_class,
             retire_teaching_class,
+            // 강좌 묶음 이름표 — 분반 2단 구조가 아니라 화면에서 묶어 보이는 이름이다
+            get_class_tags,
+            create_class_tag,
+            rename_class_tag,
+            delete_class_tag,
             // 학생 · 연락처
             detect_roster_class,
             get_students,
             preview_roster,
             apply_roster,
+            add_student,
             update_student,
             withdraw_student,
             get_contacts,
@@ -94,6 +102,14 @@ fn main() {
             save_focus_entries,
             get_doc_pending,
             get_neis_pending,
+            // 교과 차시 — 그 교시에 있었는가 하나만 기록한다. 담임 표와 완전히 분리된다
+            get_subject_sessions,
+            create_subject_session,
+            delete_subject_session,
+            set_session_memo,
+            get_session_roll,
+            toggle_subject_absence,
+            set_subject_absence_memo,
             // 나이스 가져오기 — 교체가 아니라 차분이다
             preview_neis_import,
             apply_neis_import,

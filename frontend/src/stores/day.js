@@ -13,6 +13,8 @@ export const useDayStore = defineStore('day', {
         date: null,
         grid: null,
         draft: {reasonId: null, typeId: null, slots: []},
+        /** 무르기가 거부된 이유. 오류가 아니므로 `error`와 따로 둔다. */
+        notice: '',
         error: '',
         busy: false,
     }),
@@ -57,6 +59,11 @@ export const useDayStore = defineStore('day', {
         /**
          * 학생 하나에게 지금 조합을 찍는다.
          * 같은 조합이 이미 있으면 Rust가 그 건을 지운다(무르기).
+         *
+         * **무르기가 거부되는 경우가 있다.** 그 구간에 태그 · 사유 · 서류 · 나이스 표시 중
+         * 하나라도 적혀 있으면 Rust가 `kept`를 돌려주고 아무것도 지우지 않는다 —
+         * 교사가 적어 둔 것이 다시 누른 것만으로 사라지면 안 되기 때문이다.
+         * 그때 화면은 **아무 일도 일어나지 않은 것처럼 보이므로** 이유를 반드시 알린다.
          */
         async stamp(studentId) {
             this.error = ''
@@ -72,6 +79,8 @@ export const useDayStore = defineStore('day', {
                         slots: [...this.draft.slots],
                     },
                 })
+                // 무르기가 거부된 이유. 화면이 그대로 적는다 — 앱이 다시 해석하지 않는다.
+                this.notice = result?.action === 'kept' ? (result.message ?? '') : ''
                 await this.fetchGrid()
                 return result
             } catch (e) {

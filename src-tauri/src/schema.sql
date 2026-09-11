@@ -2,21 +2,39 @@
 -- 출결관리 스키마 v1
 --
 -- 설계 원칙(CLAUDE.md 참고)
---   · 슬롯을 펼치지 않는다 — 열린 구간은 NULL('?')이고 학사일정/시간표 테이블이 없다.
+--   · 슬롯을 전개하지 않는다 — 열린 구간은 NULL('?')이고 학사일정/시간표 테이블이 없다.
 --   · 코드는 데이터다 — 구분·종류·태그·한도 규정은 행이지 enum이 아니다.
 --   · 수정은 마감 후 추가다 — valid_to로 마감하고 새 행을 넣는다.
 --   · **미완성 기록이 정상 상태다** — 구분과 종류는 각각 NULL일 수 있다.
---   · 학교 단위 설정(최대 교시, 제출 기한, 태그, 한도)은 school에 매단다.
+--   · 학교 단위 설정(최대 교시, 제출 기한, 태그, 한도)은 school에 둔다.
 --     순회 교사가 학교를 둘 이상 등록하는 날이 와도 자리를 옮기지 않는다.
 -- ================================================================
 
+-- ─── 학년도 ────────────────────────────────────────────────────
+-- 학년도는 학교에 종속시키지 않는다. 2026학년도는 어느 학교에서나 2026학년도다.
+CREATE TABLE IF NOT EXISTS academic_year
+(
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    year      INTEGER NOT NULL UNIQUE CHECK (year >= 1900),
+    starts_on TEXT,
+    ends_on   TEXT
+);
+
 -- ─── 학교 ──────────────────────────────────────────────────────
--- 지금은 행이 하나뿐이다. 그래도 자리를 학교에 만드는 이유는, 나중에 옮기려면
--- 이 값을 읽는 모든 곳을 다시 찾아야 하기 때문이다.
+-- **학교는 학년도 안에 있다.** 2026학년도에 A학교 하나만 출근하다가 2027학년도에
+-- B · C 두 학교로 옮기는 일이 실제로 있다(순회 교사). 학교를 전역으로 두면 해가
+-- 바뀌어도 지난해 학교가 목록에 남고, 그 학교의 최대 교시 · 제출 기한을 고치면
+-- 지난해 화면까지 소급해 바뀐다.
+--
+-- **이것이 이 앱의 계층이다 — 학년도 → 학교 → 맡은 것(담임 | 교과).**
+-- 그래서 `student`와 `teaching_class`는 학년도를 따로 들지 않는다. 학교가 이미
+-- 알고 있고, 둘이 따로 있으면 2027학년도 학교에 속한 2026학년도 학급 같은
+-- 어긋난 조합이 만들어질 수 있다.
 CREATE TABLE IF NOT EXISTS school
 (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    name             TEXT    NOT NULL,
+    year_id          INTEGER NOT NULL REFERENCES academic_year (id) ON DELETE CASCADE,
+    name             TEXT    NOT NULL CHECK (name <> ''),
     -- 하루의 마지막 교시. 조회와 종례는 설정 대상이 아니라 언제나 양 끝이다.
     max_slot         INTEGER NOT NULL DEFAULT 7 CHECK (max_slot BETWEEN 1 AND 9),
     -- 증빙 서류 제출 기한(결석일로부터). 0이면 결석일이 곧 마감이다.
@@ -26,6 +44,14 @@ CREATE TABLE IF NOT EXISTS school
     sort_order       INTEGER NOT NULL DEFAULT 0,
     active           INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
 );
+
+CREATE INDEX IF NOT EXISTS ix_school_year ON school (year_id, sort_order);
+
+-- 한 학년도에 같은 이름의 학교는 하나다. 목록에서 내린 학교는 세지 않는다 —
+-- 잘못 만든 학교를 내리고 같은 이름으로 다시 만드는 일이 있다.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_school_name_active
+    ON school (year_id, name)
+    WHERE active = 1;
 
 -- ─── 휴업일 ────────────────────────────────────────────────────
 -- **학사일정 테이블이 아니다.** 제출 기한을 셀 때 건너뛸 날짜 목록일 뿐이고,
@@ -40,30 +66,20 @@ CREATE TABLE IF NOT EXISTS off_day
     UNIQUE (school_id, date)
 );
 
--- ─── 학년도 ────────────────────────────────────────────────────
--- 학년도는 학교에 매달지 않는다. 2026학년도는 어느 학교에서나 2026학년도다.
-CREATE TABLE IF NOT EXISTS academic_year
-(
-    id        INTEGER PRIMARY KEY AUTOINCREMENT,
-    year      INTEGER NOT NULL UNIQUE CHECK (year >= 1900),
-    starts_on TEXT,
-    ends_on   TEXT
-);
-
 -- ─── 학생 ──────────────────────────────────────────────────────
--- 학생은 **학교와 학년도에 속한다. 학급에 매달지 않는다.**
+-- 학생은 **학교와 학년도에 속한다. 학급에 종속시키지 않는다.**
 --
 -- 학년 · 반 · 번호는 그 학생의 **학적**이지 내 명단의 소속이 아니다. 둘을 같은 것으로
 -- 보면 두 자리에서 막힌다 — 교과 강좌는 여러 반에서 모이므로 반으로 걸러낼 수 없고,
 -- 담임 명렬표에도 반이 다른 학생이 들어오는 날이 있다. 누가 내 명단에 있는가는
 -- class_member가 말한다.
 --
--- 학교는 학생이 매단다 — 순회 교사는 같은 해에 여러 학교를 맡는다.
+-- **학년도를 따로 들지 않는다.** 학교가 이미 학년도를 알고 있다 —
+-- 둘을 따로 두면 서로 어긋난 행이 만들어질 수 있다.
 CREATE TABLE IF NOT EXISTS student
 (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     school_id     INTEGER NOT NULL REFERENCES school (id) ON DELETE CASCADE,
-    year_id       INTEGER NOT NULL REFERENCES academic_year (id) ON DELETE CASCADE,
     grade         INTEGER NOT NULL CHECK (grade >= 1),
     class_no      INTEGER NOT NULL CHECK (class_no >= 1),
     number        INTEGER NOT NULL CHECK (number >= 1),
@@ -72,15 +88,16 @@ CREATE TABLE IF NOT EXISTS student
     enrolled_to   TEXT
 );
 
--- 같은 학교 · 학년도에서 학적 한 자리는 한 명이다.
+-- 한 학교에서 학적 한 자리는 한 명이다. 학교가 학년도에 속하므로
+-- 해가 바뀌면 자리도 저절로 새로 열린다.
 -- 교과 명렬표를 불러올 때 이미 있는 학생을 다시 만들지 않고 이 열쇠로 찾는다 —
 -- 담임 반 학생이 내 강좌에도 들어오면 학생 행은 하나, class_member가 둘이다.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_student_seat
-    ON student (school_id, year_id, grade, class_no, number)
+    ON student (school_id, grade, class_no, number)
     WHERE enrolled_to IS NULL;
 
 CREATE INDEX IF NOT EXISTS ix_student_class
-    ON student (school_id, year_id, grade, class_no, number);
+    ON student (school_id, grade, class_no, number);
 
 -- ─── 연락처 ────────────────────────────────────────────────────
 -- **별도 표다.** 학생마다 있는 번호가 다르다 — 본인만 있는 학생, 어머니만 있는 학생,
@@ -103,16 +120,35 @@ CREATE TABLE IF NOT EXISTS contact
 
 CREATE INDEX IF NOT EXISTS ix_contact_student ON contact (student_id, sort_order);
 
+-- ─── 강좌 묶음 ─────────────────────────────────────────────────
+-- `프로그래밍A` · `프로그래밍B` · `프로그래밍C`를 묶는 이름이다. **분반 표가 아니다** —
+-- 강좌는 저마다 `teaching_class` 한 행으로 독립해 있고, 이 태그는 화면에서 함께
+-- 보이게 하는 이름표일 뿐이다. 교과 - 분반 2단 구조로 짜면 분반이 하나뿐인 과목에도
+-- 껍데기 행이 하나 더 생기고, 명단 · 차시 질의가 전부 한 단계를 더 거쳐야 한다.
+--
+-- **`span_tag`와 다른 표다.** 그쪽은 한도를 세는 대상(체험학습 · 생리통)이고
+-- `quota_rule.tag_id`가 가리킨다. 같은 표에 섞으면 `프로그래밍`이 통계 화면의
+-- 한도 규정 후보로 뜬다.
+CREATE TABLE IF NOT EXISTS class_tag
+(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    school_id  INTEGER NOT NULL REFERENCES school (id) ON DELETE CASCADE,
+    name       TEXT    NOT NULL CHECK (name <> ''),
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_class_tag_name ON class_tag (school_id, name);
+
 -- ─── 내가 맡은 것 ──────────────────────────────────────────────
 -- 담임 학급과 교과 강좌가 이 표에 함께 온다. 기록하는 것이 달라 화면은 나뉘지만,
 -- "내가 맡은 무엇"이라는 점은 같아서 표를 나누면 이동 · 설정이 두 벌이 된다.
 --
--- **학년도에 매달린다.** 3월이 되면 지난해 줄을 valid_to로 마감하고 새로 넣는다.
+-- **학교에 속한다.** 학년도는 학교가 들고 있다 — 해가 바뀌면 그 학년도의 학교를
+-- 새로 만들고 맡은 것도 새로 넣는다. 지난해 줄은 지난해 학교에 그대로 남는다.
 CREATE TABLE IF NOT EXISTS teaching_class
 (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     school_id  INTEGER NOT NULL REFERENCES school (id) ON DELETE CASCADE,
-    year_id    INTEGER NOT NULL REFERENCES academic_year (id) ON DELETE CASCADE,
     -- homeroom = 구분 · 종류 · 기간을 기록한다 (absence_span)
     -- subject  = 교시마다 있었는지 없었는지만 기록한다 (subject_session)
     --
@@ -124,20 +160,35 @@ CREATE TABLE IF NOT EXISTS teaching_class
     -- 담임일 때 그 반을 가리키는 값. **교과 강좌는 반이 섞이므로 NULL이다.**
     grade      INTEGER CHECK (grade IS NULL OR grade >= 1),
     class_no   INTEGER CHECK (class_no IS NULL OR class_no >= 1),
+    -- 화면에서 함께 묶어 보일 이름. 없어도 된다 — 묶을 것이 없는 과목이 더 많다.
+    -- **한 강좌에 하나다.** 여럿을 허용하면 어느 묶음으로 접어 보일지 정해야 하고,
+    -- 그 판단은 프로그램이 할 일이 아니다.
+    group_tag_id INTEGER REFERENCES class_tag (id) ON DELETE SET NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     valid_from TEXT    NOT NULL,
     valid_to   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_class_scope
-    ON teaching_class (year_id, school_id, role, sort_order);
+    ON teaching_class (school_id, role, sort_order);
 
--- 같은 학교 · 학년도에서 같은 역할의 같은 이름은 하나다.
+-- 한 학교에서 같은 역할의 같은 이름은 하나다.
 -- 이름이 화면의 식별자이기도 하다 — 목록에 '3학년 6반'이 둘 있으면 어느 쪽에 찍었는지
 -- 교사가 알 수 없다. 마감한 것은 세지 않는다(같은 이름을 다시 맡는 해가 온다).
 CREATE UNIQUE INDEX IF NOT EXISTS ux_class_name_active
-    ON teaching_class (school_id, year_id, role, name)
+    ON teaching_class (school_id, role, name)
     WHERE valid_to IS NULL;
+
+-- **역할은 바꾸지 못한다.** 격리 트리거들은 자식 표(`absence_span` · `subject_session`)의
+-- 쓰기만 본다. 그래서 담임 학급의 role을 subject로 바꾸면 이미 달린 담임 출결이
+-- 교과 강좌에 붙은 채 남고, 두 화면이 서로의 기록을 보게 된다 — 어떤 입력의 결과도
+-- 아닌 상태다. 맡은 것이 바뀌었으면 새로 만들고 옛것을 마감한다.
+CREATE TRIGGER IF NOT EXISTS trg_class_role_is_fixed
+    BEFORE UPDATE OF role ON teaching_class
+    WHEN NEW.role <> OLD.role
+BEGIN
+    SELECT RAISE(ABORT, '맡은 것의 역할은 바꿀 수 없습니다. 새로 만들고 옛것을 마감하세요.');
+END;
 
 -- ─── 소속 ──────────────────────────────────────────────────────
 -- "누가 내 명단에 있는가". 담임 학급이든 교과 강좌든 이 표가 답한다.
@@ -221,7 +272,7 @@ CREATE TABLE IF NOT EXISTS code_alias
 -- ─── 태그 ──────────────────────────────────────────────────────
 -- **세는 대상**이다. 체험학습은 출석인정 결석으로도 조퇴로도 나가므로 구분 × 종류
 -- 조합으로는 셀 수 없다. 학교마다 부르는 이름이 다르고 한도 규정이 이 이름을
--- 가리키므로, 규정과 같은 곳(학교)에 매단다.
+-- 가리키므로, 규정과 같은 곳(학교)에 둔다.
 CREATE TABLE IF NOT EXISTS span_tag
 (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,7 +297,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_tag_name_active
 CREATE TABLE IF NOT EXISTS absence_span
 (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    -- **어느 담임 학급의 기록인가.** 학생에만 매달면 그 학생이 내 교과 강좌에도 있을 때
+    -- **어느 담임 학급의 기록인가.** 학생에만 종속시키면 그 학생이 내 교과 강좌에도 있을 때
     -- 교과 화면에서 담임 출결이 보인다. 두 기록은 완전히 구별되어야 하므로
     -- 구간이 학급을 직접 가리킨다 — 아래 트리거가 담임 학급만 받는다.
     class_id     INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
@@ -379,8 +430,11 @@ CREATE TABLE IF NOT EXISTS quota_rule
     tag_id     INTEGER REFERENCES span_tag (id),
     reason_id  INTEGER REFERENCES attendance_reason (id),
     type_id    INTEGER REFERENCES attendance_type (id),
-    -- 어느 기간에: 학년도 / 학기 / 달
-    period     TEXT    NOT NULL CHECK (period IN ('year', 'semester', 'month')),
+    -- 어느 기간에: 학년도 / 달.
+    -- **학기는 없다.** 1 · 2학기 경계는 학교마다 다른데 앱이 9월 1일로 단정하고 있었다 —
+    -- 물어서 받으면 첫 설정이 무거워지고, 단정하면 '프로그램은 판정하지 않는다'를 어긴다.
+    -- 이 앱은 하루 단위 출결을 기록한다.
+    period     TEXT    NOT NULL CHECK (period IN ('year', 'month')),
     limit_n    INTEGER NOT NULL CHECK (limit_n > 0),
     -- 무엇을 세는 단위로: 날짜(하루에 두 건이어도 1일) / 건수
     unit       TEXT    NOT NULL CHECK (unit IN ('day', 'count')),
@@ -391,13 +445,19 @@ CREATE TABLE IF NOT EXISTS quota_rule
 
 -- ─── 앱 설정 ───────────────────────────────────────────────────
 -- 앱 전체에 걸린 값만 둔다. 지금 쓰는 열쇠는 넷이다.
---   yearId           지금 보고 있는 학년도
+--   yearId           지금 보고 있는 학년도 — **계층의 뿌리다**
+--   schoolId         그 학년도에서 지금 보고 있는 학교. 학년도 다음이 학교다
 --   mode             homeroom | subject — 사이드바 스위치의 값
 --   homeroomClassId  담임 모드에서 마지막에 본 학급
 --   subjectClassId   교과 모드에서 마지막에 본 강좌
 --
 -- **모드마다 마지막 자리를 따로 기억한다.** 오가며 쓰는 값이라, 돌아왔을 때 있던
 -- 자리가 아니면 매번 다시 골라야 한다.
+--
+-- **학교는 맡은 것에서 역산하지 않는다.** 그 학년도에 맡은 것이 아직 없는 학교는
+-- 역산으로는 가리킬 수 없고, 순회 교사가 학교를 옮겨도 화면이 따라오지 않는다.
+-- 학교가 범위이고 맡은 것이 그 안에 있다 — 순서를 거꾸로 두면 담임 학급을 고르는
+-- 것만으로 학교가 바뀐다.
 --
 -- **학교 단위 값은 여기 넣지 않는다.** school 행에 자리가 있다.
 CREATE TABLE IF NOT EXISTS app_config

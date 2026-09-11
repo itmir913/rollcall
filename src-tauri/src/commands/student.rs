@@ -11,7 +11,7 @@
 //! **명렬표 가져오기는 두 가지 일을 한다.** 학생을 만드는 일과 내 명단에 넣는 일이다.
 //! 둘은 다른 사건이라 표도 다르다 — 학생은 학교에 속하고(`student`), 소속은 따로
 //! 기록된다(`class_member`). 이미 그 학적 자리에 있는 학생은 다시 만들지 않고
-//! 명단에만 잇는다. 담임 반 학생이 내 교과 강좌에도 들어오면 학생 행은 하나,
+//! 명단에만 연결한다. 담임 반 학생이 내 교과 강좌에도 들어오면 학생 행은 하나,
 //! 소속이 둘이어야 하기 때문이다.
 //!
 //! 재가져오기는 **교체가 아니라 차분**이다. 사라진 번호를 지우면 그 학생의 출결
@@ -21,7 +21,7 @@
 //!
 //! **차분의 열쇠는 역할이 정한다.** 담임은 `번호` 하나이고, 교과는 `(학년, 반, 번호)`
 //! 학적 자리 전체다. 교과 강좌는 선택과목이라 1반~n반이 섞여 번호 하나로는 학생을
-//! 가릴 수 없다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다.
+//! 구별할 수 없다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다.
 //!
 //! **담임 열쇠를 자리로 넓히지 않는다.** 담임 명렬표는 반이 다른 학생을 막지 않으므로
 //! (3학년 6반 명단에 3학년 7반 12번 학생이 있다), 열쇠를 자리로 넓히면 파일의 12번 줄이
@@ -32,6 +32,7 @@ use crate::commands::class::{
 };
 use crate::commands::with_conn;
 use crate::db::with_transaction;
+use crate::due::{format_date, parse_date};
 use crate::state::{constraint_err, DbState};
 use crate::types::*;
 use rusqlite::Connection;
@@ -152,7 +153,7 @@ pub fn diff_roster(
     let keys: Vec<Option<Key>> = incoming.iter().map(|e| key_of_entry(keying, e)).collect();
 
     // 파일 안에서 같은 자리가 두 줄이면 둘 다 넘긴다. 교과에서 번호 중복은 정상이지만
-    // 자리 중복은 파일 오류다. 그대로 두면 둘째 줄이 `ux_student_seat`에서 터져
+    // 자리 중복은 파일 오류다. 그대로 두면 둘째 줄이 `ux_student_seat`에 걸려
     // 트랜잭션이 통째로 롤백된다 — 서른 줄을 확인한 교사에게 남는 것은 에러 하나뿐이다.
     let duplicated: Vec<bool> = keys
         .iter()
@@ -273,7 +274,7 @@ pub fn diff_roster(
 /// 줄은 그대로 보여주고 켜는 것은 교사가 한다.
 ///
 /// **두 번 부른다.** 차분이 막은 줄(자리를 읽지 못함 · 파일 안 자리 중복)과
-/// `annotate_seats`가 막은 줄(그 자리에 다른 이름이 앉아 있음)이 **같은 규칙을 받아야**
+/// `annotate_seats`가 막은 줄(그 자리를 다른 이름이 쓰고 있음)이 **같은 규칙을 받아야**
 /// 하기 때문이다. 뒤엣것도 짝을 빼앗는다 — 파일의 반 오타 한 글자로 `3학년 6반 4번`이
 /// `3학년 1반 4번`이 되면, 그 줄은 남의 자리라 막히고 내 명단의 그 학생은 짝을 잃는다.
 /// 이미 낮춘 줄에는 `withdrawn`이 남아 있지 않으므로 다시 불러도 안전하다.
@@ -284,7 +285,7 @@ fn hold_withdrawals(rows: &mut [RosterDiffRow]) {
     for row in rows.iter_mut().filter(|r| r.action == "withdrawn") {
         row.action = "unchanged".into();
         row.why = Some(
-            "파일에서 읽지 못한 줄이 있어 명단에서 뺀 것으로 표시하지 않았습니다.              그 줄을 고쳐 다시 가져오거나, 이 학생을 직접 [내 명단에서 뺌]으로 바꾸세요."
+            "파일에서 읽지 못한 줄이 있어 명단에서 뺀 것으로 표시하지 않았습니다. \n             그 줄을 고쳐 다시 가져오거나, 이 학생을 직접 [내 명단에서 뺌]으로 바꾸세요."
                 .to_string(),
         );
     }
@@ -294,10 +295,10 @@ fn hold_withdrawals(rows: &mut [RosterDiffRow]) {
 
 /// 지금 내 명단. 소속은 `class_member`가 말하므로 학년 · 반으로 거르지 않는다.
 /// 그 학급의 명단. **역할을 가리지 않는다** — 교과 강좌도 명단을 가진다.
-/// 갈리는 것은 기록이지 명단이 아니다.
+/// 구분되는 것은 기록이지 명단이 아니다.
 ///
-/// 교과 강좌만 학적 자리 순으로 다시 세운다. 반이 섞여 번호 순으로는 1반 4번과
-/// 6반 4번이 나란히 서기 때문이다. **`members_of`의 SQL은 번호 순 그대로 둔다** —
+/// 교과 강좌만 학적 자리 순으로 다시 정렬한다. 반이 섞여 번호 순으로는 1반 4번과
+/// 6반 4번이 나란히 나타나기 때문이다. **`members_of`의 SQL은 번호 순 그대로 둔다** —
 /// 담임 격자와 나이스 가져오기가 그 순서를 전제한다.
 pub fn get_students_impl(conn: &Connection, class_id: i64) -> Result<Vec<StudentItem>, String> {
     let scope = class_scope(conn, class_id)?;
@@ -308,7 +309,7 @@ pub fn get_students_impl(conn: &Connection, class_id: i64) -> Result<Vec<Student
     Ok(rows)
 }
 
-/// 명렬표 차분. 담임 학급과 교과 강좌가 같은 길을 쓰고, **열쇠만 갈린다.**
+/// 명렬표 차분. 담임 학급과 교과 강좌가 같은 길을 쓰고, **열쇠만 달라진다.**
 pub fn preview_roster_impl(
     conn: &Connection,
     class_id: i64,
@@ -324,14 +325,14 @@ pub fn preview_roster_impl(
     Ok(rows)
 }
 
-/// 앉힐 자리를 **읽기만** 하며 줄에 말을 붙인다. 저장 전에 교사가 알아야 하는 것들이다.
+/// 배치할 자리를 **읽기만** 하며 줄에 말을 붙인다. 저장 전에 교사가 알아야 하는 것들이다.
 ///
-/// 자리가 비어 있으면 그대로 둔다(학적을 새로 만든다). 같은 이름이 앉아 있으면 그 학생을
-/// 다시 만들지 않고 명단에만 잇는다고 알린다 — **`student_id`를 채우지 않는다.**
-/// 화면의 토글이 `studentId` 유무로 갈리기 때문이다.
+/// 자리가 비어 있으면 그대로 둔다(학적을 새로 만든다). 같은 이름이 있으면 그 학생을
+/// 다시 만들지 않고 명단에만 연결한다고 알린다 — **`student_id`를 채우지 않는다.**
+/// 화면의 토글이 `studentId` 유무로 구분되기 때문이다.
 ///
-/// 다른 이름이 앉아 있으면 두 모드가 갈린다. 담임은 자리를 넘겨받되 저장 전에 알리고,
-/// 교과는 넘겨받을 수 없으므로 `blocked`로 세운다. 같은 학생이 맞다면 교사가
+/// 다른 이름이 있으면 두 모드가 달라진다. 담임은 자리를 넘겨받되 저장 전에 알리고,
+/// 교과는 넘겨받을 수 없으므로 `blocked`로 표시한다. 같은 학생이 맞다면 교사가
 /// [그 학생이 맞습니다]를 눌러 `linked`로 바꾼다.
 fn annotate_seats(
     conn: &Connection,
@@ -345,20 +346,13 @@ fn annotate_seats(
         if row.action != "added" {
             continue;
         }
-        // **담임은 줄에 적힌 학년 · 반을 읽지 않는다.** 학급이 들고 있는 값으로만 앉힌다.
+        // **담임은 줄에 적힌 학년 · 반을 읽지 않는다.** 학급이 들고 있는 값으로만 배치한다.
         let (grade, class_no) = match (&home, row.grade, row.class_no) {
             (Some(seat), _, _) => seat.at(),
             (None, Some(grade), Some(class_no)) if scope.role == "subject" => (grade, class_no),
             _ => continue,
         };
-        let Some((id, held)) = seat_holder(
-            conn,
-            scope.school_id,
-            scope.year_id,
-            grade,
-            class_no,
-            row.number,
-        )?
+        let Some((id, held)) = seat_holder(conn, scope.school_id, grade, class_no, row.number)?
         else {
             continue;
         };
@@ -367,18 +361,18 @@ fn annotate_seats(
         let at = where_at(grade, class_no, row.number);
         if held == name {
             row.why =
-                Some("이미 있는 학생입니다. 학적을 만들지 않고 명단에만 잇습니다.".to_string());
+                Some("이미 있는 학생입니다. 학적을 만들지 않고 명단에만 연결합니다.".to_string());
         } else if scope.role == "subject" {
             row.action = "blocked".into();
             row.student_id = Some(id);
             row.why = Some(format!(
                 "{at} 자리에는 「{held}」이(가) 있습니다. 파일의 학년 · 반이 맞는지 확인하세요. \
-                 같은 학생이 맞으면 [그 학생이 맞습니다]를 눌러 학적을 만들지 않고 명단에만 잇습니다."
+                 같은 학생이 맞으면 [그 학생이 맞습니다]를 눌러 학적을 만들지 않고 명단에만 연결합니다."
             ));
         } else {
             row.why = Some(format!(
                 "{at} 자리에 「{held}」이(가) 있습니다. \
-                 저장하면 그 학적을 마감하고 「{name}」을(를) 새로 앉힙니다."
+                 저장하면 그 학적을 마감하고 「{name}」을(를) 새로 등록합니다."
             ));
         }
     }
@@ -387,21 +381,23 @@ fn annotate_seats(
 
 // ── 학적 자리와 소속 ──────────────────────────────────────────
 
-/// 그 학적 자리에 이미 앉아 있는 학생. `ux_student_seat`이 가리키는 한 자리다.
+/// 그 학적 자리를 이미 쓰고 있는 학생. `ux_student_seat`이 가리키는 한 자리다.
+///
+/// **학년도로 다시 거르지 않는다.** 학교가 이미 학년도 안에 있어, 해가 바뀌면
+/// 학교가 새로 만들어지고 자리도 저절로 새로 열린다.
 fn seat_holder(
     conn: &Connection,
     school_id: i64,
-    year_id: i64,
     grade: i64,
     class_no: i64,
     number: i64,
 ) -> Result<Option<(i64, String)>, String> {
     conn.query_row(
         "SELECT id, name FROM student
-          WHERE school_id = ?1 AND year_id = ?2 AND grade = ?3 AND class_no = ?4
-            AND number = ?5 AND enrolled_to IS NULL
+          WHERE school_id = ?1 AND grade = ?2 AND class_no = ?3
+            AND number = ?4 AND enrolled_to IS NULL
           ORDER BY id LIMIT 1",
-        rusqlite::params![school_id, year_id, grade, class_no, number],
+        rusqlite::params![school_id, grade, class_no, number],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )
     .map(Some)
@@ -411,7 +407,7 @@ fn seat_holder(
     })
 }
 
-/// 학생을 내 명단에 잇는다. 예전에 있다가 빠진 학생이면 `left_on`을 지워 되살린다.
+/// 학생을 내 명단에 연결한다. 예전에 있다가 빠진 학생이면 `left_on`을 지워 되살린다.
 ///
 /// 지웠다 다시 넣지 않는 이유는 소속 줄에 달린 것이 없어도 줄 자체가 기록이기 때문이다 —
 /// 언제부터 내 명단이었는지가 남아야 지난 기록이 어느 명단의 것이었는지 말할 수 있다.
@@ -425,7 +421,7 @@ fn join_class(
     //
     // **빠져 있던 기간은 남지 않는다.** `class_member`가 (학급, 학생) 한 쌍에 한 줄이라
     // 소속 기간을 여러 구간으로 담을 수 없기 때문이다. 4월에 빠졌다가 6월에 돌아오면
-    // 5월 격자에도 그 학생이 선다. 소속을 구간으로 바꾸면 모든 명단 질의가 날짜마다
+    // 5월 격자에도 그 학생이 나타난다. 소속을 구간으로 바꾸면 모든 명단 질의가 날짜마다
     // 어느 구간인지 골라야 해서, 실제로 그런 일이 생기는 것을 보기 전에는 값이 비싸다.
     // 그때 고칠 자리는 이 함수와 `class.rs`의 명단 조건 둘뿐이다.
     let revived = conn
@@ -476,20 +472,26 @@ fn hand_over_seat(
 ///
 /// 프론트가 `action`을 바꿔 보낼 수 있다는 것이 요점이다. 번호 같고 이름 다름을
 /// 개명(`renamed`)으로 볼지, 명단 교체(`withdrawn` + `added`)로 볼지는 교사가 정한다.
-/// 자리에 다른 이름이 앉아 있는 줄을 `linked`로 바꾸는 것도 교사다.
+/// 자리를 다른 이름이 쓰고 있는 줄을 `linked`로 바꾸는 것도 교사다.
 pub fn apply_roster_impl(
     conn: &Connection,
     class_id: i64,
     effective_date: &str,
     rows: &[RosterDiffRow],
 ) -> Result<RosterApplyResult, String> {
+    // **형식을 확인하고 자리를 채운 ISO로 맞춘다.** `class_member`의 날짜 비교가
+    // 문자열 비교라, `2026-9-1`이 그대로 들어가면 `joined_on <= 날짜`가 어긋나
+    // 그 학급이 조용히 빈 명단으로 표시된다. 학년도 밖의 날짜는 그대로 받는다 —
+    // 학년도는 기준 연도일 뿐 날짜 울타리가 아니다.
+    let effective_date = &format_date(parse_date(effective_date)?);
     let scope = class_scope(conn, class_id)?;
     // 담임일 때만 자리를 넘겨받을 **권한을 한 번 얻는다.** 교과는 None이다.
     let home: Option<HomeroomSeat> = match scope.role.as_str() {
         "homeroom" => Some(homeroom_seat(&scope)?),
         _ => None,
     };
-    let (school_id, year_id) = (scope.school_id, scope.year_id);
+    // 범위는 학교 하나다. 학년도는 그 학교가 들고 있다.
+    let school_id = scope.school_id;
 
     with_transaction(conn, || {
         let mut result = RosterApplyResult {
@@ -538,28 +540,27 @@ pub fn apply_roster_impl(
                         (None, Some(grade), Some(class_no)) => (grade, class_no),
                         (None, _, _) => {
                             return Err(format!(
-                                "{}: 학년 · 반이 없어 앉힐 자리를 정할 수 없습니다.",
+                                "{}: 학년 · 반이 없어 학적 자리를 정할 수 없습니다.",
                                 where_of(row)
                             ))
                         }
                     };
 
                     // **이미 있는 학생을 다시 만들지 않는다.** 같은 학적 자리에 같은
-                    // 이름이 앉아 있으면 그 학생이고(다른 명단에서 들어온 경우다),
-                    // 명단에만 이으면 된다.
-                    let holder =
-                        seat_holder(conn, school_id, year_id, grade, class_no, row.number)?;
+                    // 이름이 있으면 그 학생이고(다른 명단에서 들어온 경우다),
+                    // 명단에만 연결하면 된다.
+                    let holder = seat_holder(conn, school_id, grade, class_no, row.number)?;
                     let student_id = match holder {
                         Some((id, held)) if held == name => id,
                         Some((id, held)) => {
-                            // 같은 자리에 다른 이름이 앉아 있다.
+                            // 같은 자리를 다른 이름이 쓰고 있다.
                             let Some(seat) = home.as_ref() else {
                                 // 교과는 남의 반 학적을 마감할 수 없다. **조용히 넘기지 않는다.**
                                 return Err(format!(
                                     "{} 자리에는 「{held}」이(가) 있습니다. \
                                      교과 강좌는 남의 반 학적을 마감할 수 없습니다. \
                                      파일의 학년 · 반을 확인하거나, 같은 학생이 맞으면 \
-                                     [그 학생이 맞습니다]를 눌러 명단에만 이으세요.",
+                                     [그 학생이 맞습니다]를 눌러 명단에만 연결하세요.",
                                     where_at(grade, class_no, row.number)
                                 ));
                             };
@@ -573,7 +574,6 @@ pub fn apply_roster_impl(
                             insert_student(
                                 conn,
                                 school_id,
-                                year_id,
                                 grade,
                                 class_no,
                                 row.number,
@@ -586,7 +586,6 @@ pub fn apply_roster_impl(
                             insert_student(
                                 conn,
                                 school_id,
-                                year_id,
                                 grade,
                                 class_no,
                                 row.number,
@@ -600,23 +599,22 @@ pub fn apply_roster_impl(
                 }
                 "linked" => {
                     // 교사가 "그 학생이 맞습니다"를 누른 줄. **학적을 건드리지 않고**
-                    // 명단에만 잇는다. 화면이 보낸 `student_id`를 그대로 믿지 않고
-                    // 그 학교 · 학년도의 재학생인지 확인한다.
+                    // 명단에만 연결한다. 화면이 보낸 `student_id`를 그대로 믿지 않고
+                    // 그 학교의 재학생인지 확인한다.
                     let id = row
                         .student_id
-                        .ok_or_else(|| format!("{}: 이을 학생이 없습니다.", where_of(row)))?;
+                        .ok_or_else(|| format!("{}: 연결할 학생이 없습니다.", where_of(row)))?;
                     let found: i64 = conn
                         .query_row(
                             "SELECT COUNT(*) FROM student
-                              WHERE id = ?1 AND school_id = ?2 AND year_id = ?3
-                                AND enrolled_to IS NULL",
-                            rusqlite::params![id, school_id, year_id],
+                              WHERE id = ?1 AND school_id = ?2 AND enrolled_to IS NULL",
+                            rusqlite::params![id, school_id],
                             |r| r.get(0),
                         )
                         .map_err(|e| e.to_string())?;
                     if found == 0 {
                         return Err(format!(
-                            "{}: 이을 학생을 찾을 수 없습니다: {id}",
+                            "{}: 연결할 학생을 찾을 수 없습니다: {id}",
                             where_of(row)
                         ));
                     }
@@ -647,7 +645,7 @@ pub fn apply_roster_impl(
                     }
                     result.renamed += 1;
                 }
-                // 앉힐 수 없어 넘긴 줄. 아무것도 쓰지 않되 **센다** —
+                // 배치할 수 없어 넘긴 줄. 아무것도 쓰지 않되 **센다** —
                 // 조용히 사라지면 교사가 몇 줄이 빠졌는지 알 방법이 없다.
                 "blocked" => result.blocked += 1,
                 // unchanged / withdrawn(위에서 처리) 은 여기서 할 일이 없다.
@@ -663,7 +661,6 @@ pub fn apply_roster_impl(
 fn insert_student(
     conn: &Connection,
     school_id: i64,
-    year_id: i64,
     grade: i64,
     class_no: i64,
     number: i64,
@@ -672,9 +669,9 @@ fn insert_student(
 ) -> Result<i64, String> {
     conn.execute(
         "INSERT INTO student
-           (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![school_id, year_id, grade, class_no, number, name, enrolled_from],
+           (school_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![school_id, grade, class_no, number, name, enrolled_from],
     )
     .map_err(|e| {
         // 충돌하는 것은 번호가 아니라 **자리**다. 교과는 번호가 겹치는 것이 정상이라
@@ -688,6 +685,56 @@ fn insert_student(
         )
     })?;
     Ok(conn.last_insert_rowid())
+}
+
+/// 학생 한 명을 내 명단에 등록한다. **학기 중 전입생이 오는 길이다.**
+///
+/// 전입생 한 명 때문에 명렬표 파일을 다시 만들게 하지 않는다 — 학기 중에 흔히 발생하고,
+/// 파일을 다시 만들면 나머지 학생이 전부 차분을 거치므로 실수가 끼어들 여지가 커진다.
+///
+/// **역할을 구분하지 않는다.** 교과 강좌에도 수강생이 중간에 추가된다.
+/// 학적 자리가 비어 있으면 새로 만들고, 이미 그 자리에 같은 이름이 있으면 명단에만
+/// 연결한다 — 담임 반 학생이 내 강좌에 추가되는 경우다. 자리에 다른 이름이 있으면
+/// **거절한다.** 그 자리를 비우는 것은 명렬표 차분이 담당하고, 한 명을 추가하는
+/// 동작이 남의 학적을 마감해서는 안 된다.
+pub fn add_student_impl(
+    conn: &Connection,
+    class_id: i64,
+    grade: i64,
+    class_no: i64,
+    number: i64,
+    name: &str,
+    joined_on: &str,
+) -> Result<i64, String> {
+    let scope = class_scope(conn, class_id)?;
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("이름이 비어 있습니다.".to_string());
+    }
+    if grade < 1 || class_no < 1 || number < 1 {
+        return Err(format!(
+            "학년 · 반 · 번호는 1 이상이어야 합니다: {}",
+            where_at(grade, class_no, number)
+        ));
+    }
+    // 형식만 확인하고 자리를 채운 ISO로 맞춘다. **학년도 밖의 날짜도 그대로 받는다** —
+    // 학년도는 기준 연도일 뿐 날짜 울타리가 아니다.
+    let joined_on = &format_date(parse_date(joined_on)?);
+
+    with_transaction(conn, || {
+        let student_id = match seat_holder(conn, scope.school_id, grade, class_no, number)? {
+            Some((id, held)) if held == name => id,
+            Some((_, held)) => {
+                return Err(format!(
+                    "{} 자리에는 「{held}」이(가) 있습니다. \n                     번호를 확인하거나 명렬표 가져오기로 정리해주세요.",
+                    where_at(grade, class_no, number)
+                ))
+            }
+            None => insert_student(conn, scope.school_id, grade, class_no, number, name, joined_on)?,
+        };
+        join_class(conn, scope.id, student_id, joined_on)?;
+        Ok(student_id)
+    })
 }
 
 /// 번호와 이름을 고친다. **내 명단의 학생만, 담임 학급에서만 고친다.**
@@ -749,6 +796,9 @@ pub fn withdraw_student_impl(
     id: i64,
     date: &str,
 ) -> Result<(), String> {
+    // 형식을 확인하고 자리를 채운 ISO로 맞춘다. 깨진 날짜가 `left_on`에 들어가면
+    // 그날 명단을 세는 모든 화면이 그 학생을 잘못 구분한다.
+    let date = &format_date(parse_date(date)?);
     let scope = class_scope(conn, class_id)?;
     let n = conn
         .execute(
@@ -865,6 +915,21 @@ pub fn apply_roster(
 ) -> Result<RosterApplyResult, String> {
     with_conn(&db, |c| {
         apply_roster_impl(c, class_id, &effective_date, &rows)
+    })
+}
+
+#[tauri::command]
+pub fn add_student(
+    db: State<DbState>,
+    class_id: i64,
+    grade: i64,
+    class_no: i64,
+    number: i64,
+    name: String,
+    joined_on: String,
+) -> Result<i64, String> {
+    with_conn(&db, |conn| {
+        add_student_impl(conn, class_id, grade, class_no, number, &name, &joined_on)
     })
 }
 

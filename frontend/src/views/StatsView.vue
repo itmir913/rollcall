@@ -138,6 +138,12 @@ function saveCsv(kind, args, suggested) {
             </UiLedger>
         </template>
 
+        <!-- **세는 창 밖이라 빠진 건.** 학년도는 기준 연도일 뿐이라 2026학년도 학급에도
+             2027년 3월 기록을 남길 수 있는데, 한도는 학년도 창으로 센다. 그 차이를
+             알리지 않으면 통계가 "덜 썼다"고 거짓으로 말한다. -->
+        <UiNotice v-if="stats.outside" kind="warn"
+                  :text="`세는 범위(${stats.window}) 밖이라 한도에 넣지 않은 기록이 ${stats.outside}건 있습니다.`"/>
+
         <UiLedger v-if="stats.untagged.length" class="list--gap"
                   hint="세는 대상인지 아닌지 판단할 수 없는 건이다. 태그를 붙이면 위 표에 들어간다"
                   title="태그가 없는 출결">

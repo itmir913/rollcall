@@ -99,9 +99,9 @@ fn state_of(report: &QuotaReport, student_id: i64) -> String {
 #[test]
 fn 하루에_두_건이어도_날짜_단위에서는_하루다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t_absent) = axes(&conn, "출석인정", "결석");
     let (_, t_early) = axes(&conn, "출석인정", "조퇴");
@@ -121,9 +121,9 @@ fn 하루에_두_건이어도_날짜_단위에서는_하루다() {
 #[test]
 fn 하루에_두_건이면_건수_단위에서는_두_건이다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t_absent) = axes(&conn, "출석인정", "결석");
     let (_, t_early) = axes(&conn, "출석인정", "조퇴");
@@ -144,9 +144,9 @@ fn 하루에_두_건이면_건수_단위에서는_두_건이다() {
 #[test]
 fn 태그가_다르면_세지_않는다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let trip = tag_id(&conn, "체험학습");
     let cramps = tag_id(&conn, "생리통");
     let (r, t) = axes(&conn, "출석인정", "조퇴");
@@ -162,9 +162,9 @@ fn 태그가_다르면_세지_않는다() {
 #[test]
 fn 결석과_조퇴가_같은_태그면_함께_센다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t_absent) = axes(&conn, "출석인정", "결석");
     let (_, t_early) = axes(&conn, "출석인정", "조퇴");
@@ -175,22 +175,22 @@ fn 결석과_조퇴가_같은_태그면_함께_센다() {
 
     let by_tag = add_rule(&conn, "체험학습 연 20일", Some(tag), None, None, "year", 20, "day");
     assert_eq!(
-        used_of(&report(&conn, year, by_tag), s),
+        used_of(&report(&conn, school, by_tag), s),
         2,
         "태그로 세면 결석과 조퇴가 한 규정에 함께 잡힌다"
     );
 
     // 구분 × 종류 조합으로 세면 한쪽을 빠뜨린다 — 태그로 세는 이유다.
     let by_axes = add_rule(&conn, "출석인정 조퇴", None, r, t_early, "year", 20, "day");
-    assert_eq!(used_of(&report(&conn, year, by_axes), s), 1);
+    assert_eq!(used_of(&report(&conn, school, by_axes), s), 1);
 }
 
 #[test]
 fn 구분_조건이_있으면_그_조건까지_맞아야_센다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "생리통");
     let sick = reason_id(&conn, "질병");
     let recognized = reason_id(&conn, "출석인정");
@@ -215,9 +215,9 @@ fn 구분_조건이_있으면_그_조건까지_맞아야_센다() {
 #[test]
 fn 태그도_구분도_없는_규정은_모든_구간을_센다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t) = axes(&conn, "질병", "결석");
 
@@ -239,9 +239,9 @@ fn 태그도_구분도_없는_규정은_모든_구간을_센다() {
 #[test]
 fn 달_단위는_한_달에_두_번이면_넘긴_것이다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "생리통");
     let (r, t) = axes(&conn, "질병", "조퇴");
 
@@ -270,9 +270,9 @@ fn 달_단위는_한_달에_두_번이면_넘긴_것이다() {
 #[test]
 fn 달이_다르면_각각_센다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "생리통");
     let (r, t) = axes(&conn, "질병", "조퇴");
 
@@ -287,36 +287,11 @@ fn 달이_다르면_각각_센다() {
 }
 
 #[test]
-fn 학기_단위는_많이_쓴_학기가_기준이다() {
-    let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
-    let tag = tag_id(&conn, "체험학습");
-    let (r, t) = axes(&conn, "출석인정", "결석");
-
-    // 1학기(3~8월) 한 번, 2학기(9~2월) 세 번.
-    add_span(&conn, class, s, "2026-05-11", r, t, Some(tag));
-    add_span(&conn, class, s, "2026-09-01", r, t, Some(tag));
-    add_span(&conn, class, s, "2026-12-24", r, t, Some(tag));
-    add_span(&conn, class, s, "2027-01-15", r, t, Some(tag));
-
-    let rule = add_rule(&conn, "체험학습 학기 3일", Some(tag), None, None, "semester", 3, "day");
-    let rep = report(&conn, class, rule);
-    let row = rep.rows.iter().find(|x| x.student_id == s).unwrap();
-
-    assert_eq!(row.used, 3);
-    assert_eq!(row.state, "over");
-    assert_eq!(row.dates.len(), 4, "날짜 칸에는 창 전체의 날짜가 들어간다");
-    assert!(row.buckets.is_empty(), "달 단위가 아니면 칸을 채우지 않는다");
-}
-
-#[test]
 fn 학년도_밖의_날짜는_세지_않는다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t) = axes(&conn, "출석인정", "결석");
 
@@ -331,12 +306,76 @@ fn 학년도_밖의_날짜는_세지_않는다() {
     assert_eq!(used_of(&rep, s), 2);
 }
 
+/// **세지 않은 것을 조용히 넘기지 않는다.** 학년도는 기준 연도일 뿐 날짜 울타리가
+/// 아니라, 2026학년도 학급에 2027-03-05를 찍는 일이 실제로 있다. 그 건이 한도에서
+/// 빠진 채 아무 말도 없으면 교사에게 "덜 썼다"고 거짓으로 알리게 된다.
+#[test]
+fn 학년도_밖이라_세지_않은_건수를_함께_알린다() {
+    let conn = setup_test_db();
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
+    let tag = tag_id(&conn, "체험학습");
+    let (r, t) = axes(&conn, "출석인정", "결석");
+
+    add_span(&conn, class, s, "2027-01-15", r, t, Some(tag)); // 2026학년도
+    add_span(&conn, class, s, "2027-03-05", r, t, Some(tag)); // 2027학년도 — 창 밖
+    add_span(&conn, class, s, "2026-02-20", r, t, Some(tag)); // 2025학년도 — 창 밖
+
+    let rule = add_rule(&conn, "체험학습 연 20일", Some(tag), None, None, "year", 20, "day");
+    let rep = report(&conn, class, rule);
+
+    assert_eq!(used_of(&rep, s), 1, "한도는 학년도 창으로 센다");
+    assert_eq!(rep.outside, 2, "창 밖 두 건을 세어서 알린다");
+    assert_eq!(rep.window_from, "2026-03-01");
+    assert_eq!(rep.window_to, "2027-02-28");
+}
+
+#[test]
+fn 창_안에만_기록이_있으면_알릴_것이_없다() {
+    let conn = setup_test_db();
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
+    let tag = tag_id(&conn, "체험학습");
+    let (r, t) = axes(&conn, "출석인정", "결석");
+
+    add_span(&conn, class, s, "2026-05-11", r, t, Some(tag));
+
+    let rule = add_rule(&conn, "체험학습 연 20일", Some(tag), None, None, "year", 20, "day");
+    let rep = report(&conn, class, rule);
+
+    assert_eq!(used_of(&rep, s), 1);
+    assert_eq!(rep.outside, 0);
+}
+
+/// 태그 누락 목록도 창으로 잘린다. 그쪽에서 빠진 건도 같이 센다 —
+/// 세는 쪽에서 빠지는 것과 목록에서 빠지는 것이 교사에게는 같은 일이다.
+#[test]
+fn 창_밖의_태그_누락_건도_세어서_알린다() {
+    let conn = setup_test_db();
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
+    let tag = tag_id(&conn, "체험학습");
+    let (r, t) = axes(&conn, "출석인정", "결석");
+
+    add_span(&conn, class, s, "2027-03-05", r, t, None); // 태그 없음 + 창 밖
+
+    let rule = add_rule(&conn, "체험학습 연 20일", Some(tag), None, None, "year", 20, "day");
+    let rep = report(&conn, class, rule);
+
+    assert_eq!(used_of(&rep, s), 0);
+    assert!(rep.untagged.is_empty(), "창 밖이라 목록에도 없다");
+    assert_eq!(rep.outside, 1, "그래서 세어서 알린다");
+}
+
 #[test]
 fn from_to로_창을_좁힌다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t) = axes(&conn, "출석인정", "결석");
 
@@ -356,6 +395,10 @@ fn from_to로_창을_좁힌다() {
     .remove(0);
 
     assert_eq!(used_of(&rep, s), 1);
+    // 교사가 좁힌 창도 마찬가지다 — 밖으로 나간 두 건을 세어서 알린다.
+    assert_eq!(rep.outside, 2);
+    assert_eq!(rep.window_from, "2026-06-01");
+    assert_eq!(rep.window_to, "2026-06-30");
 }
 
 // ── 상태 ──────────────────────────────────────────────────────
@@ -363,9 +406,9 @@ fn from_to로_창을_좁힌다() {
 #[test]
 fn 한도의_80퍼센트부터_near다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (r, t) = axes(&conn, "출석인정", "결석");
     let rule = add_rule(&conn, "체험학습 연 10일", Some(tag), None, None, "year", 10, "day");
@@ -404,10 +447,10 @@ fn 한도의_80퍼센트부터_near다() {
 #[test]
 fn 기록이_없는_학생도_행으로_나온다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let a = enroll(&conn, class, year, 1, "김하나");
-    let b = enroll(&conn, class, year, 2, "이두리");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let a = enroll(&conn, class, school, 1, "김하나");
+    let b = enroll(&conn, class, school, 2, "이두리");
     let tag = tag_id(&conn, "체험학습");
     let (r, t) = axes(&conn, "출석인정", "결석");
     add_span(&conn, class, a, "2026-05-11", r, t, Some(tag));
@@ -427,9 +470,9 @@ fn 기록이_없는_학생도_행으로_나온다() {
 #[test]
 fn 태그가_빠진_구간을_따로_모은다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (recognized, absent) = axes(&conn, "출석인정", "결석");
     let (sick, _) = axes(&conn, "질병", "결석");
@@ -456,9 +499,9 @@ fn 태그가_빠진_구간을_따로_모은다() {
 #[test]
 fn 추가_조건이_있으면_그_조건에_맞는_것만_태그_누락으로_본다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "생리통");
     let sick = reason_id(&conn, "질병");
     let recognized = reason_id(&conn, "출석인정");
@@ -486,9 +529,9 @@ fn 추가_조건이_있으면_그_조건에_맞는_것만_태그_누락으로_�
 #[test]
 fn 미완성_기록과_열린_구간도_태그_누락_목록에_들어간다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let recognized = reason_id(&conn, "출석인정");
 
@@ -521,9 +564,9 @@ fn 구간_표기는_다른_화면과_같은_문장이다() {
     // 태그 누락 목록은 `attendance::load_spans_on`이 읽는다. 여기서 질의를 따로
     // 만들면 같은 기록이 출결 기록과 통계에서 서로 다른 문장으로 보인다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let (recognized, absent) = axes(&conn, "출석인정", "결석");
 
@@ -554,9 +597,9 @@ fn 구간_표기는_다른_화면과_같은_문장이다() {
 #[test]
 fn 겹치는_구간은_막지_않고_표시만_한다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let s = enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let s = enroll(&conn, class, school, 1, "김하나");
     let tag = tag_id(&conn, "체험학습");
     let recognized = reason_id(&conn, "출석인정");
     let result_type = type_id(&conn, "결과");
@@ -610,9 +653,9 @@ fn 겹치는_구간은_막지_않고_표시만_한다() {
 #[test]
 fn 마감된_규정은_세지_않는다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    enroll(&conn, class, school, 1, "김하나");
     let retired = quota_rule_id(&conn, "생리통 월 1회");
     conn.execute(
         "UPDATE quota_rule SET valid_to = '2026-08-31' WHERE id = ?1",
@@ -635,9 +678,9 @@ fn 마감된_규정은_세지_않는다() {
 #[test]
 fn 규정에_태그_이름이_함께_온다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    enroll(&conn, class, year, 1, "김하나");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    enroll(&conn, class, school, 1, "김하나");
     let rule = quota_rule_id(&conn, "체험학습 연 20일");
     let rep = report(&conn, class, rule);
 
@@ -660,8 +703,8 @@ fn 없는_학급은_오류다() {
 fn 교과_강좌로는_담임_통계를_볼_수_없다() {
     // 담임 화면에 교과의 숫자가 한 줄도 나오면 안 된다. 반대도 마찬가지다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+    let school = school_id(&conn);
+    let subject = insert_class(&conn, school, "subject", "지구과학Ⅰ", None, None);
     let err = get_quota_reports_impl(&conn, subject, None, None, None).unwrap_err();
     assert!(err.contains("담임 학급이 아닙니다"), "{err}");
 }
@@ -669,8 +712,8 @@ fn 교과_강좌로는_담임_통계를_볼_수_없다() {
 #[test]
 fn 없는_규정은_오류다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let err = get_quota_reports_impl(&conn, class, Some(9999), None, None).unwrap_err();
     assert!(err.contains("한도 규정을 찾을 수 없습니다"), "{err}");
 }
@@ -678,8 +721,8 @@ fn 없는_규정은_오류다() {
 #[test]
 fn 날짜_형식이_틀리면_오류다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let err = get_quota_reports_impl(&conn, class, None, Some("2026.06.01"), None).unwrap_err();
     assert!(err.contains("날짜 형식이 올바르지 않습니다"), "{err}");
 }
@@ -689,12 +732,12 @@ fn 날짜_형식이_틀리면_오류다() {
 #[test]
 fn 다른_학급_학생은_섞이지_않는다() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     // **같은 학생을 두 학급에 넣는다.** 학급마다 다른 학생을 쓰면 학적으로 거르던
     // 옛 질의로도 통과해, 이 테스트가 주장하는 것을 확인하지 못한다.
-    let mine = enroll(&conn, class, year, 1, "김하나");
-    let next_door = insert_class(&conn, year, "homeroom", "3학년 7반", Some(3), Some(7));
+    let mine = enroll(&conn, class, school, 1, "김하나");
+    let next_door = insert_class(&conn, school, "homeroom", "3학년 7반", Some(3), Some(7));
     join_class(&conn, next_door, mine);
 
     let tag = tag_id(&conn, "체험학습");

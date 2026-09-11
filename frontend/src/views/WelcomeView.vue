@@ -11,14 +11,14 @@
  * ```
  *
  * 이 화면은 **첫 실행에서만** 지나간다. 매일 열자마자 바로 입력할 수 있어야 하므로
- * 개요가 곧 기본 화면이고, 여기는 그 앞에 한 번 서는 자리다.
+ * 개요가 곧 기본 화면이고, 여기는 그 앞에 한 번 나타나는 자리다.
  *
  * **단계를 눌러 앞뒤로 오간다.** 앞 단계를 잠그면 학교 이름을 잘못 적은 교사가
  * 되돌아갈 길이 없어 앱을 껐다 켜게 된다. 잠그는 것은 하나뿐이다 — 맡은 것을 하나도
  * 등록하지 않으면 완료로 갈 수 없다. 그때도 **단추를 숨기지 않고 `disabled`로 둔다.**
  * 단추가 사라지면 화면이 움직이고, 교사는 자기가 무엇을 놓쳤는지 알 수 없다.
  *
- * **담임과 교과를 여기서는 함께 등록한다.** 화면이 갈리는 것은 등록을 마친 다음부터다 —
+ * **담임과 교과를 여기서는 함께 등록한다.** 화면이 분리되는 것은 등록을 마친 다음부터다 —
  * 맡은 것이 아직 하나도 없는 상태에서 모드를 먼저 고르게 하면, 교사는 자기가 무엇을
  * 고르는지 모르는 채 고르게 된다.
  */
@@ -51,8 +51,9 @@ const error = ref('')
 const dueDays = ref(7)
 const homeroomForm = ref({grade: 3, classNo: 1})
 const subjectForm = ref({name: ''})
+const newSchoolName = ref('')
 
-/** 명렬표를 펼친 학급. 한 번에 하나만 연다 — 두 개가 열리면 어느 명단인지 흐려진다. */
+/** 명렬표를 연 학급. 한 번에 하나만 연다 — 두 개가 열리면 어느 명단인지 흐려진다. */
 const openId = ref(null)
 
 /** 학급마다 지금 명단에 있는 인원. 넣고 나면 몇 명인지 보여야 한다. */
@@ -60,6 +61,8 @@ const counts = ref({})
 
 /** 이번 학년도가 열리고 닫히는 날. 교사에게 되묻지 않고 오늘 날짜로 채운 값이다. */
 const span = computed(() => yearSpanOf(app.currentYear?.year ?? academicYearOf(app.today)))
+
+const yearLabel = computed(() => `${app.currentYear?.year ?? academicYearOf(app.today)}학년도`)
 
 const hasClasses = computed(() => app.classes.length > 0)
 
@@ -69,14 +72,6 @@ const hasClasses = computed(() => app.classes.length > 0)
  */
 const totalStudents = computed(() =>
     app.classes.reduce((sum, cls) => sum + (counts.value[cls.id] ?? 0), 0))
-
-/**
- * 학교를 더할 수 있는가. 순회 교사만 누르는 자리라 점선 단추로 눈에 띄지 않게 둔다.
- *
- * 스토어에 액션이 아직 없으면 **잠근 채로 그린다.** 눌러도 아무 일이 없는 단추보다
- * 잠긴 단추가 낫고, 자리를 비우면 액션이 들어온 날 화면이 달라진다.
- */
-const canAddSchool = computed(() => typeof school.createSchool === 'function')
 
 /** 완료로 갈 수 없는 단계. 맡은 것이 하나도 없으면 요약할 것도 없다. */
 function blocked(n) {
@@ -98,12 +93,31 @@ function next() {
 }
 
 /**
- * 학년도를 고른다. **여기서는 앱 상태만 바꾼다** — 이 값이 DB에 적히는 것은
- * 학급을 고르는 순간이다(`app.selectClass`가 `yearId`를 함께 저장한다).
- * 학급마다 학년도가 붙어 있으므로, 학급 없이 학년도만 저장해 둘 자리가 없다.
+ * 학년도를 고른다. **스토어 액션을 거친다** — 상태에 직접 대입하면 학교 목록도
+ * 맡은 것 목록도 지난 학년도의 것으로 남는다. 학년도가 둘 이상이 되는 순간
+ * 다음 단계가 다른 학년도의 학교를 보여주게 된다.
  */
-function pickYear(yearId) {
-    app.yearId = yearId
+async function pickYear(yearId) {
+    if (yearId === app.yearId) return
+    error.value = ''
+    try {
+        await app.selectYear(yearId)
+    } catch (e) {
+        error.value = String(e)
+    }
+}
+
+/** 학교를 고른다. 아래의 최대 교시 · 제출 기한과 다음 단계의 맡은 것이 그 학교의 것이 된다. */
+async function pickSchool(schoolId) {
+    if (schoolId === app.schoolId) return
+    error.value = ''
+    try {
+        await app.selectSchool(schoolId)
+        await school.fetchAll()
+        dueDays.value = school.school?.dueDays ?? 7
+    } catch (e) {
+        error.value = String(e)
+    }
 }
 
 /** 학교가 둘 이상일 때만 학급 줄에 붙는 이름표. 하나뿐이면 적을 것이 없다. */
@@ -135,12 +149,28 @@ async function saveDueDays() {
     })
 }
 
+/**
+ * 학교를 만든다. **첫 실행에는 학교가 하나도 없다** — 시드가 만들지 않기 때문이다.
+ * 학교는 학년도 안에 있고 해마다 달라지므로, 미리 하나 만들어 두면 그 학교가 어느
+ * 학년도의 것인지 아무도 정한 적이 없는 상태가 된다.
+ *
+ * **반드시 이 길로 만든다.** 학교를 만들 때 기본 출결 태그와 한도 규정이 함께
+ * 들어가므로, 행만 따로 만들면 그 학교는 빈 목록으로 시작한다.
+ */
 async function addSchool() {
-    if (!canAddSchool.value) return
+    const name = newSchoolName.value.trim()
+    if (!name) {
+        error.value = '학교 이름을 적어주세요.'
+        return
+    }
     error.value = ''
     try {
-        await school.createSchool({name: '새 학교', maxSlot: 7, dueDays: 7})
-        await app.refreshSchool()
+        const id = await school.createSchool({name})
+        newSchoolName.value = ''
+        // 만든 학교로 옮겨야 아래의 최대 교시 · 제출 기한이 그 학교를 가리킨다.
+        if (id != null) await app.selectSchool(id)
+        await school.fetchAll()
+        dueDays.value = school.school?.dueDays ?? 7
     } catch (e) {
         error.value = String(e)
     }
@@ -177,9 +207,15 @@ async function addSubject() {
     if (id != null) subjectForm.value.name = ''
 }
 
-/** 만들고, 인원을 다시 세고, 그 학급의 명렬표를 바로 펼친다. 다음에 할 일이 그것이다. */
+/** 만들고, 인원을 다시 세고, 그 학급의 명렬표를 바로 연다. 다음에 할 일이 그것이다. */
 async function add(payload) {
     error.value = ''
+    // 맡은 것은 학교에 소속된다. 학교 없이 만들면 커맨드가 거절하는데, 그 문구는
+    // 앞 단계로 돌아가라는 말을 하지 않는다.
+    if (app.schoolId == null) {
+        error.value = '학교를 먼저 만들어 주세요. 앞 단계에서 이름을 적으면 됩니다.'
+        return null
+    }
     try {
         // **교과 강좌를 더했다고 모드가 넘어가지 않는다.** `selectClass`가 모드를
         // `app_config`에 저장하므로, 교과를 마지막으로 더한 교사는 다음 실행이
@@ -197,8 +233,8 @@ async function add(payload) {
 }
 
 /**
- * 명렬표를 펼친다. **담임 학급이면 그 학급을 함께 고른다** — 명단이 붙는 곳은 지금
- * 고른 학급이라, 펼친 줄과 고른 학급이 어긋나면 다른 반 명단에 들어간다.
+ * 명렬표를 연다. **담임 학급이면 그 학급을 함께 고른다** — 명단이 붙는 곳은 지금
+ * 고른 학급이라, 열린 줄과 고른 학급이 어긋나면 다른 반 명단에 들어간다.
  *
  * **교과 강좌에서는 고르지 않는다.** `selectClass`는 모드를 `app_config`에 저장하므로,
  * 온보딩 끝에 교과 명렬표를 마지막으로 만진 교사는 다음 실행이 교과 모드로 열린다.
@@ -223,7 +259,7 @@ async function toggleRoster(cls) {
  * 세는 동안에는 아래 워처를 멈춘다.
  *
  * 스토어의 명단은 하나뿐이라, 학급을 돌며 읽는 사이에 워처가 끼어들어 **지금 읽은
- * 다른 학급의 인원**을 펼쳐 둔 학급 칸에 적는다. 30명을 막 넣은 줄이 `0명`으로
+ * 다른 학급의 인원**을 열어 둔 학급 칸에 적는다. 30명을 막 넣은 줄이 `0명`으로
  * 되돌아가면, 교사는 저장이 안 된 줄 알고 다시 넣는다.
  */
 let counting = false
@@ -314,53 +350,67 @@ onMounted(async () => {
             </template>
         </UiLedger>
 
-        <!-- 3 학교 ─ 이름 · 최대 교시 · 서류 제출 기한 -->
-        <UiLedger v-if="step === 3" hint="학교마다 따로 가지는 값입니다" title="학교">
+        <!-- 3 학교 ─ 만들기 · 이름 · 최대 교시 · 서류 제출 기한 -->
+        <UiLedger v-if="step === 3" hint="학년도 안에 있습니다 · 학교마다 따로 가지는 값입니다"
+                  title="학교">
             <div class="set__row">
-                <span class="set__label">학교 이름</span>
+                <span class="set__label">{{ yearLabel }}의 학교</span>
                 <span class="set__value">
-                    <!-- 읽지 못했으면 잠근다. 빈 칸에 적어 저장하면 무엇을 고치는지 알 수 없다. -->
-                    <input :disabled="!school.school" :value="school.school?.name ?? ''"
-                           class="field" placeholder="한빛고등학교" type="text"
-                           @change="saveName($event.target.value)"/>
-                </span>
-            </div>
-            <div class="set__row">
-                <span class="set__label">최대 교시</span>
-                <span class="set__value">
-                    <button v-for="n in MAX_SLOT_CHOICES" :key="n"
-                            :class="['pick', 'pick--slot', school.school?.maxSlot === n ? 'is-on' : '']"
-                            :disabled="!school.school" type="button"
-                            @click="school.saveSchool({maxSlot: n}).catch(() => {})">
-                        {{ n }}
+                    <button v-for="s in app.schools" :key="s.id"
+                            :class="['pick', app.schoolId === s.id ? 'is-on' : '']"
+                            type="button" @click="pickSchool(s.id)">
+                        {{ s.name }}
                     </button>
-                    <span class="set__hint">조회와 종례는 언제나 하루의 양 끝입니다</span>
-                </span>
-            </div>
-            <div class="set__row">
-                <span class="set__label">서류 제출 기한</span>
-                <span class="set__value">
-                    <input v-model="dueDays" :disabled="!school.school" class="field num" min="0"
-                           type="number" @change="saveDueDays"/>
-                    <span class="set__hint">일</span>
-                    <span class="set__hint">결석일로부터 셉니다. 미제출자 명단의 마감이 이 값으로 계산됩니다</span>
-                </span>
-            </div>
-            <div class="set__row">
-                <span class="set__label">학교 추가</span>
-                <span class="set__value">
-                    <button :disabled="!canAddSchool" class="dashed" type="button" @click="addSchool">
-                        ＋ 학교 추가
-                    </button>
+                    <input v-model="newSchoolName" class="field" placeholder="한빛고등학교"
+                           type="text" @keyup.enter="addSchool"/>
+                    <UiButton size="tight" variant="primary" @click="addSchool">학교 추가</UiButton>
                     <span class="set__hint">
-                        {{
-                            canAddSchool
-                                ? '순회 교사만 누릅니다. 학교가 둘이 되면 학급 줄에 학교 이름표가 붙습니다'
-                                : '학교를 더하는 것은 아직 열리지 않았습니다 — 지금은 학교 하나를 씁니다'
-                        }}
+                        순회 교사는 둘 이상을 맡습니다. 고른 학교에 아래 값과 맡은 것이 붙습니다
                     </span>
                 </span>
             </div>
+
+            <!-- 첫 실행의 정상 상태다. 빈 칸만 늘어놓으면 무엇을 고치는지 알 수 없다. -->
+            <div v-if="!school.school" class="set__row">
+                <span class="set__label">아직 없습니다</span>
+                <span class="set__value">
+                    <span class="set__hint">
+                        위에 학교 이름을 적어 만들면 최대 교시와 서류 제출 기한을 여기서 정합니다
+                    </span>
+                </span>
+            </div>
+
+            <template v-else>
+                <div class="set__row">
+                    <span class="set__label">학교 이름</span>
+                    <span class="set__value">
+                        <input :value="school.school?.name ?? ''" class="field"
+                               placeholder="한빛고등학교" type="text"
+                               @change="saveName($event.target.value)"/>
+                    </span>
+                </div>
+                <div class="set__row">
+                    <span class="set__label">최대 교시</span>
+                    <span class="set__value">
+                        <button v-for="n in MAX_SLOT_CHOICES" :key="n"
+                                :class="['pick', 'pick--slot', school.school?.maxSlot === n ? 'is-on' : '']"
+                                type="button"
+                                @click="school.saveSchool({maxSlot: n}).catch(() => {})">
+                            {{ n }}
+                        </button>
+                        <span class="set__hint">조회와 종례는 언제나 하루의 양 끝입니다</span>
+                    </span>
+                </div>
+                <div class="set__row">
+                    <span class="set__label">서류 제출 기한</span>
+                    <span class="set__value">
+                        <input v-model="dueDays" class="field num" min="0" type="number"
+                               @change="saveDueDays"/>
+                        <span class="set__hint">일</span>
+                        <span class="set__hint">결석일로부터 셉니다. 미제출자 명단의 마감이 이 값으로 계산됩니다</span>
+                    </span>
+                </div>
+            </template>
         </UiLedger>
 
         <!-- 4 맡은 것 ─ 담임 학급 · 교과 강좌 -->
@@ -497,7 +547,7 @@ onMounted(async () => {
 
 <style scoped>
 /* 단계 표시를 눌러 오간다. 모양은 style.css의 `.step`이 정하고, 여기서는
- * 버튼의 기본 상자만 지운다 — 색과 글자 굵기를 다시 적으면 두 곳이 갈라진다. */
+ * 버튼의 기본 상자만 지운다 — 색과 글자 굵기를 다시 적으면 두 곳이 분리된다. */
 .steps .step {
     background: transparent;
     border: 0;
@@ -523,25 +573,6 @@ onMounted(async () => {
 .mine__panel {
     padding: var(--s-lg) var(--s-2xl);
     border-top: 1px solid var(--c-line-soft);
-}
-
-/* 순회 교사만 누르는 자리라 점선으로 눌러 둔다. */
-.dashed {
-    padding: var(--s-xs) var(--s-lg);
-    border: 1px dashed var(--c-line);
-    border-radius: var(--r-sm);
-    background: transparent;
-    color: var(--c-ink-3);
-    cursor: pointer;
-}
-
-.dashed:hover:not(:disabled) {
-    border-color: var(--c-accent);
-    color: var(--c-accent);
-}
-
-.dashed:disabled {
-    cursor: default;
 }
 
 /* 요약의 학급 이름표. 누르는 것이 아니므로 칩(`.chip`)을 쓰지 않는다 —

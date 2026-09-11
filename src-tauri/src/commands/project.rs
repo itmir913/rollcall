@@ -50,8 +50,8 @@ fn backup(path: &Path) -> Result<(), String> {
 
 /// 파일 하나를 열거나 만든다. 커넥션과 그 상태를 함께 돌려준다.
 ///
-/// `AppHandle`에서 경로를 얻는 일만 래퍼에 남긴다. 여기서 갈리는 것 — 새 파일인지,
-/// 백업을 떴는지, 마이그레이션이 필요한지 — 는 전부 이 함수가 정한다.
+/// `AppHandle`에서 경로를 얻는 일만 래퍼에 남긴다. 여기서 구분되는 것 — 새 파일인지,
+/// 백업을 만들었는지, 마이그레이션이 필요한지 — 는 전부 이 함수가 정한다.
 pub fn init_db_impl(path: &Path) -> Result<(Connection, DbStatus), String> {
     let exists = path.exists();
 

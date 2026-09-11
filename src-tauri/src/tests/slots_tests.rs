@@ -8,7 +8,7 @@
 //!
 //! 순서 · 표기 · 묶기는 프런트의 `services/slots.js`가 같은 규칙을 따로 구현한다.
 //! 그래서 그 셋은 **`slot_vectors.json` 한 파일**을 양쪽 테스트가 읽어 비교한다.
-//! 기대값을 양쪽에 손으로 베껴 두면 구현이 갈라질 때 테스트도 함께 갈라진다.
+//! 기대값을 양쪽에 손으로 복사해 두면 구현이 달라질 때 테스트도 함께 달라진다.
 //! 나머지(구간 검사 · 겹침 · slot_prompt)는 Rust에만 있어 여기서만 확인한다.
 
 use crate::slots::*;
@@ -123,7 +123,7 @@ fn ordinal_matches_the_shared_vectors() {
 
 #[test]
 fn ordinal_matches_the_position_in_the_list() {
-    // 목록의 순서와 ordinal이 어긋나면 화면의 버튼 순서와 저장된 구간이 갈라진다.
+    // 목록의 순서와 ordinal이 어긋나면 화면의 버튼 순서와 저장된 구간이 달라진다.
     for max_slot in 1..=9 {
         for (index, slot) in slots(max_slot).iter().enumerate() {
             assert_eq!(
@@ -204,7 +204,7 @@ fn validate_accepts_a_single_period_span() {
 
 #[test]
 fn validate_accepts_open_ends() {
-    // 열린 구간이 정상 상태다. 슬롯을 펼치지 않기 때문이다.
+    // 열린 구간이 정상 상태다. 슬롯을 전개하지 않기 때문이다.
     assert!(validate_span(None, None, 7).is_ok());
     assert!(validate_span(Some("5"), None, 7).is_ok());
     assert!(validate_span(None, Some("3"), 7).is_ok());
@@ -298,11 +298,11 @@ fn overlap_widens_an_unknown_token_to_the_whole_day() {
     assert!(validate_span(Some("9"), Some("9"), 7).is_err());
 }
 
-// ─── 이어진 교시 묶기 ──────────────────────────────────────────
+// ─── 연속한 교시 묶기 ──────────────────────────────────────────
 
 #[test]
 fn group_runs_matches_the_shared_vectors() {
-    // 이어지지 않은 것을 한 구간으로 저장하면 사이의 교시가 조용히 포함된다.
+    // 연속하지 않은 것을 한 구간으로 저장하면 사이의 교시가 조용히 포함된다.
     for case in vectors().group_runs {
         assert_eq!(
             group_runs(case.periods.clone()),
@@ -314,7 +314,7 @@ fn group_runs_matches_the_shared_vectors() {
     }
 }
 
-// ─── 갈라진 자리 ───────────────────────────────────────────────
+// ─── 달라지는 자리 ─────────────────────────────────────────────
 
 #[test]
 fn recorded_divergences_still_behave_as_recorded() {

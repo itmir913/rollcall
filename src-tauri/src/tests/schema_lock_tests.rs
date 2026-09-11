@@ -7,7 +7,7 @@
 //! `schema_history/vN.sql`은 배포된 구조의 기록이므로 절대 수정하지 않는다.
 
 use crate::db::SCHEMA_VERSION;
-use crate::tests::setup_test_db;
+use crate::tests::setup_seed_db;
 use rusqlite::Connection;
 
 /// 각 버전의 스키마 스냅샷. 새 버전을 추가할 때만 항목이 늘어난다.
@@ -60,7 +60,7 @@ fn schema_objects(sql: &str) -> String {
 ///
 /// **첫 릴리스 이후에는 이 테스트의 뜻이 바뀐다.** 그때부터는 배포된 구조가 함부로 움직이지
 /// 않는지 보는 잠금장치다. 버전을 올려야 할 진짜 이유가 생기면 CLAUDE.md의 DB SCHEMA RULES를
-/// 전부 밟은 뒤 이 상수를 함께 올린다 — 테스트를 지우고 지나가지 말 것.
+/// 전부 수행한 뒤 이 상수를 함께 올린다 — 테스트를 지우고 지나가지 말 것.
 #[test]
 fn schema_version_is_pinned_to_one() {
     const PINNED: u32 = 1;
@@ -152,23 +152,47 @@ fn column(conn: &Connection, sql: &str) -> Vec<String> {
         .unwrap()
 }
 
-/// 학교는 하나로 시작한다. 순회 교사가 둘째 학교를 등록하는 것은 설정에서 할 일이고,
-/// 시드가 미리 만들어 두면 어느 쪽이 진짜인지 알 수 없다.
+/// **시드는 학교를 만들지 않는다.** 학교는 학년도 안에 있고 학년도는 교사가 첫 실행에서
+/// 정하므로, 시드가 학교를 미리 만들면 그 행이 어느 학년도의 것인지 정의되지 않는다.
 #[test]
-fn seed_creates_a_single_school() {
-    let conn = setup_test_db();
+fn seed_creates_no_school() {
+    let conn = setup_seed_db();
     assert_eq!(
         count(&conn, "SELECT COUNT(*) FROM school"),
-        1,
-        "시드는 학교 한 행으로 시작한다"
+        0,
+        "학교는 create_school이 만든다"
     );
 }
 
-/// 최대 교시와 제출 기한은 학교 행이 들고 있다. 흔한 값일 뿐 규정이 아니지만,
-/// 기본값이 바뀌면 설정 화면과 마감 계산이 함께 움직여야 하므로 여기서 잡는다.
+/// 학교마다 다른 기본값(출결 태그 · 한도 규정)도 시드에 없다.
+///
+/// 시드는 한 번만 도는데 학교는 여럿 만들어진다 — 여기 두면 **첫 학교만 태그를 받고
+/// 두 번째 학교는 빈 목록으로 시작한다.** 그 기본값은 `create_school`이 넣는다.
 #[test]
-fn seed_school_carries_the_school_level_settings() {
-    let conn = setup_test_db();
+fn seed_holds_no_school_level_defaults() {
+    let conn = setup_seed_db();
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM span_tag"), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM quota_rule"), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM class_tag"), 0);
+    assert_eq!(count(&conn, "SELECT COUNT(*) FROM off_day"), 0);
+}
+
+/// 최대 교시와 제출 기한의 **스키마 기본값**. 흔한 값일 뿐 규정이 아니지만,
+/// 이 값이 바뀌면 설정 화면과 마감 계산이 함께 움직여야 하므로 여기서 잡는다.
+#[test]
+fn the_school_table_defaults_to_the_common_settings() {
+    let conn = setup_seed_db();
+    conn.execute(
+        "INSERT INTO academic_year (year) VALUES (2026)",
+        [],
+    )
+    .unwrap();
+    let year = conn.last_insert_rowid();
+    conn.execute(
+        "INSERT INTO school (year_id, name) VALUES (?1, '우리 학교')",
+        rusqlite::params![year],
+    )
+    .unwrap();
     let (max_slot, due_days, skip): (i64, i64, i64) = conn
         .query_row(
             "SELECT max_slot, due_days, due_skip_offdays FROM school",
@@ -186,7 +210,7 @@ fn seed_school_carries_the_school_level_settings() {
 /// 학교를 등록하는 날 그 값을 읽는 모든 곳을 다시 찾아야 한다.
 #[test]
 fn school_settings_do_not_live_in_app_config() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     let leaked = count(
         &conn,
         "SELECT COUNT(*) FROM app_config
@@ -198,72 +222,11 @@ fn school_settings_do_not_live_in_app_config() {
     );
 }
 
-/// 태그는 세는 대상이다. 기본값 둘이 없으면 한도 규정이 가리킬 곳이 없다.
-#[test]
-fn seed_tags_are_the_two_defaults() {
-    let conn = setup_test_db();
-    let names = column(
-        &conn,
-        "SELECT name FROM span_tag WHERE valid_to IS NULL ORDER BY sort_order",
-    );
-    assert_eq!(names, vec!["체험학습", "생리통"]);
-}
-
-/// 한도 규정은 태그를 가리킨다. 구분 × 종류 조합으로 세면 체험학습 조퇴를
-/// 빠뜨리거나 교외 대회까지 섞인다.
-#[test]
-fn seed_quota_rules_point_at_the_seeded_tags() {
-    let conn = setup_test_db();
-
-    let untagged = count(
-        &conn,
-        "SELECT COUNT(*) FROM quota_rule WHERE valid_to IS NULL AND tag_id IS NULL",
-    );
-    assert_eq!(untagged, 0, "시드의 한도 규정은 전부 태그를 가리킨다");
-
-    let pairs = column(
-        &conn,
-        "SELECT t.name FROM quota_rule q
-         JOIN span_tag t ON t.id = q.tag_id
-         WHERE q.valid_to IS NULL
-         ORDER BY q.sort_order",
-    );
-    assert_eq!(pairs, vec!["체험학습", "생리통"]);
-}
-
-/// 규정과 태그는 같은 학교에 속한다. 학교가 달라지면 다른 학교의 태그를 세게 된다.
-#[test]
-fn quota_rules_and_tags_belong_to_the_same_school() {
-    let conn = setup_test_db();
-    let crossed = count(
-        &conn,
-        "SELECT COUNT(*) FROM quota_rule q
-         JOIN span_tag t ON t.id = q.tag_id
-         WHERE q.school_id <> t.school_id",
-    );
-    assert_eq!(crossed, 0);
-}
-
-/// 한도 규정의 기간과 단위는 코드가 아는 값이어야 한다. 스키마의 CHECK가 잡지만,
-/// 시드가 그 안에 있다는 사실을 한 번 더 못 박는다.
-#[test]
-fn seed_quota_rules_use_known_periods_and_units() {
-    let conn = setup_test_db();
-    let bad = count(
-        &conn,
-        "SELECT COUNT(*) FROM quota_rule
-         WHERE period NOT IN ('year', 'semester', 'month')
-            OR unit NOT IN ('day', 'count')
-            OR limit_n <= 0",
-    );
-    assert_eq!(bad, 0);
-}
-
 /// 종류의 `slot_prompt`는 데이터지만, 코드가 해석하는 값이다. DB에만 있고 코드가
 /// 모르는 값이 들어오면 교시를 묻는 화면이 조용히 아무것도 안 묻는다.
 #[test]
 fn every_seeded_slot_prompt_is_known_to_the_code() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     let prompts = column(&conn, "SELECT DISTINCT slot_prompt FROM attendance_type");
     assert!(!prompts.is_empty(), "시드에 종류가 없다");
     for prompt in &prompts {
@@ -278,7 +241,7 @@ fn every_seeded_slot_prompt_is_known_to_the_code() {
 /// 앱을 처음 켠 상태에서 한 번도 실행되지 않는다.
 #[test]
 fn seeded_types_cover_every_slot_prompt() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     let prompts = column(&conn, "SELECT DISTINCT slot_prompt FROM attendance_type");
     for expected in crate::slots::SLOT_PROMPTS {
         assert!(
@@ -292,7 +255,7 @@ fn seeded_types_cover_every_slot_prompt() {
 /// 곱과 비교한다 — 축이 늘면 곱도 함께 늘어야 한다.
 #[test]
 fn every_reason_type_pair_has_a_code() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     let reasons = count(
         &conn,
         "SELECT COUNT(*) FROM attendance_reason WHERE valid_to IS NULL",
@@ -328,7 +291,7 @@ fn every_reason_type_pair_has_a_code() {
 /// 코드 라벨은 구분 라벨 + 종류 라벨이다. 화면과 내보내기가 이 규칙을 전제한다.
 #[test]
 fn code_label_is_the_two_axis_labels_joined() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     let mismatched = count(
         &conn,
         "SELECT COUNT(*) FROM attendance_code c
@@ -342,7 +305,7 @@ fn code_label_is_the_two_axis_labels_joined() {
 /// 나이스 검증이 기본 표기부터 읽지 못하면 첫 대조에서 전부 불일치로 나온다.
 #[test]
 fn every_code_has_an_alias_for_its_own_label() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     let missing = count(
         &conn,
         "SELECT COUNT(*) FROM attendance_code c
@@ -356,14 +319,8 @@ fn every_code_has_an_alias_for_its_own_label() {
 /// 출결을 입력할 때 목록이 통째로 빈다.
 #[test]
 fn seeded_rows_are_valid_from_the_distant_past() {
-    let conn = setup_test_db();
-    for table in [
-        "attendance_reason",
-        "attendance_type",
-        "attendance_code",
-        "span_tag",
-        "quota_rule",
-    ] {
+    let conn = setup_seed_db();
+    for table in ["attendance_reason", "attendance_type", "attendance_code"] {
         let late = count(
             &conn,
             &format!("SELECT COUNT(*) FROM {table} WHERE valid_from <> '1900-01-01'"),
@@ -376,14 +333,8 @@ fn seeded_rows_are_valid_from_the_distant_past() {
 /// 화면에도 나오지 않는다.
 #[test]
 fn no_seeded_row_starts_out_retired() {
-    let conn = setup_test_db();
-    for table in [
-        "attendance_reason",
-        "attendance_type",
-        "attendance_code",
-        "span_tag",
-        "quota_rule",
-    ] {
+    let conn = setup_seed_db();
+    for table in ["attendance_reason", "attendance_type", "attendance_code"] {
         let retired = count(
             &conn,
             &format!("SELECT COUNT(*) FROM {table} WHERE valid_to IS NOT NULL"),
@@ -395,11 +346,14 @@ fn no_seeded_row_starts_out_retired() {
 /// 시드는 기록을 만들지 않는다. 학생도 출결도 없는 상태가 설치 직후다.
 #[test]
 fn seed_creates_no_records() {
-    let conn = setup_test_db();
+    let conn = setup_seed_db();
     for table in [
         "student",
         "absence_span",
         "academic_year",
+        "school",
+        "teaching_class",
+        "subject_session",
         "off_day",
         "contact",
     ] {

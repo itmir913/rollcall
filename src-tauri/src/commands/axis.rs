@@ -215,7 +215,7 @@ pub fn get_codes_impl(
 
 /// 두 축으로 쌍을 찾는다. 한쪽이라도 비면 코드가 없다 — 그것이 정상이다.
 /// 두 축으로 코드를 찾는다. 지금은 테스트만 부르지만, "그 날짜에 유효했던 코드"를
-/// 고르는 규칙(valid_from/valid_to)이 여기 한 곳에만 있어야 문구 생성과 검증이 갈라지지 않는다.
+/// 고르는 규칙(valid_from/valid_to)이 여기 한 곳에만 있어야 문구 생성과 검증이 달라지지 않는다.
 #[allow(dead_code)]
 pub fn find_code_impl(
     conn: &Connection,
@@ -328,7 +328,7 @@ pub fn revise_code_impl(
 ///
 /// 빈 메모는 후보가 아니다. 공백만 친 것도 마찬가지로 뺀다.
 ///
-/// 앞뒤 공백을 떼고 센다. 저장은 교사가 친 그대로 하므로(`set_span_memo`), 떼지 않으면
+/// 앞뒤 공백을 제거하고 센다. 저장은 교사가 친 그대로 하므로(`set_span_memo`), 제거하지 않으면
 /// `복통`과 `복통 `이 똑같이 생긴 버튼 두 개로 나와 자리만 차지한다.
 pub fn get_memo_suggestions_impl(
     conn: &Connection,

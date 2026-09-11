@@ -41,22 +41,67 @@ fn tag_valid_to(conn: &rusqlite::Connection, tag_id: i64) -> Option<String> {
 }
 
 fn count(conn: &rusqlite::Connection, table: &str) -> i64 {
-    conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
-        .unwrap()
+    count_where(conn, &format!("SELECT COUNT(*) FROM {table}"))
+}
+
+fn count_where(conn: &rusqlite::Connection, sql: &str) -> i64 {
+    conn.query_row(sql, [], |r| r.get(0)).unwrap()
 }
 
 // ── 학교 ──────────────────────────────────────────────────────
 
 #[test]
-fn seed_gives_one_active_school_carrying_its_own_settings() {
+fn a_school_carries_its_own_settings() {
     // 최대 교시와 제출 기한은 앱 상수도 전역 설정도 아니라 학교가 들고 있는 값이다.
     let conn = setup_test_db();
-    let schools = get_schools_impl(&conn).unwrap();
+    let schools = get_schools_impl(&conn, year_id(&conn)).unwrap();
     assert_eq!(schools.len(), 1);
+    assert_eq!(schools[0].name, TEST_SCHOOL);
     assert_eq!(schools[0].max_slot, 7);
     assert_eq!(schools[0].due_days, 7);
     assert!(schools[0].due_skip_offdays);
     assert!(schools[0].active);
+    assert_eq!(schools[0].year_id, year_id(&conn));
+}
+
+/// **학교는 학년도 안에 있다.** 전역으로 두면 해가 바뀌어도 지난해 학교가 목록에 남고,
+/// 그 학교의 최대 교시를 고치면 지난해 화면까지 소급해 바뀐다.
+#[test]
+fn a_school_belongs_to_one_academic_year() {
+    let conn = setup_test_db();
+    let this_year = year_id(&conn);
+    let next_year = insert_year(&conn, TEST_YEAR + 1);
+
+    // 순회 교사 — 2027학년도에는 두 학교다.
+    create_school_impl(&conn, next_year, "나다고등학교", 6, 3, false).unwrap();
+    create_school_impl(&conn, next_year, "라마고등학교", 7, 7, true).unwrap();
+
+    let names = |y| {
+        get_schools_impl(&conn, y)
+            .unwrap()
+            .into_iter()
+            .map(|s| s.name)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(names(this_year), vec![TEST_SCHOOL]);
+    assert_eq!(names(next_year), vec!["나다고등학교", "라마고등학교"]);
+
+    // 같은 이름이라도 학년도가 다르면 다른 학교다.
+    assert!(create_school_impl(&conn, next_year, TEST_SCHOOL, 7, 7, true).is_ok());
+}
+
+/// 같은 학년도에 같은 이름의 학교는 하나다. **내린 학교는 세지 않는다** —
+/// 잘못 만든 학교를 내리고 같은 이름으로 다시 만드는 일이 있다.
+#[test]
+fn one_year_holds_one_school_of_each_name() {
+    let conn = setup_test_db();
+    let y = year_id(&conn);
+
+    let err = create_school_impl(&conn, y, TEST_SCHOOL, 7, 7, true).unwrap_err();
+    assert!(err.contains("이미 있는 학교입니다"), "{err}");
+
+    retire_school_impl(&conn, school_id(&conn)).unwrap();
+    assert!(create_school_impl(&conn, y, TEST_SCHOOL, 7, 7, true).is_ok());
 }
 
 #[test]
@@ -70,39 +115,30 @@ fn an_unknown_school_is_reported_in_korean() {
 #[test]
 fn max_slot_outside_one_to_nine_is_refused() {
     let conn = setup_test_db();
-    let base = get_school_impl(&conn, school_id(&conn)).unwrap();
+    let id = school_id(&conn);
 
     for bad in [0, -1, 10] {
-        let mut school = base.clone();
-        school.max_slot = bad;
-        let err = update_school_impl(&conn, &school).unwrap_err();
+        let err = update_school_impl(&conn, id, TEST_SCHOOL, bad, 7, true).unwrap_err();
         assert!(err.contains("최대 교시"), "{err}");
     }
 
-    let mut school = base.clone();
-    school.max_slot = 9;
-    update_school_impl(&conn, &school).unwrap();
-    assert_eq!(get_school_impl(&conn, school.id).unwrap().max_slot, 9);
+    update_school_impl(&conn, id, TEST_SCHOOL, 9, 7, true).unwrap();
+    assert_eq!(get_school_impl(&conn, id).unwrap().max_slot, 9);
 
     // 거부된 값이 새어 들어가지 않았다.
-    let mut school = base.clone();
-    school.max_slot = 10;
-    let _ = update_school_impl(&conn, &school);
-    assert_eq!(get_school_impl(&conn, base.id).unwrap().max_slot, 9);
+    let _ = update_school_impl(&conn, id, TEST_SCHOOL, 10, 7, true);
+    assert_eq!(get_school_impl(&conn, id).unwrap().max_slot, 9);
 }
 
 #[test]
 fn school_name_cannot_be_blank_and_due_days_cannot_be_negative() {
     let conn = setup_test_db();
-    let base = get_school_impl(&conn, school_id(&conn)).unwrap();
+    let id = school_id(&conn);
 
-    let mut school = base.clone();
-    school.name = "   ".to_string();
-    assert!(update_school_impl(&conn, &school).unwrap_err().contains("학교 이름"));
-
-    let mut school = base.clone();
-    school.due_days = -1;
-    assert!(update_school_impl(&conn, &school)
+    assert!(update_school_impl(&conn, id, "   ", 7, 7, true)
+        .unwrap_err()
+        .contains("학교 이름"));
+    assert!(update_school_impl(&conn, id, TEST_SCHOOL, 7, -1, true)
         .unwrap_err()
         .contains("제출 기한"));
 }
@@ -110,9 +146,7 @@ fn school_name_cannot_be_blank_and_due_days_cannot_be_negative() {
 #[test]
 fn updating_a_missing_school_is_reported_instead_of_passing_silently() {
     let conn = setup_test_db();
-    let mut school = get_school_impl(&conn, school_id(&conn)).unwrap();
-    school.id = 9999;
-    let err = update_school_impl(&conn, &school).unwrap_err();
+    let err = update_school_impl(&conn, 9999, "가나고등학교", 7, 7, true).unwrap_err();
     assert!(err.contains("학교를 찾을 수 없습니다"), "{err}");
 }
 
@@ -122,36 +156,26 @@ fn every_school_setting_survives_a_round_trip() {
     // 저장돼도 화면에서는 한동안 티가 나지 않고, 그때는 이미 마감일이 박힌 기록이 쌓인 뒤다.
     // SQLite는 열의 형을 강제하지 않으므로 자리가 어긋나도 오류가 나지 않는다.
     let conn = setup_test_db();
-    let mut school = get_school_impl(&conn, school_id(&conn)).unwrap();
-    school.name = "가나고등학교".to_string();
-    school.max_slot = 6;
-    school.due_days = 3;
-    school.due_skip_offdays = false;
-    school.sort_order = 55;
-    update_school_impl(&conn, &school).unwrap();
+    let id = school_id(&conn);
+    update_school_impl(&conn, id, "  가나고등학교  ", 6, 3, false).unwrap();
 
-    let back = get_school_impl(&conn, school.id).unwrap();
+    let back = get_school_impl(&conn, id).unwrap();
     assert_eq!(back.name, "가나고등학교");
     assert_eq!(back.max_slot, 6);
     assert_eq!(back.due_days, 3);
     assert!(!back.due_skip_offdays);
-    assert_eq!(back.sort_order, 55);
     assert!(back.active);
 }
 
 #[test]
 fn a_travelling_teacher_can_register_a_second_school() {
     // 학교 단위 값(최대 교시 · 제출 기한)이 school 행에 있는 이유가 이것이다.
-    // 두 학교가 같은 목록에 나란히 서고, 각자의 설정을 따로 들고 있어야 한다.
+    // 두 학교가 같은 목록에 나란히 표시되고, 각자의 설정을 따로 들고 있어야 한다.
     let conn = setup_test_db();
-    let mut second = get_school_impl(&conn, school_id(&conn)).unwrap();
-    second.id = 0;
-    second.name = "  나다고등학교  ".to_string();
-    second.max_slot = 6;
-    second.due_days = 3;
+    let y = year_id(&conn);
 
-    let id = create_school_impl(&conn, &second).unwrap();
-    let schools = get_schools_impl(&conn).unwrap();
+    let id = create_school_impl(&conn, y, "  나다고등학교  ", 6, 3, true).unwrap();
+    let schools = get_schools_impl(&conn, y).unwrap();
     assert_eq!(schools.len(), 2);
     // 뒤에 붙는다.
     assert_eq!(schools.last().unwrap().id, id);
@@ -165,44 +189,92 @@ fn a_travelling_teacher_can_register_a_second_school() {
     assert_eq!(get_school_impl(&conn, school_id(&conn)).unwrap().max_slot, 7);
 }
 
+/// **기본 태그와 한도 규정은 학교를 만들 때 함께 들어간다.**
+///
+/// 시드에 두면 한 번만 돌므로 둘째 학교가 빈 목록으로 시작한다. 그 상태에서는
+/// 통계 화면에 셀 것이 하나도 없고, 교사는 무엇을 먼저 만들어야 하는지 알 수 없다.
+#[test]
+fn a_new_school_starts_with_the_default_tags_and_rules() {
+    let conn = setup_test_db();
+    let second = create_school_impl(&conn, year_id(&conn), "나다고등학교", 7, 7, true).unwrap();
+
+    for school in [school_id(&conn), second] {
+        let tags: Vec<String> = get_tags_impl(&conn, school)
+            .unwrap()
+            .into_iter()
+            .map(|t| t.name)
+            .collect();
+        assert_eq!(tags, vec!["체험학습", "생리통"], "학교 {school}");
+
+        let rules = get_quota_rules_impl(&conn, school).unwrap();
+        let names: Vec<&str> = rules.iter().map(|r| r.name.as_str()).collect();
+        assert_eq!(names, vec!["체험학습 연 20일", "생리통 월 1회"]);
+        // 규정은 그 학교의 태그를 가리킨다. 남의 학교 태그를 세면 안 된다.
+        assert_eq!(rules[0].tag_name.as_deref(), Some("체험학습"));
+        assert_eq!(rules[1].tag_name.as_deref(), Some("생리통"));
+        // 최초 집합에는 시작일이 없다 — 설치 전 날짜의 출결도 이 태그를 달 수 있어야 한다.
+        assert!(rules.iter().all(|r| r.valid_from == "1900-01-01"));
+    }
+
+    let crossed = count_where(
+        &conn,
+        "SELECT COUNT(*) FROM quota_rule q
+         JOIN span_tag t ON t.id = q.tag_id
+         WHERE q.school_id <> t.school_id",
+    );
+    assert_eq!(crossed, 0, "규정과 태그는 같은 학교에 속한다");
+}
+
 #[test]
 fn a_new_school_is_validated_the_same_way_an_edited_one_is() {
     // 확인을 나누어 두면 새로 만드는 길로만 최대 교시 10이 들어온다.
     let conn = setup_test_db();
-    let base = get_school_impl(&conn, school_id(&conn)).unwrap();
+    let y = year_id(&conn);
 
-    let mut blank = base.clone();
-    blank.name = "   ".to_string();
-    assert!(create_school_impl(&conn, &blank)
+    assert!(create_school_impl(&conn, y, "   ", 7, 7, true)
         .unwrap_err()
         .contains("학교 이름"));
-
-    let mut wide = base.clone();
-    wide.name = "라마고등학교".to_string();
-    wide.max_slot = 10;
-    assert!(create_school_impl(&conn, &wide)
+    assert!(create_school_impl(&conn, y, "라마고등학교", 10, 7, true)
         .unwrap_err()
         .contains("최대 교시"));
-
-    let mut negative = base.clone();
-    negative.name = "라마고등학교".to_string();
-    negative.due_days = -1;
-    assert!(create_school_impl(&conn, &negative)
+    assert!(create_school_impl(&conn, y, "라마고등학교", 7, -1, true)
         .unwrap_err()
         .contains("제출 기한"));
 
     assert_eq!(count(&conn, "school"), 1, "거절된 학교가 새어 들어갔다");
 }
 
+/// 거절된 학교가 태그만 남기고 사라지면 안 된다. 한 트랜잭션이라 통째로 되돌아간다.
 #[test]
-fn an_inactive_school_leaves_the_list_but_can_still_be_read() {
+fn a_refused_school_leaves_no_tags_behind() {
     let conn = setup_test_db();
-    let mut school = get_school_impl(&conn, school_id(&conn)).unwrap();
-    school.active = false;
-    update_school_impl(&conn, &school).unwrap();
+    let tags_before = count(&conn, "span_tag");
+    let rules_before = count(&conn, "quota_rule");
 
-    assert!(get_schools_impl(&conn).unwrap().is_empty());
-    assert!(!get_school_impl(&conn, school.id).unwrap().active);
+    // 같은 학년도의 같은 이름 — 학교 INSERT에서 거절된다.
+    assert!(create_school_impl(&conn, year_id(&conn), TEST_SCHOOL, 7, 7, true).is_err());
+
+    assert_eq!(count(&conn, "span_tag"), tags_before);
+    assert_eq!(count(&conn, "quota_rule"), rules_before);
+    // 트랜잭션이 열린 채 남지 않았다.
+    assert!(create_tag_impl(&conn, school_id(&conn), "병결").is_ok());
+}
+
+#[test]
+fn a_retired_school_leaves_the_list_but_can_still_be_read() {
+    let conn = setup_test_db();
+    let id = school_id(&conn);
+    retire_school_impl(&conn, id).unwrap();
+
+    assert!(get_schools_impl(&conn, year_id(&conn)).unwrap().is_empty());
+    assert!(!get_school_impl(&conn, id).unwrap().active);
+    // 지운 것이 아니다 — 그 학교의 기록이 그대로 남아야 한다.
+    assert_eq!(count(&conn, "school"), 1);
+
+    // 두 번 내리지 않는다.
+    assert!(retire_school_impl(&conn, id)
+        .unwrap_err()
+        .contains("유효한 학교를 찾을 수 없습니다"));
 }
 
 // ── 휴업일 ────────────────────────────────────────────────────
@@ -274,7 +346,7 @@ fn removing_a_missing_off_day_is_reported() {
 // ── 태그 ──────────────────────────────────────────────────────
 
 #[test]
-fn seeded_tags_are_school_settings_not_globals() {
+fn tags_are_school_settings_not_globals() {
     let conn = setup_test_db();
     let names: Vec<String> = get_tags_impl(&conn, school_id(&conn))
         .unwrap()
@@ -483,7 +555,7 @@ fn a_rule_period_and_unit_must_be_values_the_app_knows() {
 
     let err = create_quota_rule_impl(&conn, s, &new_rule("주 1회", tag, "week", 1, "day"))
         .unwrap_err();
-    assert!(err.contains("year / semester / month"), "{err}");
+    assert!(err.contains("year / month"), "{err}");
 
     let err = create_quota_rule_impl(&conn, s, &new_rule("연 3시간", tag, "year", 3, "hour"))
         .unwrap_err();
@@ -514,7 +586,7 @@ fn a_rule_without_a_start_date_counts_from_the_beginning() {
     let s = school_id(&conn);
     let tag = Some(tag_id(&conn, "생리통"));
 
-    let id = create_quota_rule_impl(&conn, s, &new_rule("생리통 학기 3회", tag, "semester", 3, "count"))
+    let id = create_quota_rule_impl(&conn, s, &new_rule("생리통 월 1회", tag, "month", 1, "count"))
         .unwrap();
     let rules = get_quota_rules_impl(&conn, s).unwrap();
     let made = rules.iter().find(|r| r.id == id).unwrap();
@@ -610,9 +682,7 @@ fn a_rule_cannot_count_a_tag_that_is_gone_or_belongs_to_another_school() {
     assert!(err.contains("유효한 태그가 아닙니다"), "{err}");
 
     // 다른 학교의 태그도 막는다. FK는 span_tag의 존재만 볼 뿐 어느 학교의 것인지 보지 않는다.
-    conn.execute("INSERT INTO school (name) VALUES ('옆 학교')", [])
-        .unwrap();
-    let other = conn.last_insert_rowid();
+    let other = insert_school(&conn, year_id(&conn), "옆 학교");
     let other_tag = create_tag_impl(&conn, other, "옆 학교 태그").unwrap();
     let err = create_quota_rule_impl(&conn, s, &new_rule("남의 태그", Some(other_tag), "year", 5, "day"))
         .unwrap_err();
@@ -625,7 +695,9 @@ fn a_rule_cannot_count_a_tag_that_is_gone_or_belongs_to_another_school() {
 
     // 태그 없는 규정은 그대로 통과한다 — 두 축만으로 세는 규정이 있을 수 있다.
     assert!(create_quota_rule_impl(&conn, s, &new_rule("전체 결석", None, "year", 5, "day")).is_ok());
-    assert_eq!(count(&conn, "quota_rule"), 3);
+    // 내 학교의 규정만 센다. 옆 학교는 만들 때 받은 기본 규정 둘을 따로 들고 있다.
+    assert_eq!(get_quota_rules_impl(&conn, s).unwrap().len(), 2);
+    assert_eq!(get_quota_rules_impl(&conn, other).unwrap().len(), 2);
 }
 
 #[test]

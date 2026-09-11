@@ -11,11 +11,15 @@
 //!
 //! 태그가 빠진 구간은 조용히 넘기지 않고 `QuotaReport.untagged`에 모아 돌려준다.
 //! 넘기면 학년말에야 발견된다.
+//!
+//! **집계 창 밖도 같은 규칙을 받는다.** 한도는 학년도 창으로 세지만(연 20일의 '연'이
+//! 학년도다) 학년도는 기준 연도일 뿐 날짜 울타리가 아니라, 그 창 밖에 찍힌 기록이
+//! 실제로 있다. 세지 못한 그 건수를 `QuotaReport.outside`로 함께 돌려준다.
 
 use crate::commands::attendance::{load_spans_on, max_slot_of};
 use crate::commands::class::homeroom_scope;
 use crate::commands::with_conn;
-use crate::due::{academic_year_of, format_date, parse_date, semester_of};
+use crate::due::{academic_year_of, format_date, parse_date};
 use crate::state::DbState;
 use crate::types::*;
 use chrono::{Datelike, Duration, Local, NaiveDate};
@@ -47,7 +51,6 @@ const RECOGNIZED_REASON: &str = "출석인정";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Period {
     Year,
-    Semester,
     Month,
 }
 
@@ -55,7 +58,6 @@ impl Period {
     fn parse(value: &str) -> Result<Self, String> {
         match value {
             "year" => Ok(Period::Year),
-            "semester" => Ok(Period::Semester),
             "month" => Ok(Period::Month),
             other => Err(format!("알 수 없는 한도 기간입니다: {other}")),
         }
@@ -114,26 +116,10 @@ fn academic_year_range(year: i64) -> Result<(NaiveDate, NaiveDate), String> {
     Ok((start, next - Duration::days(1)))
 }
 
-/// 학기 범위. 1학기는 3~8월, 2학기는 9월~이듬해 2월이다.
-fn semester_range(academic_year: i32, semester: u32) -> (NaiveDate, NaiveDate) {
-    if semester == 1 {
-        (
-            month_start(academic_year, 3),
-            month_start(academic_year, 9) - Duration::days(1),
-        )
-    } else {
-        (
-            month_start(academic_year, 9),
-            month_start(academic_year + 1, 3) - Duration::days(1),
-        )
-    }
-}
-
 /// 날짜가 속한 칸의 열쇠. `buckets_for`가 만드는 열쇠와 반드시 같은 규칙이어야 한다.
 fn bucket_key(period: Period, d: NaiveDate) -> String {
     match period {
         Period::Year => academic_year_of(d).to_string(),
-        Period::Semester => format!("{}-S{}", academic_year_of(d), semester_of(d)),
         Period::Month => format!("{:04}-{:02}", d.year(), d.month()),
     }
 }
@@ -150,20 +136,6 @@ fn buckets_for(period: Period, from: NaiveDate, to: NaiveDate) -> Vec<Bucket> {
                 key: ay.to_string(),
                 label: format!("{ay}학년도"),
             }]
-        }
-        Period::Semester => {
-            let ay = academic_year_of(from);
-            let mut out = Vec::new();
-            for semester in [1u32, 2u32] {
-                let (s, e) = semester_range(ay, semester);
-                if s <= to && e >= from {
-                    out.push(Bucket {
-                        key: format!("{ay}-S{semester}"),
-                        label: format!("{semester}학기"),
-                    });
-                }
-            }
-            out
         }
         Period::Month => {
             let mut out = Vec::new();
@@ -279,26 +251,14 @@ fn load_rules(
     Ok(rows)
 }
 
-/// 규정이 세는 구간. 태그가 있으면 그 태그가 붙은 것만, 구분·종류가 채워져 있으면
-/// AND로 더 좁힌다. 셋 다 비어 있으면 그 학급의 모든 구간이다.
-fn counted_spans(
-    conn: &Connection,
-    class_id: i64,
-    from: &str,
-    to: &str,
-    rule: &QuotaRuleItem,
-) -> Result<Vec<(i64, String)>, String> {
-    let mut sql = String::from(
-        "SELECT sp.student_id, sp.date
-         FROM absence_span sp
-         WHERE sp.class_id = ?
-           AND sp.date >= ? AND sp.date <= ?",
-    );
-    let mut args: Vec<Value> = vec![
-        Value::Integer(class_id),
-        Value::Text(from.to_string()),
-        Value::Text(to.to_string()),
-    ];
+/// 규정이 세는 대상을 좁히는 조건. 별칭은 `sp`이고 날짜 조건은 부르는 쪽이 붙인다.
+///
+/// 태그가 있으면 그 태그가 붙은 것만, 구분·종류가 채워져 있으면 AND로 더 좁힌다.
+/// 셋 다 비어 있으면 그 학급의 모든 구간이다. **창 안을 세는 질의와 창 밖을 세는
+/// 질의가 같은 조건을 써야 한다** — 한쪽만 고치면 "세지 않은 건수"가 틀린 값이 된다.
+fn rule_narrowing(rule: &QuotaRuleItem) -> (String, Vec<Value>) {
+    let mut sql = String::new();
+    let mut args: Vec<Value> = Vec::new();
     if let Some(tag) = rule.tag_id {
         sql.push_str(" AND sp.tag_id = ?");
         args.push(Value::Integer(tag));
@@ -311,6 +271,31 @@ fn counted_spans(
         sql.push_str(" AND sp.type_id = ?");
         args.push(Value::Integer(type_id));
     }
+    (sql, args)
+}
+
+/// 규정이 세는 구간.
+fn counted_spans(
+    conn: &Connection,
+    class_id: i64,
+    from: &str,
+    to: &str,
+    rule: &QuotaRuleItem,
+) -> Result<Vec<(i64, String)>, String> {
+    let (narrowing, extra) = rule_narrowing(rule);
+    let mut sql = String::from(
+        "SELECT sp.student_id, sp.date
+         FROM absence_span sp
+         WHERE sp.class_id = ?
+           AND sp.date >= ? AND sp.date <= ?",
+    );
+    let mut args: Vec<Value> = vec![
+        Value::Integer(class_id),
+        Value::Text(from.to_string()),
+        Value::Text(to.to_string()),
+    ];
+    sql.push_str(&narrowing);
+    args.extend(extra);
     sql.push_str(" ORDER BY sp.date, sp.id");
 
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
@@ -345,7 +330,36 @@ fn recognized_reason_id(conn: &Connection) -> Result<Option<i64>, String> {
 /// 만들면 구간 표기(`span_text`)와 겹침 판정이 화면마다 달라진다 — 같은 기록이
 /// 출결 기록에서는 `조회부터 3교시까지`, 통계에서는 다른 문장으로 보인다.
 /// 별칭은 그 헬퍼가 정한 것을 그대로 쓴다. 구간이 `s`, 학생이 `st`다.
-#[allow(clippy::too_many_arguments)]
+/// 태그 누락 후보를 좁히는 두 축.
+struct UntaggedFilter {
+    reason_id: Option<i64>,
+    type_id: Option<i64>,
+}
+
+/// 태그 누락 후보를 좁히는 조건. `None`이면 그 개념이 없는 규정이다.
+///
+/// 태그를 지정하지 않은 규정은 모든 구간을 세므로 "빠진 태그"라는 개념이 없다.
+/// 구분·종류 조건이 없는 규정은 좁힐 기준이 없어 기본 구분 라벨로 좁힌다 — 그 라벨이
+/// 없는 DB라면 태그 없는 **모든** 구간이 남아 질병 결석까지 섞이므로 `None`이다.
+fn untagged_narrowing(
+    conn: &Connection,
+    rule: &QuotaRuleItem,
+) -> Result<Option<UntaggedFilter>, String> {
+    if rule.tag_id.is_none() {
+        return Ok(None);
+    }
+    if rule.reason_id.is_none() && rule.type_id.is_none() {
+        return Ok(recognized_reason_id(conn)?.map(|id| UntaggedFilter {
+            reason_id: Some(id),
+            type_id: None,
+        }));
+    }
+    Ok(Some(UntaggedFilter {
+        reason_id: rule.reason_id,
+        type_id: rule.type_id,
+    }))
+}
+
 fn untagged_spans(
     conn: &Connection,
     class_id: i64,
@@ -354,24 +368,9 @@ fn untagged_spans(
     rule: &QuotaRuleItem,
     today: NaiveDate,
 ) -> Result<Vec<SpanItem>, String> {
-    // 태그를 지정하지 않은 규정은 모든 구간을 세므로 "빠진 태그"라는 개념이 없다.
-    if rule.tag_id.is_none() {
+    let Some(UntaggedFilter { reason_id, type_id }) = untagged_narrowing(conn, rule)? else {
         return Ok(Vec::new());
-    }
-
-    // 구분·종류 조건이 없는 규정은 좁힐 기준이 없어 기본 구분 라벨로 좁힌다.
-    // 기본 라벨이 없는 DB라면 태그 없는 **모든** 구간이 남아 질병 결석까지 섞이므로
-    // 목록을 비운다 — 세는 결과에는 영향이 없다.
-    let recognized = if rule.reason_id.is_none() && rule.type_id.is_none() {
-        match recognized_reason_id(conn)? {
-            Some(id) => Some(id),
-            None => return Ok(Vec::new()),
-        }
-    } else {
-        None
     };
-    let reason_id = rule.reason_id;
-    let type_id = rule.type_id;
 
     let mut where_sql = String::from(
         "WHERE s.class_id = ?1
@@ -381,11 +380,6 @@ fn untagged_spans(
     let mut params: Vec<&dyn ToSql> = vec![&class_id, &from, &to];
 
     let mut next = 4;
-    if recognized.is_some() {
-        where_sql.push_str(&format!(" AND s.reason_id = ?{next}"));
-        params.push(&recognized);
-        next += 1;
-    }
     if reason_id.is_some() {
         where_sql.push_str(&format!(" AND s.reason_id = ?{next}"));
         params.push(&reason_id);
@@ -398,6 +392,67 @@ fn untagged_spans(
     where_sql.push_str(" ORDER BY s.date, st.number, s.id");
 
     load_spans_on(conn, &where_sql, &params, today)
+}
+
+// ── 집계 창 밖 ────────────────────────────────────────────────
+
+/// 집계 창 **밖**의 구간을 센다. 조건은 부르는 쪽이 준다.
+fn count_outside(
+    conn: &Connection,
+    class_id: i64,
+    from: &str,
+    to: &str,
+    narrowing: &str,
+    extra: Vec<Value>,
+) -> Result<i64, String> {
+    let sql = format!(
+        "SELECT COUNT(*) FROM absence_span sp
+          WHERE sp.class_id = ?
+            AND (sp.date < ? OR sp.date > ?){narrowing}"
+    );
+    let mut args: Vec<Value> = vec![
+        Value::Integer(class_id),
+        Value::Text(from.to_string()),
+        Value::Text(to.to_string()),
+    ];
+    args.extend(extra);
+    conn.query_row(&sql, params_from_iter(args.iter()), |r| r.get(0))
+        .map_err(|e| e.to_string())
+}
+
+/// 이 규정이 봤어야 하지만 집계 창 밖이라 세지 못한 구간 수.
+///
+/// **한도를 학년도 창으로 세는 것 자체는 유지한다** — 연 20일의 '연'이 학년도다.
+/// 다만 학년도는 기준 연도일 뿐 날짜 울타리가 아니라, 2026학년도 학급에 2027-03-05를
+/// 찍는 일이 실제로 있다. 그 건은 한도에서도 태그 누락 목록에서도 빠지는데, 세어서
+/// 알리지 않으면 교사에게 "덜 썼다"고 거짓으로 말하게 된다.
+///
+/// 세는 것과 태그 누락 후보는 서로 겹치지 않는다 — 앞은 규정의 태그가 붙은 것이고
+/// 뒤는 태그가 비어 있는 것이라, 두 수를 그대로 더하면 된다.
+fn outside_window_count(
+    conn: &Connection,
+    class_id: i64,
+    from: &str,
+    to: &str,
+    rule: &QuotaRuleItem,
+) -> Result<i64, String> {
+    let (narrowing, extra) = rule_narrowing(rule);
+    let mut total = count_outside(conn, class_id, from, to, &narrowing, extra)?;
+
+    if let Some(UntaggedFilter { reason_id, type_id }) = untagged_narrowing(conn, rule)? {
+        let mut sql = String::from(" AND sp.tag_id IS NULL");
+        let mut args: Vec<Value> = Vec::new();
+        if let Some(reason) = reason_id {
+            sql.push_str(" AND sp.reason_id = ?");
+            args.push(Value::Integer(reason));
+        }
+        if let Some(kind) = type_id {
+            sql.push_str(" AND sp.type_id = ?");
+            args.push(Value::Integer(kind));
+        }
+        total += count_outside(conn, class_id, from, to, &sql, args)?;
+    }
+    Ok(total)
 }
 
 // ── 집계 ──────────────────────────────────────────────────────
@@ -550,6 +605,9 @@ pub fn get_quota_reports_impl(
         }
 
         let untagged = untagged_spans(conn, scope.id, &win_from_text, &win_to_text, &rule, today)?;
+        // 창 밖은 조용히 넘기지 않는다. 화면이 이 수로 "세지 않은 것이 있다"를 알린다.
+        let outside =
+            outside_window_count(conn, scope.id, &win_from_text, &win_to_text, &rule)?;
 
         out.push(QuotaReport {
             rule,
@@ -558,6 +616,9 @@ pub fn get_quota_reports_impl(
             near_count,
             over_count,
             untagged,
+            window_from: win_from_text.clone(),
+            window_to: win_to_text.clone(),
+            outside,
         });
     }
 

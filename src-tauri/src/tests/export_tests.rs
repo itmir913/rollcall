@@ -1,7 +1,7 @@
 //! 내보내기 테스트.
 //!
 //! 표를 만드는 함수는 DTO만 받는 순수 함수라 DB 없이 검사한다. 엑셀이 실제로
-//! 열어야 하는 성질(BOM · 인용 · 열 순서)이 여기서 갈리기 때문에, 그 셋을 먼저 본다.
+//! 열어야 하는 성질(BOM · 인용 · 열 순서)이 여기서 결정되기 때문에, 그 셋을 먼저 본다.
 
 use crate::commands::export::*;
 use crate::tests::*;
@@ -126,6 +126,9 @@ fn every_table_starts_with_bom() {
         near_count: 0,
         over_count: 0,
         untagged: vec![],
+        window_from: "2026-03-01".to_string(),
+        window_to: "2027-02-28".to_string(),
+        outside: 0,
     };
     for csv in [
         build_spans_csv(&[], &Default::default()),
@@ -184,6 +187,9 @@ fn quota_table_also_leads_with_class_keys() {
         near_count: 0,
         over_count: 0,
         untagged: vec![],
+        window_from: "2026-03-01".to_string(),
+        window_to: "2027-02-28".to_string(),
+        outside: 0,
     };
     let rows = body(&build_quota_csv(&report));
     assert_eq!(first_cells(&rows[0], 3), ["학년", "반", "번호"]);
@@ -274,6 +280,9 @@ fn quota_table_lists_used_dates() {
         near_count: 0,
         over_count: 0,
         untagged: vec![],
+        window_from: "2026-03-01".to_string(),
+        window_to: "2027-02-28".to_string(),
+        outside: 0,
     };
     let rows = body(&build_quota_csv(&report));
     assert!(rows[1].contains("학년도"), "{}", rows[1]);
@@ -318,6 +327,9 @@ fn quota_table_uses_month_buckets_when_present() {
         near_count: 0,
         over_count: 1,
         untagged: vec![],
+        window_from: "2026-03-01".to_string(),
+        window_to: "2027-02-28".to_string(),
+        outside: 0,
     };
     let rows = body(&build_quota_csv(&report));
     assert!(rows[1].contains("달"), "{}", rows[1]);
@@ -338,6 +350,9 @@ fn untagged_records_are_not_dropped_silently() {
         near_count: 0,
         over_count: 0,
         untagged: vec![orphan],
+        window_from: "2026-03-01".to_string(),
+        window_to: "2027-02-28".to_string(),
+        outside: 0,
     };
     let csv = build_quota_csv(&report);
     assert!(csv.contains("태그 없는 기록"), "{csv}");
@@ -363,6 +378,9 @@ fn quota_table_without_untagged_has_no_second_block() {
         near_count: 0,
         over_count: 0,
         untagged: vec![],
+        window_from: "2026-03-01".to_string(),
+        window_to: "2027-02-28".to_string(),
+        outside: 0,
     };
     let csv = build_quota_csv(&report);
     assert!(!csv.contains("태그 없는 기록"), "{csv}");
@@ -374,8 +392,8 @@ fn quota_table_without_untagged_has_no_second_block() {
 #[test]
 fn unknown_pending_kind_is_rejected() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let err =
         export_pending_csv_impl(&conn, class, "check", "2026-09-10").unwrap_err();
     assert!(err.contains("check"), "{err}");
@@ -384,8 +402,8 @@ fn unknown_pending_kind_is_rejected() {
 #[test]
 fn broken_date_is_rejected() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     assert!(export_spans_csv_impl(&conn, class, "어제", "2026-09-30").is_err());
     assert!(export_spans_csv_impl(&conn, class, "2026-09-01", "2026-13-01").is_err());
     assert!(export_pending_csv_impl(&conn, class, "doc", "어제").is_err());
@@ -397,8 +415,8 @@ fn a_day_past_the_end_of_the_month_is_rejected() {
     // 내보내기가 통째로 실패한다. 그 값을 앱이 마지막 날로 당겨 주지 않는다 —
     // 기간을 정하는 것은 부르는 쪽의 일이다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let err =
         export_spans_csv_impl(&conn, class, "2026-02-01", "2026-02-31").unwrap_err();
     assert!(err.contains("2026-02-31"), "{err}");
@@ -407,8 +425,8 @@ fn a_day_past_the_end_of_the_month_is_rejected() {
 #[test]
 fn reversed_range_is_rejected() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let err =
         export_spans_csv_impl(&conn, class, "2026-09-30", "2026-09-01").unwrap_err();
     assert!(err.contains("앞뒤"), "{err}");
@@ -417,8 +435,8 @@ fn reversed_range_is_rejected() {
 #[test]
 fn missing_quota_rule_is_rejected() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let err = export_quota_csv_impl(&conn, class, 9999).unwrap_err();
     assert!(err.contains("9999"), "{err}");
 }
@@ -428,9 +446,9 @@ fn missing_quota_rule_is_rejected() {
 #[test]
 fn span_export_reads_only_the_given_range() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let student = enroll(&conn, class, year, 7, "김, 민준");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let student = enroll(&conn, class, school, 7, "김, 민준");
     let axes = axes(&conn, "질병", "결석");
     insert_span(&conn, class, student, "2026-09-10", axes, "감기");
     insert_span(&conn, class, student, "2026-10-02", axes, "장염");
@@ -446,8 +464,8 @@ fn span_export_reads_only_the_given_range() {
 #[test]
 fn empty_class_exports_header_only() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
     let csv = export_spans_csv_impl(&conn, class, "2026-09-01", "2026-09-30").unwrap();
     assert_eq!(body(&csv).len(), 1);
 }
@@ -455,9 +473,9 @@ fn empty_class_exports_header_only() {
 #[test]
 fn quota_export_reads_the_named_rule() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let student = enroll(&conn, class, year, 7, "김민준");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let student = enroll(&conn, class, school, 7, "김민준");
     let axes = axes(&conn, "출석인정", "결석");
     let id = insert_span(&conn, class, student, "2026-05-04", axes, "가족 여행");
     conn.execute(
@@ -478,9 +496,9 @@ fn quota_export_reads_the_named_rule() {
 #[test]
 fn pending_export_lists_records_whose_due_has_not_arrived() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let student = enroll(&conn, class, year, 7, "김민준");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let student = enroll(&conn, class, school, 7, "김민준");
     let axes = axes(&conn, "질병", "결석");
     let id = insert_span(&conn, class, student, "2026-09-10", axes, "감기");
     conn.execute(
@@ -496,12 +514,12 @@ fn pending_export_lists_records_whose_due_has_not_arrived() {
 
 #[test]
 fn neis_export_flattens_the_day_groups_oldest_first() {
-    // 나이스 목록은 날짜로 묶여 오는데 CSV는 한 표다. 묶음을 펼치면서 날짜 순서가
+    // 나이스 목록은 날짜로 묶여 오는데 CSV는 한 표다. 묶음을 전개하면서 날짜 순서가
     // 흐트러지면 나이스에 위에서 아래로 옮겨 적을 수 없다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let student = enroll(&conn, class, year, 7, "김민준");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let student = enroll(&conn, class, school, 7, "김민준");
     let axes = axes(&conn, "질병", "결석");
     insert_span(&conn, class, student, "2026-09-08", axes, "늦게");
     insert_span(&conn, class, student, "2026-09-01", axes, "먼저");

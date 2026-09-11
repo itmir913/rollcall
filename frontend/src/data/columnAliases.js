@@ -28,7 +28,7 @@ export const COL_LABELS = {
 }
 
 /**
- * 헤더 칸을 비교용으로 다듬는다.
+ * 헤더 칸을 비교용으로 정규화한다.
  * 공백·마침표·괄호는 버리고 소문자로 맞춘다. `학 년`, `학년(Grade)`, `GRADE`가
  * 모두 같은 것으로 취급되어야 한다.
  */
@@ -38,7 +38,7 @@ export function normalizeHeader(text) {
         .toLowerCase()
 }
 
-/** 다듬은 헤더 → 우리가 아는 열 이름. 모르는 열이면 null. */
+/** 정규화한 헤더 → 우리가 아는 열 이름. 모르는 열이면 null. */
 export function matchColumn(header) {
     const key = normalizeHeader(header)
     if (!key) return null

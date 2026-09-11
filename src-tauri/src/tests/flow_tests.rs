@@ -1,4 +1,4 @@
-//! 교사가 실제로 밟는 순서를 하나로 꿰어 본다.
+//! 교사가 실제로 수행하는 순서를 하나로 연결해 본다.
 //!
 //! 모듈별 테스트는 각자의 규칙을 지키지만, **모듈 사이의 이음매**는 잡지 못한다.
 //! 실제로 이 앱에서 처음 난 결함도 그 이음매였다 — 목록 커맨드가 다른 모듈의
@@ -24,7 +24,6 @@ const TODAY: &str = "2026-09-10";
 struct Fixture {
     conn: rusqlite::Connection,
     school: i64,
-    year: i64,
     /// 담임 학급 하나. 모든 화면의 범위가 이것이다.
     class: i64,
     students: Vec<i64>,
@@ -33,17 +32,15 @@ struct Fixture {
 fn fixture() -> Fixture {
     let conn = setup_test_db();
     let school = school_id(&conn);
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let class = homeroom(&conn, school);
     let students = vec![
-        enroll(&conn, class, year, 5, "김하늘"),
-        enroll(&conn, class, year, 12, "박서연"),
-        enroll(&conn, class, year, 19, "임세훈"),
+        enroll(&conn, class, school, 5, "김하늘"),
+        enroll(&conn, class, school, 12, "박서연"),
+        enroll(&conn, class, school, 19, "임세훈"),
     ];
     Fixture {
         conn,
         school,
-        year,
         class,
         students,
     }
@@ -66,7 +63,7 @@ fn stamp(f: &Fixture, student: i64, reason: &str, r#type: &str, slots: &[&str]) 
     .span_ids
 }
 
-/// 하루를 통째로 밟는다. 찍고 · 고치고 · 서류를 받고 · 나이스에 넣는다.
+/// 하루를 통째로 수행한다. 찍고 · 고치고 · 서류를 받고 · 나이스에 넣는다.
 #[test]
 fn a_whole_day_goes_through_every_screen() {
     let f = fixture();
@@ -127,7 +124,7 @@ fn stamping_twice_cancels_but_a_different_combination_stacks() {
     assert_eq!(grid.spans.len(), 2, "하루 2구간은 정상 입력이다");
 }
 
-/// 결과는 이어진 교시끼리 묶어 저장한다. 떨어진 교시를 한 구간으로 만들면
+/// 결과는 연속한 교시끼리 묶어 저장한다. 떨어진 교시를 한 구간으로 만들면
 /// 사이의 교시가 조용히 포함된다.
 #[test]
 fn separate_periods_never_become_one_span() {
@@ -174,9 +171,8 @@ fn changing_the_school_setting_never_moves_an_existing_due_date() {
         .doc_due
         .clone();
 
-    let mut school = get_school_impl(&f.conn, f.school).unwrap();
-    school.due_days = 1;
-    update_school_impl(&f.conn, &school).unwrap();
+    let school = get_school_impl(&f.conn, f.school).unwrap();
+    update_school_impl(&f.conn, f.school, &school.name, school.max_slot, 1, true).unwrap();
 
     let after = get_doc_pending_impl(&f.conn, f.class, None, None, false, TODAY)
     .unwrap()[0]
@@ -302,22 +298,8 @@ fn editing_keeps_the_due_date_and_deleting_removes_only_that_span() {
 #[test]
 fn another_school_never_leaks_into_this_class() {
     let f = fixture();
-    let other = f
-        .conn
-        .query_row(
-            "INSERT INTO school (name, max_slot, due_days, due_skip_offdays)
-             VALUES ('다른 학교', 7, 7, 1) RETURNING id",
-            [],
-            |r| r.get::<_, i64>(0),
-        )
-        .unwrap();
-    f.conn
-        .execute(
-            "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-             VALUES (?1, ?2, 3, 6, 5, '동명이인', '2026-03-02')",
-            rusqlite::params![other, f.year],
-        )
-        .unwrap();
+    let other = insert_school(&f.conn, year_id(&f.conn), "다른 학교");
+    insert_student_at(&f.conn, other, 3, 6, 5, "동명이인");
 
     let grid = get_day_grid_impl(&f.conn, f.class, TODAY).unwrap();
     assert_eq!(grid.rows.len(), 3, "내 명단에 있는 학생만 나온다");
@@ -330,7 +312,7 @@ fn another_school_never_leaks_into_this_class() {
 #[test]
 fn 담임_출결은_교과_강좌_화면으로_새지_않는다() {
     let f = fixture();
-    let subject = insert_class(&f.conn, f.year, "subject", "지구과학Ⅰ", None, None);
+    let subject = insert_class(&f.conn, f.school, "subject", "지구과학Ⅰ", None, None);
     // 내 담임 반 학생이 내 강좌에도 들어온다. 학생 행은 하나, 소속이 둘이다.
     join_class(&f.conn, subject, f.students[0]);
     stamp(&f, f.students[0], "질병", "결석", &[]);

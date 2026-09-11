@@ -9,7 +9,7 @@
 //!   · 나이스는 **하루씩** 입력한다. 그래서 날짜로 묶고 오래된 날부터 위에서 아래로 옮겨 적는다.
 //!
 //! 구간 목록은 `attendance::load_spans`가 만든다. 같은 `SpanItem`을 두 번 만들면
-//! 겹침 표시나 마감 계산이 화면마다 갈라진다. 조건과 별칭은 아래 상수 한 묶음에
+//! 겹침 표시나 마감 계산이 화면마다 달라진다. 조건과 별칭은 아래 상수 한 묶음에
 //! 모아 두었다 — 그쪽 질의가 별칭을 바꾸면 고칠 자리가 거기뿐이다.
 //!
 //! 집중 등재의 저장도 여기 있다. 한 명분이 축 · 기간 · 사유 · 태그 · 등재 표시이고,
@@ -49,7 +49,7 @@ const NEIS_UNDONE: &str = "s.neis_done = 0";
 /// 월 필터. 날짜가 ISO라 앞자리 비교로 그 달이 구분된다.
 const MONTH_LIKE: &str = "s.date LIKE ?2";
 
-/// 목록의 기본 순서. 서류는 이 뒤에 마감 순으로 다시 세운다.
+/// 목록의 기본 순서. 서류는 이 뒤에 마감 순으로 다시 정렬한다.
 const SPAN_ORDER: &str = "ORDER BY s.date, st.number, s.id";
 
 /// 월 필터를 날짜 앞자리 패턴으로 바꾼다. 연도만 주면 그 해 전체다.
@@ -82,7 +82,7 @@ fn iso(date: &str) -> Result<String, String> {
 ///
 /// `SpanItem.days_overdue`는 이미 받은 건에서 비어 있다. 정렬에는 그 값을 쓰지 않고
 /// `doc_due`로 다시 센다 — 교사가 체크한 줄이 그 자리에 남아야 하기 때문이다.
-/// 체크하는 순간 줄이 목록 맨 아래로 뛰면 다음에 누를 줄을 다시 찾아야 한다.
+/// 체크하는 순간 줄이 목록 맨 아래로 이동하면 다음에 누를 줄을 다시 찾아야 한다.
 fn overdue_of(span: &SpanItem, today: NaiveDate) -> Option<i64> {
     span.doc_due
         .as_deref()
@@ -209,7 +209,7 @@ fn span_context(
 /// 그대로 부를 수 없다. **`edit_span_impl`에서 트랜잭션을 분리하면 이 함수는 지운다.**
 ///
 /// 고른 교시를 구간으로 바꾸는 판단은 그쪽과 **같은 `ranges_for`**를 쓴다. 그 규칙까지
-/// 한 벌 더 두면 수정 모달로 고친 것과 이 화면으로 고친 것이 조용히 갈라진다.
+/// 한 벌 더 두면 수정 모달로 고친 것과 이 화면으로 고친 것이 조용히 달라진다.
 ///
 /// 마감은 다시 계산하지 않는다 — `edit_span_impl`과 같다. 이미 교사가 학부모에게
 /// 말해 둔 날짜라, 축을 고쳤다고 소급해 움직이면 그 약속이 달라진다.
@@ -218,10 +218,10 @@ fn edit_axis_in_tx(conn: &Connection, edit: &SpanEdit) -> Result<(), String> {
     let max_slot = max_slot_of(conn, school_id)?;
     let ranges = ranges_for(prompt.as_deref(), &edit.slots, max_slot as usize)?;
 
-    // 한 행은 한 구간이다. 1,3,5처럼 이어지지 않은 교시는 담을 자리가 없다.
+    // 한 행은 한 구간이다. 1,3,5처럼 연속하지 않은 교시는 담을 자리가 없다.
     if ranges.len() > 1 {
         return Err(
-            "이어지지 않은 교시는 한 구간으로 고칠 수 없습니다. 지운 뒤 다시 찍어주세요."
+            "연속하지 않은 교시는 한 구간으로 고칠 수 없습니다. 지운 뒤 다시 찍어주세요."
                 .to_string(),
         );
     }

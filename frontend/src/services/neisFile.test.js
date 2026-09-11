@@ -116,7 +116,7 @@ describe('월별 출결 현황', () => {
     })
 
     it('그날 교시가 3교시뿐이어도 하루 종일로 읽는다', () => {
-        // 최대 교시(7)로 종례 자리를 계산하면 조회~3교시와 종례로 갈라진다.
+        // 최대 교시(7)로 종례 자리를 계산하면 조회~3교시와 종례로 분리된다.
         expect(out.rows[0]).toMatchObject({startSlot: '조회', endSlot: '종례'})
     })
 
@@ -133,7 +133,7 @@ describe('월별 출결 현황', () => {
         expect(merged).toHaveLength(2)
         expect(merged[0]).toMatchObject({startSlot: '조회', endSlot: '1'})
         expect(merged[1]).toMatchObject({startSlot: '6', endSlot: '종례'})
-        // 갈라져 나온 구간은 둘이지만 **합쳐진 줄은 하나다.** 교사에게는 줄 수로 말한다.
+        // 분리되어 나온 구간은 둘이지만 **합쳐진 줄은 하나다.** 교사에게는 줄 수로 말한다.
         expect(out.meta.merged).toBe(1)
     })
 })
@@ -455,7 +455,7 @@ describe('번호 이어받기', () => {
 
 describe('종례의 자리', () => {
     it('마지막 교시부터의 조퇴를 쪼개지 않는다 — 월별 파일에서 가장 흔한 줄이다', () => {
-        // 쪼개면 `7교시~7교시`와 `종례~종례` 두 건이 되어 이미 올바르게 저장된
+        // 분리하면 `7교시~7교시`와 `종례~종례` 두 건이 되어 이미 올바르게 저장된
         // `7교시~종례`와 어긋나고, `종례~종례` 조퇴는 고르개가 표현할 수도 없다.
         expect(slotRuns(['7', '종례'])).toEqual([{startSlot: '7', endSlot: '종례'}])
         expect(slotRuns(['2', '종례'])).toEqual([{startSlot: '2', endSlot: '종례'}])
@@ -570,7 +570,7 @@ describe('표기를 다듬는 자리', () => {
     it('띄어쓰기는 파일과 DB 양쪽에서 지운다 — `출석 인정`으로 저장한 학교가 있다', () => {
         const reasons = [{label: '질병'}, {label: '출석 인정'}]
         const types = [{label: '결석', slotPrompt: 'none'}, {label: '조 퇴', slotPrompt: 'start'}]
-        // 돌려주는 것은 **DB에 적힌 그대로**다. 다듬은 쪽을 넘기면 Rust가 축을 못 찾는다.
+        // 돌려주는 것은 **DB에 적힌 그대로**다. 정규화한 쪽을 넘기면 Rust가 축을 못 찾는다.
         expect(splitCodeLabel('출석인정결석', reasons, types))
             .toEqual({reasonLabel: '출석 인정', typeLabel: '결석'})
         expect(splitCodeLabel('질병조퇴', reasons, types))

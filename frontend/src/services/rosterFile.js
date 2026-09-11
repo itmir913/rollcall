@@ -64,22 +64,90 @@ export function cellText(value) {
 // ── CSV ───────────────────────────────────────────────────────
 
 /**
- * CSV 바이트를 글자로 푼다.
+ * 바이트 앞머리의 BOM이 말하는 인코딩. 없으면 null.
  *
- * 엑셀이 저장한 한국어 CSV는 CP949(euc-kr)인 경우가 많다. UTF-8로만 읽으면
- * 이름이 전부 깨진 채 조용히 들어간다. BOM → UTF-8 → euc-kr 순서로 시도한다.
+ * **UTF-16을 반드시 본다.** 엑셀의 `유니코드 텍스트` 저장과 일부 도구의 CSV 내보내기가
+ * UTF-16LE다. 이것을 놓치면 한글이 섞인 파일은 깨진 글자로, **ASCII만 있는 파일은
+ * UTF-8 디코드가 통과해 버려** 글자 사이에 NUL이 끼어 들어간다. 그러면 번호 칸이
+ * 숫자로 읽히지 않아 서른 줄이 전부 버려지는데, 교사는 파일이 잘못된 줄 안다.
+ */
+export function bomOf(bytes) {
+    if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+        return {encoding: 'utf-8', skip: 3}
+    }
+    // UTF-32 BOM이 UTF-16LE BOM으로 시작하므로 먼저 걸러낸다.
+    if (bytes[0] === 0xff && bytes[1] === 0xfe && bytes[2] === 0x00 && bytes[3] === 0x00) {
+        return {encoding: 'utf-32le', skip: 4}
+    }
+    if (bytes[0] === 0xff && bytes[1] === 0xfe) return {encoding: 'utf-16le', skip: 2}
+    if (bytes[0] === 0xfe && bytes[1] === 0xff) return {encoding: 'utf-16be', skip: 2}
+    return null
+}
+
+/**
+ * BOM 없는 UTF-16인가. **NUL 바이트의 자리로 알아본다.**
+ *
+ * UTF-16은 ASCII 글자마다 NUL을 한 짝씩 끼우므로, 한쪽 자리에만 NUL이 몰린다.
+ * 텍스트 파일에 NUL이 들어갈 일은 그것 말고 없다 — 하나라도 있으면 UTF-8도 CP949도 아니다.
+ */
+export function looksLikeUtf16(bytes) {
+    const limit = Math.min(bytes.length, 512)
+    if (limit < 4) return null
+    let even = 0
+    let odd = 0
+    for (let i = 0; i < limit; i++) {
+        if (bytes[i] !== 0x00) continue
+        if (i % 2 === 0) even += 1
+        else odd += 1
+    }
+    if (even === 0 && odd === 0) return null
+    // 한쪽으로 확실히 몰려야 한다. 섞여 있으면 UTF-16이 아니라 깨진 파일이다.
+    if (odd > even * 4) return 'utf-16le'   // 낮은 바이트가 앞 → 홀수 자리가 NUL
+    if (even > odd * 4) return 'utf-16be'
+    return null
+}
+
+/**
+ * CSV 바이트를 글자로 푼다. **어느 인코딩으로 읽었는지 함께 돌려준다.**
+ *
+ * 엑셀이 저장한 한국어 CSV는 CP949(euc-kr)인 경우가 많다. UTF-8로만 읽으면 이름이
+ * 전부 깨진 채 조용히 들어간다. 순서는 BOM → UTF-16 짐작 → UTF-8 → CP949다.
+ *
+ * **어느 것으로 읽었는지 화면에 알린다.** 파서 이름을 알리는 것과 같은 이유다 —
+ * 이름이 이상할 때 어디를 의심할지 알려주는 단서가 된다.
  */
 export function decodeCsvBytes(buffer) {
     const bytes = new Uint8Array(buffer)
-    if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-        return new TextDecoder('utf-8').decode(bytes.subarray(3))
+
+    const bom = bomOf(bytes)
+    if (bom) {
+        try {
+            return {
+                text: new TextDecoder(bom.encoding).decode(bytes.subarray(bom.skip)),
+                encoding: bom.encoding,
+            }
+        } catch {
+            // utf-32le처럼 브라우저가 모르는 인코딩이면 아래로 내려간다.
+        }
     }
+
+    const guessed = looksLikeUtf16(bytes)
+    if (guessed) {
+        try {
+            return {text: new TextDecoder(guessed).decode(bytes), encoding: guessed}
+        } catch { /* 아래로 */ }
+    }
+
     for (const encoding of ['utf-8', 'euc-kr']) {
         try {
-            return new TextDecoder(encoding, {fatal: true}).decode(bytes)
+            return {
+                text: new TextDecoder(encoding, {fatal: true}).decode(bytes),
+                encoding,
+            }
         } catch { /* 다음 인코딩으로 */ }
     }
-    return new TextDecoder('utf-8').decode(bytes)
+    // 어느 것으로도 깨끗하게 읽히지 않았다. 읽히는 만큼 읽되 **그 사실을 숨기지 않는다.**
+    return {text: new TextDecoder('utf-8').decode(bytes), encoding: '알 수 없음'}
 }
 
 /**
@@ -327,7 +395,7 @@ export function rowsToEntries(rows, headerIndex, map) {
             number,
             name: rawName,
             // 버린 줄이 자기를 가리키기 위한 값이다 — 교과에서 '4번 김하늘'이 두 줄
-            // 나란히 서면 번호만으로는 어느 줄을 고칠지 말하지 못한다.
+            // 나란히 표시되면 번호만으로는 어느 줄을 고칠지 말하지 못한다.
             line,
         })
     }
@@ -341,7 +409,7 @@ export function rowsToEntries(rows, headerIndex, map) {
  * 파일 하나를 읽어 명단으로. 화면은 이 함수만 부른다.
  *
  * @param {File} file
- * @returns {Promise<{entries, skipped, parser, headerLine, columns, missing, inherited}>}
+ * @returns {Promise<{entries, skipped, parser, encoding, headerLine, columns, missing, inherited}>}
  */
 export async function readRosterFile(file) {
     const ext = extensionOf(file.name)
@@ -355,8 +423,12 @@ export async function readRosterFile(file) {
     const buffer = await file.arrayBuffer()
     let rows
     let parser
+    // 어느 인코딩으로 읽었는지. 엑셀 파일은 zip 안이 언제나 UTF-8이라 물을 것이 없다.
+    let encoding = ''
     if (ext === 'csv') {
-        rows = parseCsv(decodeCsvBytes(buffer))
+        const decoded = decodeCsvBytes(buffer)
+        encoding = decoded.encoding
+        rows = parseCsv(decoded.text)
         parser = 'csv'
     } else {
         if (!looksLikeZip(buffer)) {
@@ -392,6 +464,8 @@ export async function readRosterFile(file) {
         entries,
         skipped,
         parser,
+        // CSV를 어느 인코딩으로 읽었는지. 엑셀 파일은 zip 안이 언제나 UTF-8이라 빈 문자열이다.
+        encoding,
         headerLine: header.index + 1,
         columns: Object.keys(header.map),
         // 없는 열을 알리기만 한다. 학년 · 반이 필수인지는 대상 학급을 아는 화면이 판단한다.
@@ -407,7 +481,7 @@ export const SAMPLE_HEADERS = ['학년', '반', '번호', '이름']
 
 /**
  * 반을 섞어 둔다. 교과 강좌는 선택과목이라 여러 반이 한 명단에 모이고, **번호 하나로는
- * 학생을 가릴 수 없다** — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 한 반으로만
+ * 학생을 구별할 수 없다** — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 한 반으로만
  * 된 양식을 내려받으면 학년 · 반 열을 비워 두어도 되는 줄 알고, 그 파일은 교과 강좌에
  * 들어가지 못한다. 담임 명렬표로 쓸 때는 학년 · 반을 읽지 않으므로 섞여 있어도 무방하다.
  */

@@ -29,7 +29,7 @@ export const useHomeStore = defineStore('home', {
          *
          * 실패하면 앞의 요약을 **반드시 비운다.** 남겨 두면 담임에서 교과로 넘어갔을 때
          * 교과 화면에 담임 반 학생 이름과 미제출 건수가 그대로 그려진다 — 두 모드가
-         * 서로 새지 않는다는 규칙이 화면에서 깨지는 자리가 바로 여기다.
+         * 서로 유출되지 않는다는 규칙이 화면에서 깨지는 자리가 바로 여기다.
          */
         async fetchSummary(limit = 5) {
             const app = useAppStore()

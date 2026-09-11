@@ -6,7 +6,7 @@
  * **알리기만 한다** — 다른 반 학생이 우리 반 명단에 실리는 일이 실제로 있다.
  *
  * **열쇠는 역할이 정한다.** 담임은 번호 하나이고, 교과 강좌는 (학년, 반, 번호) 자리
- * 전체다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 화면도 그만큼 갈린다:
+ * 전체다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 화면도 그만큼 구분된다:
  * 교과에서만 자리 칸과 반별 인원을 그리고, 학급 판단(`detectClass`)은 묻지 않는다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
@@ -40,7 +40,7 @@ const APPLIED = {
     added: 1, created: 0, renamed: 0, withdrawn: 0, blocked: 0, seatClosed: 0,
 }
 
-/** 교과 강좌 미리보기. **같은 번호가 반을 달리해 두 줄 선다** — 번호로는 못 가린다. */
+/** 교과 강좌 미리보기. **같은 번호가 반을 달리해 두 줄 표시된다** — 번호로는 구별하지 못한다. */
 const SUBJECT_DIFF = [
     {
         key: 0, grade: 3, classNo: 1, line: 2, number: 4,
@@ -78,7 +78,7 @@ function build({
     return {wrapper: mount(RosterPanel), roster}
 }
 
-/** 교과 강좌를 보고 있게 만든다. 화면이 갈리는 것은 학급의 역할 하나다. */
+/** 교과 강좌를 보고 있게 만든다. 화면이 구분되는 것은 학급의 역할 하나다. */
 function pickSubject() {
     const app = useAppStore()
     app.classes = [HOMEROOM, SUBJECT]
@@ -150,7 +150,7 @@ describe('명렬표 가져오기 — 교과 강좌', () => {
         expect(wrapper.text()).not.toContain('가리킵니다')
     })
 
-    it('번호가 겹쳐도 줄이 통째로 선다 — 목록의 열쇠는 번호가 아니라 key다', async () => {
+    it('번호가 겹쳐도 줄이 통째로 표시된다 — 목록의 열쇠는 번호가 아니라 key다', async () => {
         pickSubject()
         const {wrapper} = build({diff: SUBJECT_DIFF})
         await load(wrapper)
@@ -205,7 +205,7 @@ describe('명렬표 가져오기 — 교과 강좌', () => {
         expect(wrapper.find('.roster__seats').text()).toContain('3학년 1반 1 · 6반 2 — 3명')
     })
 
-    it('지금 명단에도 자리를 보인다 — 미리보기만 고치면 한쪽이 갈라진다', async () => {
+    it('지금 명단에도 자리를 보인다 — 미리보기만 고치면 한쪽이 분리된다', async () => {
         pickSubject()
         const {wrapper} = build({
             students: [
@@ -220,7 +220,7 @@ describe('명렬표 가져오기 — 교과 강좌', () => {
     })
 
     it('학년 · 반 열이 통째로 없으면 한 문장으로 멈추고 양식을 옆에 둔다', async () => {
-        // 서른 줄을 전부 같은 이유의 blocked로 세우면 그것이 곧 늘 붙어 있는 경고가 된다.
+        // 서른 줄을 전부 같은 이유의 blocked로 멈추면 그것이 곧 늘 붙어 있는 경고가 된다.
         pickSubject()
         const {wrapper, roster} = build({diff: SUBJECT_DIFF})
         await load(wrapper, {missing: ['grade', 'classNo']})
@@ -240,11 +240,11 @@ describe('명렬표 가져오기 — 교과 강좌', () => {
     })
 })
 
-describe('명렬표 가져오기 — 앉히지 못한 줄', () => {
+describe('명렬표 가져오기 — 자리를 정하지 못한 줄', () => {
     /**
      * 줄을 눌러 바꾸는 시험이 있으므로 매번 새로 만든다.
      *
-     * **`why`는 Rust가 실제로 내보내는 문장이어야 한다.** 지어낸 문구를 세워 두면
+     * **`why`는 Rust가 실제로 내보내는 문장이어야 한다.** 지어낸 문구를 넣어 두면
      * 이 시험이 production에 없는 출력을 "검증"한다 — 이 저장소가 스토어 가짜에
      * 옛 인자 모양을 단언해 초록으로 지나간 적이 있다.
      * 줄 번호는 **문장에 들어 있지 않다.** 화면이 한 곳에서만 붙인다.
@@ -277,8 +277,26 @@ describe('명렬표 가져오기 — 앉히지 못한 줄', () => {
         expect(text).not.toContain('5번째 줄 — 5번째 줄')
     })
 
+    it('교사가 읽는 문구를 한자어로 적는다 — 순수 한국어 동사는 한 번 멈추게 한다', async () => {
+        pickSubject()
+        const {wrapper} = build({
+            diff: blocked(),
+            applied: {added: 0, created: 0, renamed: 0, withdrawn: 0, blocked: 2, seatClosed: 0},
+        })
+        await load(wrapper)
+
+        expect(wrapper.text()).toContain('대조되지 않아')
+        expect(wrapper.text()).not.toContain('짝을 잃어')
+
+        await save(wrapper).trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('자리를 정하지 못해 넘긴 줄 2개')
+        expect(wrapper.text()).not.toContain('앉히')
+    })
+
     it('빠짐을 자동으로 표시하지 않았다는 것을 알린다', async () => {
-        // 읽지 못한 줄은 짝 찾기에 참여하지 못한다. 그 줄이 가리키던 학생이 짝을 잃어
+        // 읽지 못한 줄은 대조에 참여하지 못한다. 그 줄이 가리키던 학생이 대조되지 않아
         // 명단에서 빠지면, 교사는 "한 줄만 못 넣었구나" 하고 저장을 누른다.
         pickSubject()
         const {wrapper} = build({diff: blocked()})
@@ -287,7 +305,7 @@ describe('명렬표 가져오기 — 앉히지 못한 줄', () => {
         expect(wrapper.text()).toContain('빠짐은 자동으로 표시하지 않았습니다')
     })
 
-    it('학적이 있는 줄만 [명단에만 잇기]로 돈다 — 단추는 줄마다 하나다', async () => {
+    it('학적이 있는 줄만 [명단에만 연결]로 순환한다 — 단추는 줄마다 하나다', async () => {
         pickSubject()
         const {wrapper} = build({diff: blocked()})
         await load(wrapper)
@@ -299,10 +317,64 @@ describe('명렬표 가져오기 — 앉히지 못한 줄', () => {
         expect(buttons[1].attributes('disabled')).toBeDefined()
 
         await buttons[0].trigger('click')
-        expect(wrapper.findAll('.row__acts button')[0].text()).toBe('명단에만 잇기')
+        expect(wrapper.findAll('.row__acts button')[0].text()).toBe('명단에만 연결')
 
         await wrapper.findAll('.row__acts button')[0].trigger('click')
         expect(wrapper.findAll('.row__acts button')[0].text()).toBe('넘김')
+    })
+})
+
+/**
+ * **무엇으로 읽었는지 알린다.** 파서 이름을 알리는 것과 같은 이유다 — 이름이 깨져
+ * 보일 때 파일을 의심할지 해독을 의심할지 알려주는 단서다. 특히 어느 인코딩으로도
+ * 깨끗하게 읽히지 않은 파일은 반드시 말한다. 읽히는 만큼 읽되 숨기지 않는다.
+ */
+describe('명렬표 가져오기 — 무엇으로 읽었는가', () => {
+    const head = (wrapper) => wrapper.find('.ledger__head').text()
+    const warnings = (wrapper) => wrapper.findAll('.notice--warn').map((n) => n.text()).join(' ')
+
+    it('CSV를 어느 인코딩으로 읽었는지 머리글에 적는다', async () => {
+        const {wrapper} = build()
+        await load(wrapper, {parser: 'csv', encoding: 'euc-kr'})
+
+        expect(head(wrapper)).toContain('csv로 읽음')
+        expect(head(wrapper)).toContain('euc-kr로 해독')
+    })
+
+    it('엑셀은 인코딩을 말하지 않는다 — zip 안은 언제나 UTF-8이라 물을 것이 없다', async () => {
+        const {wrapper} = build()
+        await load(wrapper, {parser: 'exceljs', encoding: ''})
+
+        expect(head(wrapper)).toContain('exceljs로 읽음')
+        // 언제나 붙어 있는 문구는 읽지 않게 된다.
+        expect(head(wrapper)).not.toContain('해독')
+    })
+
+    it('판별하지 못한 인코딩은 반드시 알린다 — 이름이 깨진 채 들어올 수 있다', async () => {
+        const {wrapper} = build()
+        await load(wrapper, {parser: 'csv', encoding: '알 수 없음'})
+
+        expect(warnings(wrapper)).toContain('인코딩을 판별하지 못해')
+        // 무엇으로 다시 저장하면 되는지까지 적는다.
+        expect(warnings(wrapper)).toContain('CP949')
+    })
+
+    it('읽힌 인코딩은 경고로 올리지 않는다 — 늘 붙어 있는 경고는 읽지 않게 된다', async () => {
+        const {wrapper} = build()
+        await load(wrapper, {parser: 'csv', encoding: 'utf-8'})
+
+        expect(warnings(wrapper)).not.toContain('인코딩을 판별하지 못해')
+    })
+
+    it('학급을 옮기면 앞 파일의 인코딩이 남지 않는다', async () => {
+        const {wrapper} = build()
+        await load(wrapper, {parser: 'csv', encoding: '알 수 없음'})
+        expect(warnings(wrapper)).toContain('인코딩을 판별하지 못해')
+
+        pickSubject()
+        await flushPromises()
+
+        expect(wrapper.text()).not.toContain('인코딩을 판별하지 못해')
     })
 })
 
@@ -331,7 +403,7 @@ describe('명렬표 가져오기 — 저장 결과', () => {
         const text = wrapper.text()
         expect(text).toContain('명단에 새로 3명')
         expect(text).toContain('학적을 새로 만든 것 2명')
-        expect(text).toContain('앉히지 못해 넘긴 줄 1개')
+        expect(text).toContain('자리를 정하지 못해 넘긴 줄 1개')
         expect(text).not.toContain('undefined')
     })
 

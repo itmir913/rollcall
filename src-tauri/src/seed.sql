@@ -2,16 +2,19 @@
 -- 최초 생성 시 1회만 실행되는 시드 데이터.
 --
 -- 여기 있는 값은 전부 사용자가 설정 화면에서 바꿀 수 있는 "데이터"다.
--- 학교마다 다른 항목은 기본값만 넣고 규정으로 굳히지 않는다.
+-- 학교마다 다른 항목은 기본값만 넣고 규정으로 고정하지 않는다.
 --
 -- valid_from은 '1900-01-01'이다. 최초 집합에는 시작일이 없다 — 설치일을 넣으면
 -- 설치 전 날짜의 출결을 입력할 때 목록이 통째로 비어 버린다.
 -- ================================================================
 
--- ─── 학교 ──────────────────────────────────────────────────────
--- 이름은 설정에서 바꾼다. 최대 교시 7과 제출 기한 7일은 흔한 값일 뿐 규정이 아니다.
-INSERT INTO school (name, max_slot, due_days, due_skip_offdays, sort_order, active)
-VALUES ('우리 학교', 7, 7, 1, 10, 1);
+-- ─── 학교는 여기서 만들지 않는다 ──────────────────────────────
+-- 학교는 **학년도 안에** 있고, 학년도는 교사가 첫 실행에서 정한다. 시드가 학교를
+-- 미리 만들면 그 행이 어느 학년도의 것인지 정의되지 않는다.
+--
+-- 학교마다 다른 기본값(출결 태그 · 한도 규정)도 여기 없다. 시드는 한 번만 도는데
+-- 학교는 여럿 만들어지므로, 여기 두면 **첫 학교만 태그를 받고 두 번째 학교는 빈
+-- 목록으로 시작한다.** 그 기본값은 `create_school`이 학교를 만들 때마다 넣는다.
 
 -- ─── 축 1: 구분 ────────────────────────────────────────────────
 INSERT INTO attendance_reason (label, shortcut, sort_order, valid_from)
@@ -54,24 +57,3 @@ FROM attendance_reason r
 INSERT INTO code_alias (code_id, raw)
 SELECT id, label
 FROM attendance_code;
-
--- ─── 태그 ──────────────────────────────────────────────────────
--- 세는 대상의 기본값. 학교마다 부르는 이름이 다르므로 설정에서 고친다.
-INSERT INTO span_tag (school_id, name, sort_order, valid_from)
-SELECT id, '체험학습', 10, '1900-01-01'
-FROM school
-UNION ALL
-SELECT id, '생리통', 20, '1900-01-01'
-FROM school;
-
--- ─── 한도 규정 ─────────────────────────────────────────────────
--- 흔한 두 가지를 미리 넣는다. 숫자는 학교마다 다르므로 설정에서 고친다.
--- 이 규정은 **입력을 막지 않는다.** 통계 화면에서 세어 알려줄 뿐이다.
-INSERT INTO quota_rule (school_id, name, tag_id, period, limit_n, unit, sort_order, valid_from)
-SELECT t.school_id, '체험학습 연 20일', t.id, 'year', 20, 'day', 10, '1900-01-01'
-FROM span_tag t
-WHERE t.name = '체험학습'
-UNION ALL
-SELECT t.school_id, '생리통 월 1회', t.id, 'month', 1, 'count', 20, '1900-01-01'
-FROM span_tag t
-WHERE t.name = '생리통';

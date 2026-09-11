@@ -14,7 +14,7 @@
 //!
 //! 목록을 고르고 정렬하는 규칙은 여기에 두지 않는다. 미제출 명단은 `mark`의 두
 //! 함수를, 구간 조회는 `attendance::load_spans`를, 한도 집계는 `stats`를 그대로 부른다 —
-//! 같은 규칙을 두 곳에 두면 화면에서 본 순서와 내보낸 파일의 순서가 갈라진다.
+//! 같은 규칙을 두 곳에 두면 화면에서 본 순서와 내보낸 파일의 순서가 달라진다.
 
 use crate::commands::attendance::load_spans;
 use crate::commands::class::{homeroom_scope, ClassScope};
@@ -109,7 +109,6 @@ fn overdue_text(doc_due: Option<&str>, today: &str) -> String {
 fn period_label(period: &str) -> String {
     match period {
         "year" => "학년도",
-        "semester" => "학기",
         "month" => "달",
         other => other,
     }

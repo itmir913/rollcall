@@ -11,6 +11,7 @@ pub mod project;
 pub mod school;
 pub mod stats;
 pub mod student;
+pub mod subject;
 pub mod year;
 
 pub use attendance::*;
@@ -26,6 +27,7 @@ pub use project::*;
 pub use school::*;
 pub use stats::*;
 pub use student::*;
+pub use subject::*;
 pub use year::*;
 
 use crate::state::{DbState, DB_NOT_OPEN};

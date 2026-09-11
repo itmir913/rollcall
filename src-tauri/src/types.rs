@@ -9,23 +9,20 @@ use serde::{Deserialize, Serialize};
 // ── 학교 ──────────────────────────────────────────────────────
 
 /// 학교 단위 설정. 최대 교시와 제출 기한이 여기 있다.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// **학교는 학년도 안에 있다.** `year_id`가 그 자리를 가리킨다 — 2026학년도의 A학교와
+/// 2027학년도의 A학교는 다른 행이고, 최대 교시 · 제출 기한도 따로 든다.
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SchoolItem {
-    #[serde(default)]
     pub id: i64,
+    pub year_id: i64,
     pub name: String,
     pub max_slot: i64,
     pub due_days: i64,
     pub due_skip_offdays: bool,
-    #[serde(default)]
     pub sort_order: i64,
-    #[serde(default = "default_true")]
     pub active: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// 마감을 셀 때 건너뛸 날. 학사일정이 아니라 그 목록일 뿐이다.
@@ -56,33 +53,51 @@ pub struct AcademicYearItem {
 ///
 /// `grade` · `class_no`는 담임일 때만 채워진다. 교과 강좌는 여러 반에서 모이므로
 /// 가리킬 반이 없다.
+///
+/// **학년도를 따로 들지 않는다.** 학교가 이미 학년도를 안다 —
+/// 학년도 → 학교 → 맡은 것이 이 앱의 계층이다.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeachingClassItem {
     pub id: i64,
     pub school_id: i64,
-    pub year_id: i64,
     /// homeroom | subject — 기록하는 것이 달라 화면이 나뉜다.
     pub role: String,
     pub name: String,
     pub grade: Option<i64>,
     pub class_no: Option<i64>,
+    /// 화면에서 함께 묶어 보일 이름표. `프로그래밍A · B · C`를 묶는다.
+    /// **분반 표가 아니다** — 강좌는 저마다 독립한 행이고 이것은 이름일 뿐이다.
+    pub group_tag_id: Option<i64>,
+    pub group_tag_name: Option<String>,
     pub sort_order: i64,
     pub valid_from: String,
     pub valid_to: Option<String>,
     /// 지금 명단에 있는 인원. 이동 화면이 "어느 쪽이 내가 찾던 강좌인지"를
-    /// 이름만으로 못 가릴 때 이 숫자가 가른다.
+    /// 이름만으로 구별하지 못할 때 이 숫자가 구분한다.
     pub member_count: i64,
+}
+
+/// 강좌 묶음 이름표 하나. **`TagItem`(출결 태그)과 다른 것이다** —
+/// 그쪽은 한도를 세는 대상이고 이쪽은 화면에서 강좌를 묶는 이름이다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClassTagItem {
+    pub id: i64,
+    pub name: String,
+    pub sort_order: i64,
+    /// 이 이름표를 단 강좌 수. 지우기 전에 무엇이 풀리는지 보여준다.
+    pub class_count: i64,
 }
 
 // ── 학생 ──────────────────────────────────────────────────────
 
+/// 학적 한 줄. **학년도를 따로 들지 않는다** — 학교가 이미 학년도를 안다.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StudentItem {
     pub id: i64,
     pub school_id: i64,
-    pub year_id: i64,
     pub grade: i64,
     pub class_no: i64,
     pub number: i64,
@@ -102,7 +117,7 @@ pub struct RosterEntry {
     pub number: i64,
     pub name: String,
     /// 파일의 몇 번째 줄인가. **버린 줄이 자기를 가리키기 위한 값이다** —
-    /// 교과에서 '4번 김하늘'이 두 줄 나란히 서면 어느 줄을 고칠지 말하지 못한다.
+    /// 교과에서 '4번 김하늘'이 두 줄 나란히 나타나면 어느 줄을 고칠지 말하지 못한다.
     #[serde(default)]
     pub line: Option<i64>,
 }
@@ -113,8 +128,8 @@ pub struct RosterEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterDiffRow {
-    /// 화면 목록의 열쇠이자 미리보기와 적용을 잇는 자리표.
-    /// 교과는 번호가 겹쳐 번호로 줄을 가릴 수 없다. (`NeisDiffItem.key`와 같은 뜻)
+    /// 화면 목록의 열쇠이자 미리보기와 적용을 연결하는 자리표.
+    /// 교과는 번호가 겹쳐 번호로 줄을 구별할 수 없다. (`NeisDiffItem.key`와 같은 뜻)
     #[serde(default)]
     pub key: usize,
     /// 그 줄이 가리키는 학적 자리. **담임 적용은 이 둘을 읽지 않는다** — 보여주기용이다.
@@ -144,7 +159,7 @@ pub struct RosterApplyResult {
     pub created: i64,
     pub renamed: i64,
     pub withdrawn: i64,
-    /// 앉힐 수 없어 넘긴 줄.
+    /// 배치할 수 없어 넘긴 줄.
     pub blocked: i64,
     /// 담임이 자리를 넘겨받으며 마감한 학적. 되돌릴 수 없는 쓰기다.
     pub seat_closed: i64,
@@ -257,7 +272,7 @@ pub struct QuotaRuleItem {
     pub reason_id: Option<i64>,
     #[serde(default)]
     pub type_id: Option<i64>,
-    /// year | semester | month
+    /// year | month
     pub period: String,
     pub limit_n: i64,
     /// day(하루에 두 건이어도 1일) | count(건수)
@@ -339,9 +354,15 @@ pub struct StampInput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StampResult {
-    /// added | cancelled
+    /// added | cancelled | kept
+    ///
+    /// `kept`는 같은 조합이 이미 있는데 그 구간에 태그 · 사유 · 서류 · NEIS 표시가
+    /// 남아 있어 **무르지 않은** 경우다. 그것까지 지우면 다시 찍어도 빈 구간만
+    /// 돌아와, 교사가 적어 둔 것이 말없이 사라진다.
     pub action: String,
     pub span_ids: Vec<i64>,
+    /// 화면이 그대로 보여줄 한 문장. `kept`일 때만 채워진다.
+    pub message: Option<String>,
 }
 
 /// 구간 하나의 축과 기간을 고친다. 사유·태그는 별도 커맨드다.
@@ -362,8 +383,8 @@ pub struct SpanEdit {
 /// 모달은 복사본을 고치고 [저장]에서만 넘긴다. 그래서 축 · 기간 · 사유 · 태그를
 /// 한 번에 받아 통째로 반영하고 나이스 등재로 표시한다.
 ///
-/// 축과 기간은 `SpanEdit`을 그대로 펼쳐 쓴다. 같은 값을 다시 적으면 수정 모달이
-/// 보내는 것과 이 화면이 보내는 것이 갈라지고, 갈라진 쪽만 고쳐진다.
+/// 축과 기간은 `SpanEdit`을 그대로 전개해 쓴다. 같은 값을 다시 적으면 수정 모달이
+/// 보내는 것과 이 화면이 보내는 것이 달라지고, 달라진 쪽만 고쳐진다.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FocusEntry {
@@ -467,6 +488,14 @@ pub struct QuotaReport {
     pub over_count: i64,
     /// 태그가 비어 있어 세지 못한 구간. 조용히 넘기지 않는다.
     pub untagged: Vec<SpanItem>,
+    /// 실제로 센 구간(ISO). 학년도 창과 교사가 고른 구간의 교집합이다.
+    pub window_from: String,
+    pub window_to: String,
+    /// **그 창 밖이라 세지 못한 구간 수.** 조용히 넘기지 않는다 —
+    /// 학년도는 기준 연도일 뿐 날짜 울타리가 아니라, 2026학년도 학급에 2027-03-05를
+    /// 찍는 일이 실제로 있다. 그 건은 한도에도 태그 누락 목록에도 들어가지 않으므로
+    /// 세어서 알리지 않으면 교사에게 "덜 썼다"고 거짓으로 말하게 된다.
+    pub outside: i64,
 }
 
 // ── 여러 날 일괄 입력 ─────────────────────────────────────────
@@ -485,6 +514,47 @@ pub struct BulkPreviewDay {
 pub struct BulkApplyResult {
     pub group_id: String,
     pub days: i64,
+}
+
+// ── 교과 차시 ─────────────────────────────────────────────────
+//
+// 교과 교사가 기록하는 것은 `내 수업에 있었는가` 하나뿐이다. 구분 · 종류 · 기간도,
+// 서류도, 나이스도 없다. 담임 쪽 자료형을 재사용하지 않는 이유가 이것이다.
+
+/// 수업 한 칸. **이 행이 있다는 것이 곧 그 교시를 불렀다는 뜻이다.**
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubjectSessionItem {
+    pub id: i64,
+    pub date: String,
+    /// `1` ~ `9`. 조회 · 종례는 들어올 수 없다 — 그 둘은 담임이 보는 하루의 양 끝이다.
+    pub slot: String,
+    pub memo: String,
+    /// 그 칸에서 빠진 학생 수.
+    pub absent_count: i64,
+    /// 그 날짜의 명단 인원. 분모다 — `absent_count`만으로는 "몇 명 중"을 말할 수 없다.
+    pub total: i64,
+}
+
+/// 차시 한 칸의 명단 한 줄. 교과가 찍는 것은 `absent` 하나뿐이다.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubjectRollItem {
+    pub student_id: i64,
+    /// 그 학생의 **학적**이다. 교과 강좌는 반이 섞여 번호만으로는 줄을 구별할 수 없다.
+    pub grade: i64,
+    pub class_no: i64,
+    pub number: i64,
+    pub name: String,
+    /// 그 차시에 빠졌는가.
+    pub absent: bool,
+    pub memo: String,
+    /// 같은 날 그 학생에게 **담임으로 적어 둔** 출결을 사람이 읽는 한 문장으로.
+    ///
+    /// **읽기 전용 참고다.** 내가 담임인 학급의 기록만 보고, 이 화면에서 적은 것과
+    /// 눈에 띄게 구별되어야 한다 — 교과 수업에서 빈 자리를 보았는데 아침에 담임으로
+    /// 질병결석을 찍어 두었으면 그것을 알려주는 것이 기능이지 유출이 아니다.
+    pub homeroom_note: Option<String>,
 }
 
 // ── 나이스 가져오기 ───────────────────────────────────────────
@@ -513,7 +583,7 @@ pub struct NeisRowInput {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NeisDiffItem {
-    /// 미리보기와 적용을 잇는 자리표. 파일에서 읽은 줄의 순번이다.
+    /// 미리보기와 적용을 연결하는 자리표. 파일에서 읽은 줄의 순번이다.
     pub key: usize,
     /// same · add · differ · unreadable
     pub verdict: String,

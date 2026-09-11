@@ -130,7 +130,7 @@ describe('CSV', () => {
 
     it('BOM을 떼고 읽는다', () => {
         const bytes = new TextEncoder().encode('﻿번호,이름')
-        expect(decodeCsvBytes(bytes.buffer)).toBe('번호,이름')
+        expect(decodeCsvBytes(bytes.buffer).text).toBe('번호,이름')
     })
 
     it('엑셀이 저장한 CP949 파일도 읽는다', () => {
@@ -140,12 +140,12 @@ describe('CSV', () => {
             0xb9, 0xf8, 0xc8, 0xa3, 0x2c, 0xc0, 0xcc, 0xb8, 0xa7, 0x0a,
             0x31, 0x2c, 0xb1, 0xe8, 0xc3, 0xb6, 0xbc, 0xf6,
         ])
-        expect(decodeCsvBytes(bytes.buffer)).toBe('번호,이름\n1,김철수')
+        expect(decodeCsvBytes(bytes.buffer).text).toBe('번호,이름\n1,김철수')
     })
 
     it('UTF-8 파일을 CP949로 잘못 읽지 않는다', () => {
         const bytes = new TextEncoder().encode('번호,이름\n1,김철수')
-        expect(decodeCsvBytes(bytes.buffer)).toBe('번호,이름\n1,김철수')
+        expect(decodeCsvBytes(bytes.buffer).text).toBe('번호,이름\n1,김철수')
     })
 })
 
@@ -190,7 +190,7 @@ describe('rowsToEntries', () => {
     })
 
     it('줄마다 파일의 줄 번호를 싣는다', () => {
-        // 교과 강좌는 반이 섞여 '4번 김하늘'이 두 줄 나란히 설 수 있다.
+        // 교과 강좌는 반이 섞여 '4번 김하늘'이 두 줄 나란히 표시될 수 있다.
         // 번호만으로는 어느 줄을 고쳐야 하는지 말하지 못한다.
         const {entries} = rowsToEntries([
             ['학년', '반', '번호', '이름'],
@@ -518,7 +518,7 @@ describe('샘플 양식', () => {
 
     it('반이 섞여 있고 같은 번호가 두 반에 있다', async () => {
         // 교과 강좌는 선택과목이라 여러 반이 한 명단에 모이고, 번호 하나로는 학생을
-        // 가릴 수 없다. 한 반으로만 된 양식을 내려받으면 학년 · 반 열을 비워 두어도
+        // 구별할 수 없다. 한 반으로만 된 양식을 내려받으면 학년 · 반 열을 비워 두어도
         // 되는 줄 알고, 그 파일은 교과 강좌에 들어가지 못한다.
         const seats = SAMPLE_ROWS.map(([grade, classNo]) => `${grade}-${classNo}`)
         expect(new Set(seats).size).toBeGreaterThan(1)
@@ -560,11 +560,78 @@ describe('자체 양식 — 내보낸 것을 그대로 다시 읽는다', () => 
     })
 
     it('양식 내려받기와 내보내기가 같은 머리글을 쓴다', async () => {
-        // 갈라지면 내보낸 파일을 자기가 못 읽는다.
+        // 달라지면 내보낸 파일을 자기가 못 읽는다.
         const sample = await readRosterFile(fileOf('양식.xlsx', await buildSampleWorkbook()))
         const mine = await readRosterFile(fileOf('내보낸.xlsx',
             await buildRosterWorkbook(rosterRowsOf(STUDENTS))))
         expect(mine.columns).toEqual(sample.columns)
         expect(mine.headerLine).toBe(sample.headerLine)
+    })
+})
+
+describe('CSV 인코딩 — 자동으로 알아본다', () => {
+    /**
+     * **이 앱이 늘 넘어지던 자리다.** 엑셀이 저장한 한국어 CSV는 CP949인 경우가 많고,
+     * `유니코드 텍스트` 저장은 UTF-16LE다. 하나라도 놓치면 이름이 전부 깨진 채 조용히
+     * 들어가거나, 번호 칸이 숫자로 읽히지 않아 서른 줄이 통째로 버려진다.
+     */
+    const NL = String.fromCharCode(10)
+    const ROWS = ['학년,반,번호,이름', '3,1,4,김하늘', ''].join(NL)
+
+    const utf8 = (text) => new TextEncoder().encode(text)
+
+    /** UTF-16 바이트를 손으로 짠다. JS에는 UTF-16 인코더가 없다. */
+    function utf16(text, {little = true, bom = false} = {}) {
+        const units = []
+        if (bom) units.push(0xfeff)
+        for (const ch of text) units.push(ch.charCodeAt(0))
+        const bytes = new Uint8Array(units.length * 2)
+        units.forEach((u, i) => {
+            bytes[i * 2 + (little ? 0 : 1)] = u & 0xff
+            bytes[i * 2 + (little ? 1 : 0)] = u >> 8
+        })
+        return bytes
+    }
+
+    /** `학년,반,번호,이름
+3,1,4,김하늘
+`의 CP949 바이트. */
+    const CP949 = new Uint8Array([
+        199, 208, 179, 226, 44, 185, 221, 44, 185, 248, 200, 163, 44, 192, 204, 184, 167, 10,
+        51, 44, 49, 44, 52, 44, 177, 232, 199, 207, 180, 195, 10,
+    ])
+
+    const 경우 = {
+        'UTF-8': {bytes: utf8(ROWS), encoding: 'utf-8'},
+        'UTF-8 (BOM)': {bytes: new Uint8Array([0xef, 0xbb, 0xbf, ...utf8(ROWS)]), encoding: 'utf-8'},
+        'CP949 (엑셀 한국어 저장)': {bytes: CP949, encoding: 'euc-kr'},
+        'UTF-16LE (BOM)': {bytes: utf16(ROWS, {bom: true}), encoding: 'utf-16le'},
+        'UTF-16LE (BOM 없음)': {bytes: utf16(ROWS), encoding: 'utf-16le'},
+        'UTF-16BE (BOM)': {bytes: utf16(ROWS, {little: false, bom: true}), encoding: 'utf-16be'},
+        'UTF-16BE (BOM 없음)': {bytes: utf16(ROWS, {little: false}), encoding: 'utf-16be'},
+    }
+
+    for (const [이름, {bytes, encoding}] of Object.entries(경우)) {
+        it(`${이름} — 글자가 한 자도 깨지지 않는다`, () => {
+            const decoded = decodeCsvBytes(bytes.buffer ?? bytes)
+            expect(decoded.encoding).toBe(encoding)
+            expect(decoded.text).toContain('김하늘')
+            // BOM은 글자가 아니다. 남으면 첫 머리글 앞에 보이지 않는 글자가 붙어 열을 못 찾는다.
+            expect(decoded.text.startsWith('학년')).toBe(true)
+        })
+
+        it(`${이름} — 파일로 읽어도 학생이 그대로 들어온다`, async () => {
+            const result = await readRosterFile(fileOf('명렬표.csv', bytes))
+            expect(result.encoding).toBe(encoding)
+            expect(result.skipped).toEqual([])
+            expect(result.entries).toHaveLength(1)
+            expect(result.entries[0]).toMatchObject({grade: 3, classNo: 1, number: 4, name: '김하늘'})
+        })
+    }
+
+    it('어느 것으로도 깨끗하게 읽히지 않으면 숨기지 않는다', () => {
+        // UTF-8도 CP949도 아닌 바이트. 읽히는 만큼 읽되 그 사실을 말한다.
+        const 이상한것 = new Uint8Array([0xc0, 0xc0, 0xc0, 0x80, 0x80])
+        expect(decodeCsvBytes(이상한것.buffer).encoding).toBe('알 수 없음')
     })
 })

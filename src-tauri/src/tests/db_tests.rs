@@ -25,14 +25,13 @@ fn insert_span(conn: &Connection, class_id: i64, student_id: i64, date: &str) ->
 #[test]
 fn transaction_rolls_back_on_error() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
     let school = school_id(&conn);
 
     let result: Result<(), String> = with_transaction(&conn, || {
         conn.execute(
-            "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-             VALUES (?1, ?2, 3, 6, 1, '김철수', '2026-03-02')",
-            rusqlite::params![school, year],
+            "INSERT INTO student (school_id, grade, class_no, number, name, enrolled_from)
+             VALUES (?1, 3, 6, 1, '김철수', '2026-03-02')",
+            rusqlite::params![school],
         )
         .map_err(|e| e.to_string())?;
         Err("실패".to_string())
@@ -81,11 +80,10 @@ fn foreign_keys_are_enforced() {
 #[test]
 fn a_student_belongs_to_a_school() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
     let bad = conn.execute(
-        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (9999, ?1, 3, 6, 1, '김철수', '2026-03-02')",
-        rusqlite::params![year],
+        "INSERT INTO student (school_id, grade, class_no, number, name, enrolled_from)
+         VALUES (9999, 3, 6, 1, '김철수', '2026-03-02')",
+        [],
     );
     assert!(bad.is_err(), "없는 학교에 학생이 들어갔다");
 }
@@ -94,9 +92,9 @@ fn a_student_belongs_to_a_school() {
 fn deleting_a_student_takes_its_records_with_it() {
     // 그래서 전출을 삭제로 처리하지 않는다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let sid = enroll(&conn, class, year, 2, "이영희");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let sid = enroll(&conn, class, school, 2, "이영희");
     insert_span(&conn, class, sid, "2026-08-26");
 
     conn.execute("DELETE FROM student WHERE id = ?1", rusqlite::params![sid])
@@ -113,9 +111,9 @@ fn deleting_a_student_takes_its_records_with_it() {
 fn a_span_can_be_saved_with_neither_axis_decided() {
     // 학생이 안 왔는데 연락이 닿지 않으면 두 축이 다 빈 채로 남는다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
-    let sid = enroll(&conn, class, year, 2, "이영희");
+    let school = school_id(&conn);
+    let class = homeroom(&conn, school);
+    let sid = enroll(&conn, class, school, 2, "이영희");
     let id = insert_span(&conn, class, sid, "2026-08-26");
 
     let (reason, r#type): (Option<i64>, Option<i64>) = conn
@@ -134,14 +132,13 @@ fn a_span_can_be_saved_with_neither_axis_decided() {
 #[test]
 fn active_number_is_unique_but_withdrawn_numbers_are_reusable() {
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
     let school = school_id(&conn);
-    insert_student(&conn, year, 1, "김철수");
+    insert_student(&conn, school, 1, "김철수");
 
     let dup = conn.execute(
-        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (?1, ?2, 3, 6, 1, '다른사람', '2026-03-02')",
-        rusqlite::params![school, year],
+        "INSERT INTO student (school_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, 3, 6, 1, '다른사람', '2026-03-02')",
+        rusqlite::params![school],
     );
     assert!(dup.is_err());
 
@@ -151,9 +148,9 @@ fn active_number_is_unique_but_withdrawn_numbers_are_reusable() {
     )
     .unwrap();
     conn.execute(
-        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (?1, ?2, 3, 6, 1, '전입생', '2026-07-01')",
-        rusqlite::params![school, year],
+        "INSERT INTO student (school_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, 3, 6, 1, '전입생', '2026-07-01')",
+        rusqlite::params![school],
     )
     .unwrap();
 }
@@ -162,21 +159,15 @@ fn active_number_is_unique_but_withdrawn_numbers_are_reusable() {
 fn the_same_number_can_exist_in_two_schools() {
     // 순회 교사의 3학년 6반 1번은 학교마다 다른 학생이다.
     let conn = setup_test_db();
-    let year = insert_year(&conn, 2026);
-    insert_student(&conn, year, 1, "김철수");
+    let school = school_id(&conn);
+    insert_student(&conn, school, 1, "김철수");
+
+    let other = insert_school(&conn, year_id(&conn), "옆 학교");
 
     conn.execute(
-        "INSERT INTO school (name, max_slot, due_days, due_skip_offdays, sort_order, active)
-         VALUES ('옆 학교', 6, 5, 1, 20, 1)",
-        [],
-    )
-    .unwrap();
-    let other = conn.last_insert_rowid();
-
-    conn.execute(
-        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
-         VALUES (?1, ?2, 3, 6, 1, '최지훈', '2026-03-02')",
-        rusqlite::params![other, year],
+        "INSERT INTO student (school_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, 3, 6, 1, '최지훈', '2026-03-02')",
+        rusqlite::params![other],
     )
     .unwrap();
 

@@ -47,7 +47,7 @@ describe('오늘의 출결', () => {
 
     /**
      * 같은 학생이 내 담임 반에도 내 교과 강좌에도 있을 수 있다. 학생으로 거르면
-     * 교과 화면에 담임 출결이 새므로, 범위는 언제나 학급이다.
+     * 교과 화면에 담임 출결이 유출되므로, 범위는 언제나 학급이다.
      */
     it('여러 날 미리보기도 학급으로 묻는다 — 휴업일은 학급이 아는 학교에 있다', async () => {
         readyApp()
@@ -85,6 +85,38 @@ describe('오늘의 출결', () => {
                 reasonId: 10, typeId: 1, slots: ['2'],
             },
         })
+    })
+
+    it('무르기가 거부되면 이유를 담는다 — 화면은 아무 일도 없는 것처럼 보인다', async () => {
+        // 태그 · 사유 · 서류 · 나이스 표시가 붙은 구간은 다시 눌러도 지워지지 않는다.
+        // 그때 격자는 그대로이므로, 이유를 알리지 않으면 교사는 단추가 고장 난 줄 안다.
+        readyApp()
+        const day = useDayStore()
+        day.setDate('2026-09-10')
+        invoke.mockResolvedValue({
+            action: 'kept',
+            spanIds: [5],
+            message: '태그가 남아 있어 무르지 않았습니다. 지우려면 그 줄의 휴지통 버튼을 쓰세요.',
+        })
+
+        await day.stamp(77)
+
+        expect(day.notice).toContain('무르지 않았습니다')
+        // 오류가 아니다. 교사가 잘못한 것이 없다.
+        expect(day.error).toBe('')
+    })
+
+    it('다음에 제대로 찍히면 그 이유를 지운다', async () => {
+        readyApp()
+        const day = useDayStore()
+        day.setDate('2026-09-10')
+        invoke.mockResolvedValue({action: 'kept', spanIds: [5], message: '남아 있습니다.'})
+        await day.stamp(77)
+        expect(day.notice).not.toBe('')
+
+        invoke.mockResolvedValue({action: 'added', spanIds: [6]})
+        await day.stamp(78)
+        expect(day.notice).toBe('')
     })
 
     it('찍은 뒤 격자를 다시 읽는다 — 취소인지 추가인지는 Rust가 판단한다', async () => {

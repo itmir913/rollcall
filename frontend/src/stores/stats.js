@@ -23,6 +23,20 @@ export const useStatsStore = defineStore('stats', {
     getters: {
         /** 태그가 없어 세지 못한 구간. 조용히 넘기면 학년말에 발견된다. */
         untagged: (s) => s.reports.flatMap((r) => r.untagged ?? []),
+
+        /**
+         * **세는 창 밖이라 빠진 건수.** 학년도는 기준 연도일 뿐이라 2026학년도 학급에도
+         * 2027년 3월 기록을 남길 수 있는데, 한도는 학년도 창으로 센다(연 20일의 '연'이
+         * 학년도다). 그 차이로 빠진 건을 조용히 넘기면 통계가 `덜 썼다`고 거짓으로 알린다.
+         */
+        outside: (s) => s.reports.reduce((n, r) => n + (r.outside ?? 0), 0),
+
+        /** 세는 창. `outside`를 알릴 때 어느 범위였는지 함께 말한다. */
+        window: (s) => {
+            const first = s.reports[0]
+            if (!first?.windowFrom || !first?.windowTo) return ''
+            return `${first.windowFrom} ~ ${first.windowTo}`
+        },
     },
 
     actions: {

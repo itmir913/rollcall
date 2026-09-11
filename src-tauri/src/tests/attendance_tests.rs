@@ -5,6 +5,8 @@
 //! 저장을 막지 않고 표시할 값만 계산한다.
 
 use crate::commands::attendance::*;
+use crate::commands::mark::{set_doc_done_impl, set_neis_done_impl};
+use crate::commands::school::retire_tag_impl;
 use crate::tests::*;
 use crate::types::{SpanEdit, SpanItem, StampInput};
 use rusqlite::{params, Connection};
@@ -23,12 +25,11 @@ struct Fixture {
 fn fixture() -> Fixture {
     let conn = setup_test_db();
     let school = school_id(&conn);
-    let year = insert_year(&conn, 2026);
-    let class = homeroom(&conn, year);
+    let class = homeroom(&conn, school);
     let students = vec![
-        enroll(&conn, class, year, 1, "김하나"),
-        enroll(&conn, class, year, 2, "이두리"),
-        enroll(&conn, class, year, 3, "박세찬"),
+        enroll(&conn, class, school, 1, "김하나"),
+        enroll(&conn, class, school, 2, "이두리"),
+        enroll(&conn, class, school, 3, "박세찬"),
     ];
     Fixture {
         conn,
@@ -115,6 +116,101 @@ fn 같은_조합을_두_번_찍으면_취소된다() {
     let third = stamp_span_impl(&f.conn, &input).unwrap();
     assert_eq!(third.action, "added");
     assert_eq!(span_count(&f.conn), 1);
+}
+
+// ── 무르기는 교사가 적어 둔 것을 지우지 않는다 ────────────────
+//
+// 무르기의 전제는 그 구간에 아무것도 붙어 있지 않다는 것이다. 태그 · 사유 · 서류 ·
+// NEIS 표시가 남아 있는데 지우면, 다시 찍어도 빈 구간만 돌아온다.
+
+#[test]
+fn 태그와_사유가_붙은_건은_무르기로_지우지_않는다() {
+    let f = fixture();
+    let (reason, kind) = axes(&f.conn, "출석인정", "결석");
+    let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]);
+    let id = stamp_span_impl(&f.conn, &input).unwrap().span_ids[0];
+
+    set_span_tag_impl(&f.conn, id, Some(tag_id(&f.conn, "체험학습"))).unwrap();
+    set_span_memo_impl(&f.conn, id, "가족 여행 확인서 받기로 함").unwrap();
+
+    let again = stamp_span_impl(&f.conn, &input).unwrap();
+    assert_eq!(again.action, "kept");
+    assert_eq!(again.span_ids, vec![id], "그 구간을 그대로 가리킨다");
+    assert_eq!(span_count(&f.conn), 1, "한 건도 지우지 않는다");
+
+    // 무엇이 남아 있어 지나갔는지 문장으로 알린다. 조용히 넘기지 않는다.
+    let message = again.message.expect("알리는 문장이 있어야 한다");
+    assert!(message.contains("태그"), "{message}");
+    assert!(message.contains("사유"), "{message}");
+
+    // 적어 둔 것도 그대로다.
+    let rows = spans_of(&f, f.students[0]);
+    assert_eq!(rows[0].memo, "가족 여행 확인서 받기로 함");
+    assert!(rows[0].tag_id.is_some());
+}
+
+#[test]
+fn 서류를_받은_건은_무르기로_지우지_않는다() {
+    let f = fixture();
+    let (reason, kind) = axes(&f.conn, "질병", "결석");
+    let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]);
+    let id = stamp_span_impl(&f.conn, &input).unwrap().span_ids[0];
+    set_doc_done_impl(&f.conn, id, true, "2026-09-11").unwrap();
+
+    let again = stamp_span_impl(&f.conn, &input).unwrap();
+    assert_eq!(again.action, "kept");
+    assert!(again.message.unwrap().contains("서류"));
+    assert_eq!(span_count(&f.conn), 1);
+
+    // **지우는 길이 막힌 것이 아니다.** 삭제는 그대로 지운다.
+    delete_span_impl(&f.conn, id).unwrap();
+    assert_eq!(span_count(&f.conn), 0);
+}
+
+#[test]
+fn NEIS_등재로_표시한_건도_무르기로_지우지_않는다() {
+    let f = fixture();
+    let (reason, kind) = axes(&f.conn, "질병", "지각");
+    let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1"]);
+    let id = stamp_span_impl(&f.conn, &input).unwrap().span_ids[0];
+    set_neis_done_impl(&f.conn, id, true, "2026-09-11").unwrap();
+
+    let again = stamp_span_impl(&f.conn, &input).unwrap();
+    assert_eq!(again.action, "kept");
+    assert!(again.message.unwrap().contains("NEIS"));
+    assert_eq!(span_count(&f.conn), 1);
+}
+
+#[test]
+fn 한_묶음_중_하나만_적혀_있어도_전부_그대로_둔다() {
+    let f = fixture();
+    let (reason, kind) = axes(&f.conn, "질병", "결과");
+    let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &["1", "3"]);
+    let ids = stamp_span_impl(&f.conn, &input).unwrap().span_ids;
+    assert_eq!(ids.len(), 2, "이어지지 않은 교시라 두 건이다");
+    set_span_memo_impl(&f.conn, ids[1], "병원").unwrap();
+
+    let again = stamp_span_impl(&f.conn, &input).unwrap();
+    assert_eq!(again.action, "kept");
+    // 절반만 지우면 교사는 무엇이 사라졌는지 알 수 없다.
+    assert_eq!(span_count(&f.conn), 2);
+}
+
+#[test]
+fn 아무것도_적히지_않은_건은_그대로_무른다() {
+    let f = fixture();
+    let (reason, kind) = axes(&f.conn, "질병", "결석");
+    let input = stamp(f.class, f.students[0], "2026-09-10", reason, kind, &[]);
+    let id = stamp_span_impl(&f.conn, &input).unwrap().span_ids[0];
+
+    // 메모를 넣었다가 다시 비운 건도 빈 건이다.
+    set_span_memo_impl(&f.conn, id, "   ").unwrap();
+    set_span_tag_impl(&f.conn, id, None).unwrap();
+
+    let again = stamp_span_impl(&f.conn, &input).unwrap();
+    assert_eq!(again.action, "cancelled");
+    assert!(again.message.is_none());
+    assert_eq!(span_count(&f.conn), 0);
 }
 
 #[test]
@@ -457,7 +553,7 @@ fn 이어지지_않은_교시로는_한_구간을_고칠_수_없다() {
         },
     )
     .unwrap_err();
-    assert!(err.contains("이어지지 않은 교시"), "{err}");
+    assert!(err.contains("연속하지 않은 교시"), "{err}");
 }
 
 #[test]
@@ -514,7 +610,7 @@ fn 메모와_태그는_따로_고친다() {
     assert_eq!(rows[0].tag_id, Some(tag));
     assert_eq!(rows[0].tag_name.as_deref(), Some("체험학습"));
 
-    // 태그는 뗄 수 있다. 한 건에 태그는 하나뿐이다.
+    // 태그는 제거할 수 있다. 한 건에 태그는 하나뿐이다.
     set_span_tag_impl(&f.conn, id, None).unwrap();
     let rows = spans_of(&f, f.students[0]);
     assert!(rows[0].tag_id.is_none());
@@ -526,6 +622,47 @@ fn 없는_태그를_붙이면_오류다() {
     let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", None, None, &[]))
         .unwrap();
     assert!(set_span_tag_impl(&f.conn, out.span_ids[0], Some(9999)).is_err());
+}
+
+/// 태그 목록은 **학교 설정**이다. 한도 규정 쪽(`check_rule_tag`)과 짝을 맞춘다 —
+/// 한쪽에만 검사가 있으면 규정으로는 막힌 태그가 출결 한 건에는 그대로 붙고,
+/// 그 건은 어느 규정으로도 세어지지 않는다.
+#[test]
+fn 다른_학교의_태그는_붙일_수_없다() {
+    let f = fixture();
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", None, None, &[]))
+        .unwrap();
+    let id = out.span_ids[0];
+
+    let other = insert_school(&f.conn, year_id(&f.conn), "옆 학교");
+    let foreign: i64 = f
+        .conn
+        .query_row(
+            "SELECT id FROM span_tag WHERE school_id = ?1 AND name = '체험학습'",
+            params![other],
+            |r| r.get(0),
+        )
+        .unwrap();
+
+    let err = set_span_tag_impl(&f.conn, id, Some(foreign)).unwrap_err();
+    assert!(err.contains("이 학교의 유효한 태그가 아닙니다"), "{err}");
+
+    let rows = spans_of(&f, f.students[0]);
+    assert!(rows[0].tag_id.is_none(), "거절했으면 붙지도 않는다");
+}
+
+#[test]
+fn 마감된_태그는_붙일_수_없다() {
+    let f = fixture();
+    let out = stamp_span_impl(&f.conn, &stamp(f.class, f.students[0], "2026-09-10", None, None, &[]))
+        .unwrap();
+    let id = out.span_ids[0];
+    let tag = tag_id(&f.conn, "생리통");
+
+    retire_tag_impl(&f.conn, tag, "2026-09-01").unwrap();
+
+    let err = set_span_tag_impl(&f.conn, id, Some(tag)).unwrap_err();
+    assert!(err.contains("이 학교의 유효한 태그가 아닙니다"), "{err}");
 }
 
 // ── 트랜잭션 ──────────────────────────────────────────────────
@@ -773,7 +910,7 @@ fn 일괄_입력도_기간_규칙을_그대로_따른다() {
 
     let out = apply_bulk_impl(&f.conn, &input, "2026-06-01", "2026-06-02").unwrap();
     assert_eq!(out.days, 2);
-    // 하루에 두 구간씩이다 — 1교시와 3교시는 이어지지 않았다.
+    // 하루에 두 구간씩이다 — 1교시와 3교시는 연속하지 않는다.
     assert_eq!(span_count(&f.conn), 4);
 }
 
@@ -810,7 +947,7 @@ fn 구간_묶기는_이어진_것끼리만_묶는다() {
         vec![(Some("1".to_string()), Some("3".to_string()))]
     );
     assert_eq!(ranges_for(Some("multi"), &picked(&["1", "3", "5"]), 7).unwrap().len(), 3);
-    // 조회와 1교시는 이어져 있다.
+    // 조회와 1교시는 연속한다.
     assert_eq!(
         ranges_for(Some("multi"), &picked(&["조회", "1"]), 7).unwrap(),
         vec![(Some("조회".to_string()), Some("1".to_string()))]

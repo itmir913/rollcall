@@ -69,7 +69,7 @@ pub fn get_home_summary_impl(
     let mut doc_rows = get_doc_pending_impl(conn, scope.id, None, None, false, &date)?;
     let doc_pending = doc_rows.len() as i64;
     // 경과일은 `mark`가 같은 기준일로 이미 세어 둔 값이다. 여기서 다시 세면 두 화면의
-    // "며칠 지났다"가 갈라질 수 있다.
+    // "며칠 지났다"가 달라질 수 있다.
     let doc_overdue = doc_rows
         .iter()
         .filter(|s| s.days_overdue.is_some_and(|d| d > 0))

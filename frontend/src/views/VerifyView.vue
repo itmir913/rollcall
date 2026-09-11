@@ -70,8 +70,8 @@ async function load(bytes) {
         meta.value = read.meta
         step.value = 2
         // **파일의 기간으로 대조한다.** 출결 기록 화면이 마지막에 보던 달로 맞추면
-        // 6월 파일을 9월 기록과 견주고는 전부 어긋났다고 말한다. 그 화면을 한 번도
-        // 열지 않았으면 아예 빈 목록과 견준다.
+        // 6월 파일을 9월 기록과 대조하고는 전부 어긋났다고 말한다. 그 화면을 한 번도
+        // 열지 않았으면 아예 빈 목록과 대조한다.
         const mine = read.meta.from
             ? await log.fetchBetween(read.meta.from, read.meta.to)
             : []

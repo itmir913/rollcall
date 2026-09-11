@@ -1,10 +1,10 @@
 /**
  * 교시 규칙 테스트.
  *
- * 이 규칙이 Rust의 slots.rs와 갈라지면 조용히 엉뚱한 기간이 저장된다.
+ * 이 규칙이 Rust의 slots.rs와 달라지면 조용히 엉뚱한 기간이 저장된다.
  * 순서 · 표기 · 묶기는 두 구현이 같은 규칙을 따로 만든 자리라, 기대값을 양쪽에
  * 베껴 두는 대신 **고정 벡터 파일 하나**(`src-tauri/src/tests/slot_vectors.json`)를
- * 양쪽 테스트가 읽는다. 베껴 두면 구현이 갈라질 때 테스트도 함께 갈라진다.
+ * 양쪽 테스트가 읽는다. 베껴 두면 구현이 달라질 때 테스트도 함께 달라진다.
  *
  * 나머지(고를 수 있는 기간 · 되돌리기)는 프런트에만 있는 규칙이라 여기서만 확인한다.
  */
@@ -23,7 +23,7 @@ import {
     slotOrder,
 } from './slots'
 import {axisPhrase, spanPhrase, stampPhrase} from './phrase'
-/** Rust 테스트가 읽는 것과 같은 파일이다. 복사본을 두면 복사본부터 갈라진다. */
+/** Rust 테스트가 읽는 것과 같은 파일이다. 복사본을 두면 복사본부터 달라진다. */
 import vectors from '../../../src-tauri/src/tests/slot_vectors.json'
 
 /** 벡터의 null은 순서값이 없다는 뜻이다. Rust는 None, 이쪽은 -1로 돌려준다. */

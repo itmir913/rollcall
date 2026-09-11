@@ -34,7 +34,7 @@ const MAX_SLOT_MAX: i64 = 9;
 
 /// 한도 규정이 세는 기간과 단위. 값 자체는 DB의 CHECK에도 있고, 여기서는 저장 전에
 /// 알 수 없는 값이 들어오는 것을 한국어 문장으로 막는다.
-const PERIODS: &[&str] = &["year", "semester", "month"];
+const PERIODS: &[&str] = &["year", "month"];
 const UNITS: &[&str] = &["day", "count"];
 
 /// 시작일이 비어 있으면 처음부터 유효한 것으로 본다.
@@ -49,26 +49,32 @@ fn valid_from_or_epoch(given: &str) -> Result<String, String> {
 
 // ── 학교 ──────────────────────────────────────────────────────
 
-const SCHOOL_SELECT: &str =
-    "SELECT id, name, max_slot, due_days, due_skip_offdays, sort_order, active FROM school";
+const SCHOOL_SELECT: &str = "SELECT id, year_id, name, max_slot, due_days, due_skip_offdays,
+                                    sort_order, active
+                             FROM school";
 
 fn map_school(row: &rusqlite::Row) -> rusqlite::Result<SchoolItem> {
     Ok(SchoolItem {
         id: row.get(0)?,
-        name: row.get(1)?,
-        max_slot: row.get(2)?,
-        due_days: row.get(3)?,
-        due_skip_offdays: row.get(4)?,
-        sort_order: row.get(5)?,
-        active: row.get(6)?,
+        year_id: row.get(1)?,
+        name: row.get(2)?,
+        max_slot: row.get(3)?,
+        due_days: row.get(4)?,
+        due_skip_offdays: row.get(5)?,
+        sort_order: row.get(6)?,
+        active: row.get(7)?,
     })
 }
 
-pub fn get_schools_impl(conn: &Connection) -> Result<Vec<SchoolItem>, String> {
-    let sql = format!("{SCHOOL_SELECT} WHERE active = 1 ORDER BY sort_order, id");
+/// 그 학년도의 학교들. **목록에서 내린 학교는 빼고 돌려준다.**
+///
+/// 학년도를 받는 것이 요점이다. 학교를 전역으로 두면 해가 바뀌어도 지난해 학교가
+/// 목록에 남고, 그 학교의 최대 교시 · 제출 기한을 고치면 지난해 화면까지 소급해 바뀐다.
+pub fn get_schools_impl(conn: &Connection, year_id: i64) -> Result<Vec<SchoolItem>, String> {
+    let sql = format!("{SCHOOL_SELECT} WHERE year_id = ?1 AND active = 1 ORDER BY sort_order, id");
     let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
     let rows = stmt
-        .query_map([], map_school)
+        .query_map(rusqlite::params![year_id], map_school)
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -88,83 +94,146 @@ pub fn get_school_impl(conn: &Connection, school_id: i64) -> Result<SchoolItem, 
 
 /// 저장 전에 학교 설정을 확인한다. 만들 때와 고칠 때가 같은 규칙이어야 하므로
 /// 한 곳에 둔다 — 나누면 새로 만드는 길로만 최대 교시 10이 들어온다.
-fn validate_school(school: &SchoolItem) -> Result<&str, String> {
-    let name = school.name.trim();
+fn validate_school(name: &str, max_slot: i64, due_days: i64) -> Result<&str, String> {
+    let name = name.trim();
     if name.is_empty() {
         return Err("학교 이름이 비어 있습니다.".to_string());
     }
-    if school.max_slot < MAX_SLOT_MIN || school.max_slot > MAX_SLOT_MAX {
+    if !(MAX_SLOT_MIN..=MAX_SLOT_MAX).contains(&max_slot) {
         return Err(format!(
-            "최대 교시는 {MAX_SLOT_MIN}에서 {MAX_SLOT_MAX} 사이여야 합니다: {}",
-            school.max_slot
+            "최대 교시는 {MAX_SLOT_MIN}에서 {MAX_SLOT_MAX} 사이여야 합니다: {max_slot}"
         ));
     }
-    if school.due_days < 0 {
-        return Err(format!(
-            "서류 제출 기한은 0일 이상이어야 합니다: {}",
-            school.due_days
-        ));
+    if due_days < 0 {
+        return Err(format!("서류 제출 기한은 0일 이상이어야 합니다: {due_days}"));
     }
     Ok(name)
 }
 
-fn next_school_order(conn: &Connection) -> Result<i64, String> {
+fn next_school_order(conn: &Connection, year_id: i64) -> Result<i64, String> {
     conn.query_row(
-        "SELECT COALESCE(MAX(sort_order), 0) + 10 FROM school WHERE active = 1",
-        [],
+        "SELECT COALESCE(MAX(sort_order), 0) + 10
+           FROM school WHERE year_id = ?1 AND active = 1",
+        rusqlite::params![year_id],
         |r| r.get(0),
     )
     .map_err(|e| e.to_string())
 }
 
-/// 학교를 하나 더 등록한다. 순회 교사는 학교를 둘 이상 맡는다.
+/// 학교를 만들 때 함께 넣는 출결 태그. **세는 대상의 기본값이다.**
 ///
-/// `update_school`과 짝이 되도록 `SchoolItem`을 그대로 받는다 — 설정 화면이 같은 폼으로
-/// 만들고 고치므로, 받는 모양이 다르면 화면이 두 벌의 조립 규칙을 들게 된다.
-pub fn create_school_impl(conn: &Connection, school: &SchoolItem) -> Result<i64, String> {
-    let name = validate_school(school)?;
-    let sort_order = if school.sort_order == 0 {
-        next_school_order(conn)?
-    } else {
-        school.sort_order
-    };
-    conn.execute(
-        "INSERT INTO school (name, max_slot, due_days, due_skip_offdays, sort_order, active)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        rusqlite::params![
-            name,
-            school.max_slot,
-            school.due_days,
-            school.due_skip_offdays,
-            sort_order,
-            school.active
-        ],
-    )
-    .map_err(|e| constraint_err(&e, "이미 있는 학교입니다."))?;
-    Ok(conn.last_insert_rowid())
+/// 학교마다 부르는 이름이 다르므로(`체험학습` / `학교장허가 체험학습`) 설정에서 고친다.
+const DEFAULT_TAGS: &[(&str, i64)] = &[("체험학습", 10), ("생리통", 20)];
+
+/// 함께 넣는 한도 규정. (규정 이름, 세는 태그, 기간, 한도, 단위, 순서)
+///
+/// 흔한 두 가지를 미리 넣는다. 숫자는 학교마다 다르므로 설정에서 고친다.
+/// **이 규정은 입력을 막지 않는다** — 통계 화면에서 세어 알려줄 뿐이다.
+const DEFAULT_RULES: &[(&str, &str, &str, i64, &str, i64)] = &[
+    ("체험학습 연 20일", "체험학습", "year", 20, "day", 10),
+    ("생리통 월 1회", "생리통", "month", 1, "count", 20),
+];
+
+/// 학교를 하나 만든다. 순회 교사는 학교를 둘 이상 맡는다.
+///
+/// **기본 태그와 한도 규정을 함께 넣는다.** 예전에는 `seed.sql`이 넣었는데, 시드는 한 번만
+/// 도는 데 반해 학교는 여럿 만들어진다 — 첫 학교만 태그를 받고 둘째 학교는 빈 목록으로
+/// 시작했다. 학교 단위 기본값은 학교를 만드는 자리에서 넣는 것이 맞다.
+pub fn create_school_impl(
+    conn: &Connection,
+    year_id: i64,
+    name: &str,
+    max_slot: i64,
+    due_days: i64,
+    due_skip_offdays: bool,
+) -> Result<i64, String> {
+    let name = validate_school(name, max_slot, due_days)?;
+    let sort_order = next_school_order(conn, year_id)?;
+
+    with_transaction(conn, || {
+        conn.execute(
+            "INSERT INTO school (year_id, name, max_slot, due_days, due_skip_offdays, sort_order)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![year_id, name, max_slot, due_days, due_skip_offdays, sort_order],
+        )
+        .map_err(|e| constraint_err(&e, &format!("이미 있는 학교입니다: {name}")))?;
+        let school_id = conn.last_insert_rowid();
+        seed_school_defaults(conn, school_id)?;
+        Ok(school_id)
+    })
 }
 
-pub fn update_school_impl(conn: &Connection, school: &SchoolItem) -> Result<(), String> {
-    let name = validate_school(school)?;
+/// 새 학교의 기본 태그와 한도 규정. 이름으로 방금 넣은 태그를 다시 찾는다 —
+/// 규정이 태그를 가리키므로 순서가 강제된다.
+fn seed_school_defaults(conn: &Connection, school_id: i64) -> Result<(), String> {
+    for (name, order) in DEFAULT_TAGS {
+        insert_tag(conn, school_id, name, *order, NO_START_DATE)?;
+    }
+    for (name, tag, period, limit_n, unit, order) in DEFAULT_RULES {
+        let tag_id: i64 = conn
+            .query_row(
+                "SELECT id FROM span_tag WHERE school_id = ?1 AND name = ?2 AND valid_to IS NULL",
+                rusqlite::params![school_id, tag],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        conn.execute(
+            "INSERT INTO quota_rule
+               (school_id, name, tag_id, period, limit_n, unit, sort_order, valid_from)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            rusqlite::params![
+                school_id,
+                name,
+                tag_id,
+                period,
+                limit_n,
+                unit,
+                order,
+                NO_START_DATE
+            ],
+        )
+        .map_err(|e| constraint_err(&e, "이미 있는 한도 규정입니다."))?;
+    }
+    Ok(())
+}
+
+pub fn update_school_impl(
+    conn: &Connection,
+    school_id: i64,
+    name: &str,
+    max_slot: i64,
+    due_days: i64,
+    due_skip_offdays: bool,
+) -> Result<(), String> {
+    let name = validate_school(name, max_slot, due_days)?;
     let changed = conn
         .execute(
             "UPDATE school
-                SET name = ?1, max_slot = ?2, due_days = ?3, due_skip_offdays = ?4,
-                    sort_order = ?5, active = ?6
-              WHERE id = ?7",
-            rusqlite::params![
-                name,
-                school.max_slot,
-                school.due_days,
-                school.due_skip_offdays,
-                school.sort_order,
-                school.active,
-                school.id
-            ],
+                SET name = ?1, max_slot = ?2, due_days = ?3, due_skip_offdays = ?4
+              WHERE id = ?5",
+            rusqlite::params![name, max_slot, due_days, due_skip_offdays, school_id],
         )
-        .map_err(|e| constraint_err(&e, "이미 있는 학교입니다."))?;
+        .map_err(|e| constraint_err(&e, &format!("이미 있는 학교입니다: {name}")))?;
     if changed == 0 {
-        return Err(format!("학교를 찾을 수 없습니다: {}", school.id));
+        return Err(format!("학교를 찾을 수 없습니다: {school_id}"));
+    }
+    Ok(())
+}
+
+/// 학교를 목록에서 내린다. **지우지 않는다.**
+///
+/// 학생 · 맡은 것 · 출결이 이 행을 가리키고 있고 전부 `ON DELETE CASCADE`라, 행을
+/// 지우면 그 학교의 기록이 통째로 사라진다. 잘못 만든 학교를 정리하는 동작이
+/// 한 해치 출결을 지우는 동작이어서는 안 된다.
+pub fn retire_school_impl(conn: &Connection, school_id: i64) -> Result<(), String> {
+    let changed = conn
+        .execute(
+            "UPDATE school SET active = 0 WHERE id = ?1 AND active = 1",
+            rusqlite::params![school_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err(format!("유효한 학교를 찾을 수 없습니다: {school_id}"));
     }
     Ok(())
 }
@@ -266,7 +335,7 @@ pub fn remove_off_day_impl(conn: &Connection, off_day_id: i64) -> Result<(), Str
 
 // ── 태그 ──────────────────────────────────────────────────────
 //
-// 세는 대상이다. 한도 규정이 이 이름을 가리키므로 규정과 같은 곳(학교)에 매단다.
+// 세는 대상이다. 한도 규정이 이 이름을 가리키므로 규정과 같은 곳(학교)에 둔다.
 
 fn map_tag(row: &rusqlite::Row) -> rusqlite::Result<TagItem> {
     Ok(TagItem {
@@ -432,7 +501,7 @@ fn validate_rule(rule: &QuotaRuleItem) -> Result<(), String> {
     }
     if !PERIODS.contains(&rule.period.as_str()) {
         return Err(format!(
-            "한도를 세는 기간이 올바르지 않습니다: {} (year / semester / month)",
+            "한도를 세는 기간이 올바르지 않습니다: {} (year / month)",
             rule.period
         ));
     }
@@ -455,7 +524,7 @@ fn validate_rule(rule: &QuotaRuleItem) -> Result<(), String> {
 /// 것을 세는 규정이 설정 화면에 남는다. 마감을 막아 놓고 생성·수정으로 다시 만들
 /// 수 있으면 막은 것이 아니다.
 ///
-/// 다른 학교의 태그도 같이 막는다. 태그와 규정은 같은 학교에 매달려 있어야 하는데,
+/// 다른 학교의 태그도 같이 막는다. 태그와 규정은 같은 학교에 속해 있어야 하는데,
 /// FK는 span_tag의 존재만 볼 뿐 어느 학교의 것인지는 보지 않는다.
 ///
 /// 태그가 비어 있는 규정은 그대로 통과한다 — 두 축만으로 세는 규정이 있을 수 있다.
@@ -628,8 +697,8 @@ pub fn retire_quota_rule_impl(conn: &Connection, rule_id: i64, today: &str) -> R
 // ── 커맨드 ────────────────────────────────────────────────────
 
 #[tauri::command]
-pub fn get_schools(db: State<DbState>) -> Result<Vec<SchoolItem>, String> {
-    with_conn(&db, |c| get_schools_impl(c))
+pub fn get_schools(db: State<DbState>, year_id: i64) -> Result<Vec<SchoolItem>, String> {
+    with_conn(&db, |c| get_schools_impl(c, year_id))
 }
 
 #[tauri::command]
@@ -638,13 +707,36 @@ pub fn get_school(db: State<DbState>, school_id: i64) -> Result<SchoolItem, Stri
 }
 
 #[tauri::command]
-pub fn create_school(db: State<DbState>, school: SchoolItem) -> Result<i64, String> {
-    with_conn(&db, |c| create_school_impl(c, &school))
+pub fn create_school(
+    db: State<DbState>,
+    year_id: i64,
+    name: String,
+    max_slot: i64,
+    due_days: i64,
+    due_skip_offdays: bool,
+) -> Result<i64, String> {
+    with_conn(&db, |c| {
+        create_school_impl(c, year_id, &name, max_slot, due_days, due_skip_offdays)
+    })
 }
 
 #[tauri::command]
-pub fn update_school(db: State<DbState>, school: SchoolItem) -> Result<(), String> {
-    with_conn(&db, |c| update_school_impl(c, &school))
+pub fn update_school(
+    db: State<DbState>,
+    school_id: i64,
+    name: String,
+    max_slot: i64,
+    due_days: i64,
+    due_skip_offdays: bool,
+) -> Result<(), String> {
+    with_conn(&db, |c| {
+        update_school_impl(c, school_id, &name, max_slot, due_days, due_skip_offdays)
+    })
+}
+
+#[tauri::command]
+pub fn retire_school(db: State<DbState>, school_id: i64) -> Result<(), String> {
+    with_conn(&db, |c| retire_school_impl(c, school_id))
 }
 
 #[tauri::command]

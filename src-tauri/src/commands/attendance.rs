@@ -12,6 +12,10 @@
 //! 무르고 싶다"가 교사에게는 같은 동작이기 때문이다. 조합이 하나라도 다르면 쌓는다 —
 //! 한 학생이 `1교시 지각`과 `5~7교시 조퇴`를 함께 가지는 것이 정상이다.
 //!
+//! **다만 그 구간에 태그 · 사유 · 서류 · NEIS 표시가 남아 있으면 지우지 않는다.**
+//! 한 번 더 누르면 되돌아온다는 전제가 그때는 거짓이다 — 다시 찍어도 빈 구간만
+//! 돌아오고 교사가 적어 둔 것은 사라진다. 그 구간은 그대로 두고 알리기만 한다.
+//!
 //! **범위는 담임 학급 하나(`classId`)다.** 구간이 그 학급을 직접 가리키므로 조건도
 //! `s.class_id`다. 학생으로 거르지 않는 이유는, 같은 학생이 내 담임 반에도 내 교과
 //! 강좌에도 있을 수 있어 학생으로 거르면 교과 화면에 담임 출결이 새기 때문이다.
@@ -191,8 +195,8 @@ pub(crate) fn span_text(
 /// · 종류가 `none`이면 조회~종례 한 건이다(결석은 교시를 묻지 않는다).
 /// · 고른 교시가 없으면 양쪽이 열린 한 건이다(기간 미정).
 /// · `end`는 조회~고른 값, `start`는 고른 값~종례.
-/// · 그 밖(`multi`, 종류 미정)은 **이어진 것끼리 묶어** 여러 건으로 나눈다.
-///   1,2,3은 한 건이고 1,3,5는 세 건이다 — 이어지지 않은 것을 한 구간으로 저장하면
+/// · 그 밖(`multi`, 종류 미정)은 **연속한 것끼리 묶어** 여러 건으로 나눈다.
+///   1,2,3은 한 건이고 1,3,5는 세 건이다 — 연속하지 않은 것을 한 구간으로 저장하면
 ///   2교시가 조용히 포함된다.
 pub(crate) fn ranges_for(
     slot_prompt: Option<&str>,
@@ -457,6 +461,49 @@ fn find_exact(
     })
 }
 
+/// 그 구간에 교사가 적어 둔 것들. 무르기가 지워서는 안 되는 값의 이름이다.
+///
+/// **무르기의 전제는 그 구간에 아무것도 붙어 있지 않다는 것이다.** 한 번 더 누르면
+/// 되돌아오므로 묻지 않는다고 했는데, 태그를 달고 사유를 적고 서류를 받았다고 표시한
+/// 구간을 지우면 다시 찍어도 빈 구간만 돌아온다 — 교사가 적어 둔 것이 말없이 사라진다.
+/// 그래서 하나라도 채워져 있으면 무르기가 지나가고, 지우는 일은 삭제가 맡는다.
+fn span_notes(conn: &Connection, span_id: i64) -> Result<Vec<&'static str>, String> {
+    let (tag_id, memo, doc_done, neis_done) = conn
+        .query_row(
+            "SELECT tag_id, memo, doc_done, neis_done FROM absence_span WHERE id = ?1",
+            params![span_id],
+            |r| {
+                Ok((
+                    r.get::<_, Option<i64>>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            },
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                format!("출결 기록을 찾을 수 없습니다: {span_id}")
+            }
+            other => other.to_string(),
+        })?;
+
+    let mut notes = Vec::new();
+    if tag_id.is_some() {
+        notes.push("태그");
+    }
+    if !memo.trim().is_empty() {
+        notes.push("사유");
+    }
+    if doc_done != 0 {
+        notes.push("서류 표시");
+    }
+    if neis_done != 0 {
+        notes.push("NEIS 표시");
+    }
+    Ok(notes)
+}
+
 #[allow(clippy::too_many_arguments)]
 fn insert_span(
     conn: &Connection,
@@ -503,6 +550,9 @@ pub(crate) fn due_for(
 ///
 /// 고른 교시가 여러 묶음이면 구간도 여러 건이 된다. 그 전부가 이미 있을 때만
 /// 취소로 보고 지운다 — 일부만 있으면 나머지를 채우는 것이 교사의 의도다.
+///
+/// 그중 하나라도 교사가 적어 둔 것을 들고 있으면 `kept`로 돌려주고 아무것도 지우지
+/// 않는다. 절반만 지우면 무엇이 사라졌는지 알 수 없기 때문이다.
 pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampResult, String> {
     let base = parse_date(&input.date)?;
     // **저장은 언제나 자리를 채운 ISO다.** chrono는 `2026-9-10`도 받아 주는데, 그대로
@@ -533,6 +583,30 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
         // 전부 이미 있다 = 무르기.
         if found.iter().all(|f| f.is_some()) {
             let ids: Vec<i64> = found.into_iter().flatten().collect();
+
+            // **교사가 적어 둔 것이 하나라도 있으면 지우지 않는다.** 거절도 아니고
+            // 새 구간을 만들지도 않는다 — 완전히 같은 두 건은 만들지 않기로 한 규칙이
+            // 그대로 살아 있어야 한다. 그 구간을 그대로 두고 무엇이 남아 있는지 알린다.
+            let mut notes: Vec<&'static str> = Vec::new();
+            for id in &ids {
+                for note in span_notes(conn, *id)? {
+                    if !notes.contains(&note) {
+                        notes.push(note);
+                    }
+                }
+            }
+            if !notes.is_empty() {
+                return Ok(StampResult {
+                    action: "kept".to_string(),
+                    span_ids: ids,
+                    message: Some(crate::phrase::apply_josa(&format!(
+                        "{}(이)가 남아 있어 무르지 않았습니다. \
+                         지우려면 그 줄의 휴지통 버튼을 쓰세요.",
+                        notes.join(" · ")
+                    ))),
+                });
+            }
+
             for id in &ids {
                 conn.execute("DELETE FROM absence_span WHERE id = ?1", params![id])
                     .map_err(|e| e.to_string())?;
@@ -540,6 +614,7 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
             return Ok(StampResult {
                 action: "cancelled".to_string(),
                 span_ids: ids,
+                message: None,
             });
         }
 
@@ -566,6 +641,7 @@ pub fn stamp_span_impl(conn: &Connection, input: &StampInput) -> Result<StampRes
         Ok(StampResult {
             action: "added".to_string(),
             span_ids: ids,
+            message: None,
         })
     })
 }
@@ -580,10 +656,10 @@ pub fn edit_span_impl(conn: &Connection, edit: &SpanEdit) -> Result<(), String> 
     let prompt = slot_prompt_of(conn, edit.type_id)?;
     let ranges = ranges_for(prompt.as_deref(), &edit.slots, max_slot as usize)?;
 
-    // 한 행은 한 구간이다. 1,3,5처럼 이어지지 않은 교시는 담을 자리가 없다.
+    // 한 행은 한 구간이다. 1,3,5처럼 연속하지 않은 교시는 담을 자리가 없다.
     if ranges.len() > 1 {
         return Err(
-            "이어지지 않은 교시는 한 구간으로 고칠 수 없습니다. 지운 뒤 다시 찍어주세요."
+            "연속하지 않은 교시는 한 구간으로 고칠 수 없습니다. 지운 뒤 다시 찍어주세요."
                 .to_string(),
         );
     }
@@ -635,6 +711,27 @@ pub fn set_span_memo_impl(conn: &Connection, span_id: i64, memo: &str) -> Result
     Ok(())
 }
 
+/// 그 태그가 **이 구간의 학교가 들고 있는 유효한 태그인가.**
+///
+/// `school.rs`의 `check_rule_tag`와 짝이다. 태그 목록은 학교 설정이고 한도 규정이
+/// 그 이름을 가리키는데, FK는 `span_tag`의 존재만 볼 뿐 어느 학교의 것인지도
+/// 마감됐는지도 보지 않는다. 한쪽에만 검사가 있으면 규정으로는 막힌 태그가
+/// 출결 한 건에는 그대로 붙고, 그 건은 어느 규정으로도 세어지지 않는다.
+fn ensure_school_tag(conn: &Connection, school_id: i64, tag_id: i64) -> Result<(), String> {
+    let live: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM span_tag
+              WHERE id = ?1 AND school_id = ?2 AND valid_to IS NULL",
+            params![tag_id, school_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if live == 0 {
+        return Err(format!("이 학교의 유효한 태그가 아닙니다: {tag_id}"));
+    }
+    Ok(())
+}
+
 /// 태그는 **한 건에 하나다.** 여러 개를 허용하면 같은 하루가 두 한도를 동시에
 /// 깎는지 정해야 하고, 그 판단은 프로그램이 할 일이 아니다.
 pub fn set_span_tag_impl(
@@ -642,6 +739,10 @@ pub fn set_span_tag_impl(
     span_id: i64,
     tag_id: Option<i64>,
 ) -> Result<(), String> {
+    if let Some(tag_id) = tag_id {
+        let scope = homeroom_scope(conn, span_class(conn, span_id)?)?;
+        ensure_school_tag(conn, scope.school_id, tag_id)?;
+    }
     let changed = conn
         .execute(
             "UPDATE absence_span SET tag_id = ?1 WHERE id = ?2",
@@ -861,7 +962,7 @@ pub fn preview_bulk_impl(
 
 /// 묶음 식별자. **결정적 문자열이다** — 같은 입력이면 언제 눌러도 같은 값이 나온다.
 /// 무작위 값이면 테스트가 값을 확인할 수 없고, 같은 묶음을 두 번 넣었을 때
-/// 서로 다른 묶음으로 갈라진다.
+/// 서로 다른 묶음으로 분리된다.
 fn bulk_group_id(input: &StampInput, from: &str, to: &str) -> String {
     let axis = |v: Option<i64>| v.map(|n| n.to_string()).unwrap_or_else(|| "-".to_string());
     let mut picked = input.slots.clone();
