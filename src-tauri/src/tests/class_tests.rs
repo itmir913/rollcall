@@ -393,6 +393,35 @@ fn 마감일은_ISO여야_한다() {
     assert_eq!(class_names(&conn, y), vec!["3학년 6반"], "아무것도 마감되지 않았다");
 }
 
+#[test]
+fn 같은_이름의_맡은_것을_두_번_만들지_않는다() {
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let s = school_id(&conn);
+    let make = || {
+        create_teaching_class_impl(&conn, s, y, "homeroom", "3학년 6반", Some(3), Some(6), TODAY)
+    };
+    let first = make().unwrap();
+
+    // 목록에 '3학년 6반'이 둘이면 어느 쪽에 찍었는지 교사가 알 수 없다.
+    assert!(make().unwrap_err().contains("이미 같은"));
+
+    // 마감한 것은 세지 않는다 — 같은 이름을 다시 맡는 해가 온다.
+    retire_teaching_class_impl(&conn, first, TODAY).unwrap();
+    make().unwrap();
+}
+
+#[test]
+fn 역할이_다르면_이름이_같아도_된다() {
+    // 공통과목을 한 반에 통째로 가르치는 교사는 강좌 이름을 반 이름으로 짓는다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let s = school_id(&conn);
+    create_teaching_class_impl(&conn, s, y, "homeroom", "3학년 6반", Some(3), Some(6), TODAY)
+        .unwrap();
+    create_teaching_class_impl(&conn, s, y, "subject", "3학년 6반", None, None, TODAY).unwrap();
+}
+
 // ── 교과 수업 한 칸 ───────────────────────────────────────────
 
 #[test]
@@ -404,8 +433,8 @@ fn 기록한_교시와_아직인_교시를_구별한다() {
     // 2교시는 불렀고 빠진 학생이 없다. 5교시는 아직 부르지 않았다.
     // 결석자 행만으로는 이 둘이 구별되지 않아 수업 칸을 따로 둔다.
     conn.execute(
-        "INSERT INTO subject_session (class_id, date, slot, taken_on)
-         VALUES (?1, '2026-09-11', '2', '2026-09-11')",
+        "INSERT INTO subject_session (class_id, date, slot)
+         VALUES (?1, '2026-09-11', '2')",
         rusqlite::params![subject],
     )
     .unwrap();
@@ -427,8 +456,8 @@ fn 같은_교시를_두_번_기록하지_않는다() {
     let subject = insert_class(&conn, y, "subject", "지구과학Ⅰ", None, None);
     let insert = || {
         conn.execute(
-            "INSERT INTO subject_session (class_id, date, slot, taken_on)
-             VALUES (?1, '2026-09-11', '2', '2026-09-11')",
+            "INSERT INTO subject_session (class_id, date, slot)
+             VALUES (?1, '2026-09-11', '2')",
             rusqlite::params![subject],
         )
     };
@@ -445,8 +474,8 @@ fn 수업_칸을_지우면_결석자도_함께_사라진다() {
     join_class(&conn, subject, student);
 
     conn.execute(
-        "INSERT INTO subject_session (class_id, date, slot, taken_on)
-         VALUES (?1, '2026-09-11', '2', '2026-09-11')",
+        "INSERT INTO subject_session (class_id, date, slot)
+         VALUES (?1, '2026-09-11', '2')",
         rusqlite::params![subject],
     )
     .unwrap();
@@ -463,6 +492,75 @@ fn 수업_칸을_지우면_결석자도_함께_사라진다() {
         .query_row("SELECT COUNT(*) FROM subject_absence", [], |r| r.get(0))
         .unwrap();
     assert_eq!(left, 0);
+}
+
+#[test]
+fn 하루에_차시를_교시마다_따로_더한다() {
+    // 오늘 1교시와 3교시에 같은 강좌가 들어간다. 두 차시는 서로 독립된 칸이다 —
+    // 1교시에 빠진 학생이 3교시에는 와 있을 수 있다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let subject = insert_class(&conn, y, "subject", "지구과학Ⅰ", None, None);
+    for slot in ["1", "3"] {
+        conn.execute(
+            "INSERT INTO subject_session (class_id, date, slot) VALUES (?1, '2026-09-11', ?2)",
+            rusqlite::params![subject, slot],
+        )
+        .unwrap();
+    }
+
+    // 교시가 한 자리라 텍스트 정렬이 곧 교시 순서다.
+    let slots: Vec<String> = conn
+        .prepare(
+            "SELECT slot FROM subject_session
+              WHERE class_id = ?1 AND date = '2026-09-11' ORDER BY slot",
+        )
+        .unwrap()
+        .query_map([subject], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(slots, vec!["1".to_string(), "3".to_string()]);
+}
+
+#[test]
+fn 교과_차시는_조회와_종례를_받지_않는다() {
+    // 조회 · 종례는 담임이 하루의 양 끝에서 보는 것이지 누가 가르치는 시간이 아니다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let subject = insert_class(&conn, y, "subject", "지구과학Ⅰ", None, None);
+    for bad in ["조회", "종례", "0", "10", ""] {
+        assert!(
+            conn.execute(
+                "INSERT INTO subject_session (class_id, date, slot) VALUES (?1, '2026-09-11', ?2)",
+                rusqlite::params![subject, bad],
+            )
+            .is_err(),
+            "'{bad}'은 교시가 아니다"
+        );
+    }
+}
+
+#[test]
+fn 교과_차시를_담임_학급으로_옮길_수_없다() {
+    // INSERT만 막으면 UPDATE로 새어 들어간다. 담임 쪽 트리거와 짝이다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let home = insert_class(&conn, y, "homeroom", "3학년 6반", Some(3), Some(6));
+    let subject = insert_class(&conn, y, "subject", "지구과학Ⅰ", None, None);
+    conn.execute(
+        "INSERT INTO subject_session (class_id, date, slot) VALUES (?1, '2026-09-11', '2')",
+        rusqlite::params![subject],
+    )
+    .unwrap();
+    let session = conn.last_insert_rowid();
+
+    assert!(conn
+        .execute(
+            "UPDATE subject_session SET class_id = ?1 WHERE id = ?2",
+            rusqlite::params![home, session],
+        )
+        .is_err());
 }
 
 // ── 연락처 ────────────────────────────────────────────────────

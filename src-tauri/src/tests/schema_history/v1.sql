@@ -132,6 +132,13 @@ CREATE TABLE IF NOT EXISTS teaching_class
 CREATE INDEX IF NOT EXISTS ix_class_scope
     ON teaching_class (year_id, school_id, role, sort_order);
 
+-- 같은 학교 · 학년도에서 같은 역할의 같은 이름은 하나다.
+-- 이름이 화면의 식별자이기도 하다 — 목록에 '3학년 6반'이 둘 있으면 어느 쪽에 찍었는지
+-- 교사가 알 수 없다. 마감한 것은 세지 않는다(같은 이름을 다시 맡는 해가 온다).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_class_name_active
+    ON teaching_class (school_id, year_id, role, name)
+    WHERE valid_to IS NULL;
+
 -- ─── 소속 ──────────────────────────────────────────────────────
 -- "누가 내 명단에 있는가". 담임 학급이든 교과 강좌든 이 표가 답한다.
 --
@@ -311,10 +318,16 @@ CREATE TABLE IF NOT EXISTS subject_session
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     class_id   INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
     date       TEXT    NOT NULL,
-    -- slots.rs의 토큰과 같다. 조회 · 종례는 교과 수업이 아니므로 교시만 온다.
-    slot       TEXT    NOT NULL,
-    taken_on   TEXT    NOT NULL,
+    -- slots.rs의 토큰과 같다. **조회 · 종례는 교과 수업이 아니라서 들어올 수 없다** —
+    -- 그 둘은 담임이 하루의 양 끝에서 보는 것이지 누가 가르치는 시간이 아니다.
+    -- max_slot이 1~9라 교시는 언제나 한 자리다. 덕분에 ORDER BY slot이 곧 교시 순서다.
+    slot       TEXT    NOT NULL CHECK (slot GLOB '[1-9]'),
     memo       TEXT    NOT NULL DEFAULT '',
+    -- 언제 만들었는가. 수업 날짜(date)와 다를 수 있다 — 지난주 수업을 오늘 적으면
+    -- date는 지난주고 이 값은 오늘이다. absence_span과 같은 이름 · 같은 기본값이다.
+    created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+    -- 같은 강좌가 같은 날 같은 교시에 두 번 있을 수는 없다.
+    -- 연강(3 · 4교시)은 한 칸이 아니라 **두 칸**이다 — 중간에 나간 학생이 실제로 있다.
     UNIQUE (class_id, date, slot)
 );
 
@@ -323,6 +336,13 @@ CREATE INDEX IF NOT EXISTS ix_session_date ON subject_session (class_id, date);
 -- 교과 기록은 교과 강좌에만 붙는다. 위 담임 쪽과 짝이다.
 CREATE TRIGGER IF NOT EXISTS trg_session_subject_only
     BEFORE INSERT ON subject_session
+    WHEN (SELECT role FROM teaching_class WHERE id = NEW.class_id) <> 'subject'
+BEGIN
+    SELECT RAISE(ABORT, '교과 강좌가 아닙니다.');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_session_subject_only_update
+    BEFORE UPDATE OF class_id ON subject_session
     WHEN (SELECT role FROM teaching_class WHERE id = NEW.class_id) <> 'subject'
 BEGIN
     SELECT RAISE(ABORT, '교과 강좌가 아닙니다.');
