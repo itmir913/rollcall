@@ -1,11 +1,13 @@
 /**
  * 첫 실행 화면 — 다섯 단계.
  *
- * 여기서 고정하는 것은 넷이다.
+ * 여기서 고정하는 것은 다섯이다.
  *   1. 단계를 눌러 앞뒤로 오간다. 되돌아갈 길이 없으면 잘못 적은 교사가 앱을 껐다 켠다.
  *   2. 맡은 것을 하나도 등록하지 않으면 완료로 갈 수 없다. **단추는 잠글 뿐 숨기지 않는다.**
  *   3. 교과 강좌에는 학년 · 반 칸이 없다. 선택과목은 반이 섞여 가리킬 반이 없다.
- *   4. 완료 단계의 요약은 **실제로 등록한 것**을 말한다. 고정 문구를 그리면 아무도 모른다.
+ *   4. 담임과 교과가 **같은 명렬표 화면**을 쓴다. 다만 교과는 그 강좌를 고르지 않는다 —
+ *      고르면 모드가 저장되어 다음 실행이 교과 모드로 열린다.
+ *   5. 완료 단계의 요약은 **실제로 등록한 것**을 말한다. 고정 문구를 그리면 아무도 모른다.
  *
  * 데이터는 스토어에 직접 넣는다. invoke는 가짜다 — 이 화면이 커맨드를 제대로 부르는지는
  * 스토어 테스트가 본다(`stores/app.test.js`).
@@ -155,9 +157,13 @@ describe('첫 실행 — 맡은 것', () => {
     it('담임은 학년 · 반으로 이름을 짓고, 교과는 이름만 넘긴다', async () => {
         const wrapper = await render()
         const app = useAppStore()
-        const create = vi.spyOn(app, 'createClass').mockImplementation(async ({role}) => {
-            app.classes = [...app.classes, role === 'homeroom' ? HOMEROOM : SUBJECT]
-            return role === 'homeroom' ? HOMEROOM.id : SUBJECT.id
+        const create = vi.spyOn(app, 'createClass').mockImplementation(async ({role, select}) => {
+            const cls = role === 'homeroom' ? HOMEROOM : SUBJECT
+            app.classes = [...app.classes, cls]
+            // 진짜 `createClass`는 고를 때 `classId`를 함께 옮긴다. 가짜가 그것을
+            // 하지 않으면 "이미 고른 것이 있는가"를 보는 코드가 시험에서만 다르게 돈다.
+            if (select) app.classId = cls.id
+            return cls.id
         })
         vi.spyOn(app, 'selectClass').mockResolvedValue()
         await goStep(wrapper, 4)
@@ -169,7 +175,7 @@ describe('첫 실행 — 맡은 것', () => {
         await flushPromises()
 
         expect(create).toHaveBeenCalledWith({
-            role: 'homeroom', name: '3학년 6반', grade: 3, classNo: 6,
+            role: 'homeroom', name: '3학년 6반', grade: 3, classNo: 6, select: true,
         })
 
         const subject = wrapper.find('.mine--subject')
@@ -177,8 +183,11 @@ describe('첫 실행 — 맡은 것', () => {
         await subject.findAll('button').find((b) => b.text() === '추가').trigger('click')
         await flushPromises()
 
+        // **교과를 더했다고 모드가 넘어가지 않는다.** `selectClass`가 모드를 저장하므로,
+        // 교과를 마지막으로 더한 교사는 다음 실행이 교과 모드로 열린다.
+        // 담임을 이미 골라 둔 뒤이므로 여기서는 고르지 않는다.
         expect(create).toHaveBeenLastCalledWith({
-            role: 'subject', name: '인공지능기초A', grade: null, classNo: null,
+            role: 'subject', name: '인공지능기초A', grade: null, classNo: null, select: false,
         })
     })
 
@@ -197,16 +206,35 @@ describe('첫 실행 — 맡은 것', () => {
         expect(wrapper.find('.mine--subject .mine__panel').exists()).toBe(false)
     })
 
-    it('교과 강좌에는 명렬표 단추를 열지 않는다 — 아직 들일 길이 없다', async () => {
-        // 교과 강좌는 반이 섞여 번호만으로 학생을 가릴 수 없다. 되지 않는 단추가
-        // 아무 말 없이 실패하는 것보다, 아직 없다고 적는 편이 낫다.
+    it('교과 강좌도 명렬표를 펼친다 — 담임과 같은 화면이다', async () => {
         const wrapper = await render([HOMEROOM, SUBJECT])
+        vi.spyOn(useAppStore(), 'selectClass').mockResolvedValue()
         await goStep(wrapper, 4)
 
-        const button = wrapper.find('.mine--subject').findAll('button')
+        const open = wrapper.find('.mine--subject').findAll('button')
             .find((b) => b.text().includes('명렬표'))
-        expect(button.text()).toContain('아직')
-        expect(button.attributes('disabled')).toBeDefined()
+        expect(open.attributes('disabled')).toBeUndefined()
+
+        await open.trigger('click')
+        await flushPromises()
+
+        expect(wrapper.find('.mine--subject .mine__panel').exists()).toBe(true)
+    })
+
+    it('교과 명렬표를 펼쳐도 그 강좌를 고르지는 않는다 — 모드가 저장되면 안 된다', async () => {
+        // selectClass는 app_config에 mode를 저장한다. 온보딩 끝에 교과 명렬표를 마지막으로
+        // 만진 교사는 다음 실행이 교과 모드로 열리는데, 이 화면은 meta.bare라 그 전환이
+        // 눈에 보이지도 않는다. 명단이 붙는 곳은 넘기는 classId가 이미 정한다.
+        const wrapper = await render([HOMEROOM, SUBJECT])
+        const select = vi.spyOn(useAppStore(), 'selectClass').mockResolvedValue()
+        await goStep(wrapper, 4)
+
+        const open = wrapper.find('.mine--subject').findAll('button')
+            .find((b) => b.text().includes('명렬표'))
+        await open.trigger('click')
+        await flushPromises()
+
+        expect(select).not.toHaveBeenCalled()
     })
 })
 

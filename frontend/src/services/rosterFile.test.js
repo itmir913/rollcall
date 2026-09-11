@@ -16,6 +16,7 @@ import {
     rowsToEntries,
     rowsWithExcelJs,
     rowsWithSheetJs,
+    SAMPLE_ROWS,
 } from './rosterFile.js'
 import {matchColumn, normalizeHeader} from '../data/columnAliases.js'
 
@@ -111,8 +112,18 @@ describe('CSV', () => {
         expect(parseCsv('a\n"그가 ""말""했다"')[1]).toEqual(['그가 "말"했다'])
     })
 
-    it('빈 줄은 버린다', () => {
-        expect(parseCsv('번호,이름\n\n1,김철수\n').length).toBe(2)
+    it('빈 줄도 줄 번호를 위해 남긴다', () => {
+        // 버리면 그 뒤 줄이 전부 한 칸씩 당겨져, 안내한 줄 번호와 교사가 파일에서
+        // 여는 줄이 어긋난다. 빈 줄은 `rowsToEntries`가 조용히 넘긴다.
+        const rows = parseCsv('번호,이름\n\n1,김철수\n')
+        expect(rows.length).toBe(3)
+        expect(rows[1]).toEqual([''])
+        expect(rows[2]).toEqual(['1', '김철수'])
+    })
+
+    it('마지막 줄바꿈이 만드는 꼬리 줄은 뗀다', () => {
+        // 파일에 없는 줄이라 남기면 '빈 줄 하나'가 늘 따라붙는다.
+        expect(parseCsv('번호,이름\n1,김철수\n').length).toBe(2)
     })
 
     it('BOM을 떼고 읽는다', () => {
@@ -168,18 +179,31 @@ describe('rowsToEntries', () => {
     const map = {grade: 0, classNo: 1, number: 2, name: 3}
 
     it('네 열을 그대로 읽는다', () => {
-        const {entries} = rowsToEntries(rows, 0, map)
+        const {entries, inherited} = rowsToEntries(rows, 0, map)
         expect(entries).toEqual([
-            {grade: 3, classNo: 6, number: 1, name: '김철수'},
-            {grade: 3, classNo: 6, number: 2, name: '이영희'},
+            {grade: 3, classNo: 6, number: 1, name: '김철수', line: 2},
+            {grade: 3, classNo: 6, number: 2, name: '이영희', line: 3},
         ])
+        expect(inherited).toBe(0)
+    })
+
+    it('줄마다 파일의 줄 번호를 싣는다', () => {
+        // 교과 강좌는 반이 섞여 '4번 김하늘'이 두 줄 나란히 설 수 있다.
+        // 번호만으로는 어느 줄을 고쳐야 하는지 말하지 못한다.
+        const {entries} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '1', '4', '김하늘'],
+            ['3', '6', '4', '김하늘'],
+        ], 0, map)
+        expect(entries.map((e) => e.line)).toEqual([2, 3])
+        expect(entries.map((e) => e.classNo)).toEqual([1, 6])
     })
 
     it('학년·반이 없는 파일은 비워 둔다', () => {
         const {entries} = rowsToEntries(
             [['번호', '이름'], ['1', '김철수']], 0, {number: 0, name: 1},
         )
-        expect(entries[0]).toEqual({grade: null, classNo: null, number: 1, name: '김철수'})
+        expect(entries[0]).toEqual({grade: null, classNo: null, number: 1, name: '김철수', line: 2})
     })
 
     it('버린 줄을 조용히 넘기지 않고 이유를 남긴다', () => {
@@ -197,8 +221,95 @@ describe('rowsToEntries', () => {
     })
 
     it('완전히 빈 줄은 이유 없이 넘어간다', () => {
-        const {skipped} = rowsToEntries([['번호', '이름'], ['', '']], 0, {number: 0, name: 1})
+        const {skipped} = rowsToEntries(
+            [['학년', '반', '번호', '이름'], ['', '', '', '']], 0, map,
+        )
         expect(skipped.length).toBe(0)
+    })
+
+    it('학년·반만 적힌 줄은 빈 줄이 아니라 버린 줄이다', () => {
+        // 번호와 이름만 보면 이 줄이 '완전히 빈 줄'로 분류되어 skipped에도 남지 않는다.
+        // 담임 파일에서는 꼬리의 빈 줄이었지만 교과에서는 한 명이 조용히 사라지는 경로다.
+        const {entries, skipped} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '6', '', ''],
+        ], 0, map)
+        expect(entries.length).toBe(0)
+        expect(skipped).toEqual([{line: 2, reason: '번호가 비어 있습니다.'}])
+    })
+
+    it('번호가 비어 있으면 그 줄의 이름을 함께 말한다', () => {
+        const {skipped} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '6', '', '김철수'],
+        ], 0, map)
+        expect(skipped[0].reason).toContain('김철수')
+    })
+})
+
+describe('세로 병합된 학년·반', () => {
+    const map = {grade: 0, classNo: 1, number: 2, name: 3}
+
+    it('빈 칸은 위에서 이어받고 몇 줄인지 센다', () => {
+        // SheetJS는 병합 아래칸을 빈칸으로 준다. 폴백을 타는 파일이 정확히
+        // 한셀 · 나이스 출력물이라 교과 명렬표에서 가장 먼저 만날 형태다.
+        const {entries, inherited} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '1', '4', '김철수'],
+            ['', '', '7', '이영희'],
+            ['3', '6', '4', '박민수'],
+            ['', '', '11', '최다은'],
+        ], 0, map)
+        expect(entries.map((e) => [e.grade, e.classNo])).toEqual([
+            [3, 1], [3, 1], [3, 6], [3, 6],
+        ])
+        // 조용히 값을 만들지 않는다 — 몇 줄을 이어받았는지 반드시 센다.
+        expect(inherited).toBe(2)
+    })
+
+    it('번호도 이름도 없는 줄에는 이어받지 않는다', () => {
+        const {entries, inherited} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '1', '4', '김철수'],
+            ['', '', '', ''],
+        ], 0, map)
+        expect(entries.length).toBe(1)
+        expect(inherited).toBe(0)
+    })
+
+    it('머리글을 다시 만나면 이어받기를 비운다', () => {
+        // 출력물은 페이지마다 머리글을 통째로 반복한다. 앞 페이지의 반을 물려주면
+        // 다음 페이지 첫 줄이 남의 반으로 들어간다.
+        const {entries, skipped, inherited} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '1', '4', '김철수'],
+            ['학년', '반', '번호', '이름'],
+            ['', '', '7', '이영희'],
+        ], 0, map)
+        expect(entries[1]).toEqual({grade: null, classNo: null, number: 7, name: '이영희', line: 4})
+        expect(inherited).toBe(0)
+        // 반복된 머리글은 버린 줄이 아니다.
+        expect(skipped).toEqual([])
+    })
+
+    it('읽지 못한 칸은 이어받을 값으로 남기지 않는다', () => {
+        const {entries, inherited} = rowsToEntries([
+            ['학년', '반', '번호', '이름'],
+            ['3', '일', '4', '김철수'],
+            ['', '', '7', '이영희'],
+        ], 0, map)
+        expect(entries.map((e) => e.classNo)).toEqual([null, null])
+        // 학년은 이어받았으므로 두 번째 줄은 이어받은 줄이 맞다.
+        expect(entries[1].grade).toBe(3)
+        expect(inherited).toBe(1)
+    })
+
+    it('학년·반 열이 아예 없는 파일에서는 이어받을 것이 없다', () => {
+        const {entries, inherited} = rowsToEntries([
+            ['번호', '이름'], ['1', '김철수'], ['2', '이영희'],
+        ], 0, {number: 0, name: 1})
+        expect(entries.every((e) => e.grade === null && e.classNo === null)).toBe(true)
+        expect(inherited).toBe(0)
     })
 })
 
@@ -214,10 +325,11 @@ describe('readRosterFile', () => {
         const result = await readRosterFile(fileOf('명렬표.xlsx', bytes))
         expect(result.parser).toBe('exceljs')
         expect(result.entries).toEqual([
-            {grade: 3, classNo: 6, number: 1, name: '김철수'},
-            {grade: 3, classNo: 6, number: 2, name: '이영희'},
+            {grade: 3, classNo: 6, number: 1, name: '김철수', line: 2},
+            {grade: 3, classNo: 6, number: 2, name: '이영희', line: 3},
         ])
         expect(result.missing).toEqual([])
+        expect(result.inherited).toBe(0)
     })
 
     it('열 순서가 달라도 이름으로 찾는다', async () => {
@@ -226,7 +338,29 @@ describe('readRosterFile', () => {
             ['김철수', 1, 6, 3],
         ])
         const {entries} = await readRosterFile(fileOf('뒤집힌.xlsx', bytes))
-        expect(entries[0]).toEqual({grade: 3, classNo: 6, number: 1, name: '김철수'})
+        expect(entries[0]).toEqual({grade: 3, classNo: 6, number: 1, name: '김철수', line: 2})
+    })
+
+    it('이어받은 줄 수를 화면에 알린다', async () => {
+        // 조용히 값을 만들지 않는다. 파일에 없던 반이 어디서 왔는지 교사가 알아야 한다.
+        const file = csvFile(
+            '교과명렬표.csv',
+            '학년,반,번호,이름\n3,1,4,김철수\n,,7,이영희\n3,6,4,박민수\n',
+        )
+        const result = await readRosterFile(file)
+        expect(result.inherited).toBe(1)
+        expect(result.entries[1]).toEqual(
+            {grade: 3, classNo: 1, number: 7, name: '이영희', line: 3},
+        )
+    })
+
+    it('중간의 빈 줄이 뒤 줄의 번호를 당기지 않는다', async () => {
+        // 교사가 안내받은 줄을 파일에서 열었을 때 다른 줄이 보이면 이 화면의
+        // 모든 숫자를 믿지 않게 된다.
+        const file = csvFile('빈줄.csv', '학년,반,번호,이름\n3,1,4,김철수\n\n3,6,7,이영희\n')
+        const {entries, skipped} = await readRosterFile(file)
+        expect(entries.map((e) => e.line)).toEqual([2, 4])
+        expect(skipped).toEqual([])
     })
 
     it('학년·반이 없으면 무엇이 없는지 알려준다', async () => {
@@ -295,7 +429,9 @@ describe('SheetJS 폴백', () => {
         // 값이 이상할 때 어디를 의심할지 알려주는 단서라 화면에 그대로 올린다.
         const result = await readRosterFile(fileOf('한셀명렬표.xlsx', sheetJsBytes('ods')))
         expect(result.parser).toBe('sheetjs')
-        expect(result.entries).toEqual([{grade: 3, classNo: 6, number: 1, name: '김철수'}])
+        expect(result.entries).toEqual([
+            {grade: 3, classNo: 6, number: 1, name: '김철수', line: 2},
+        ])
     })
 
     it('두 파서가 모두 실패하면 양쪽 이유를 함께 말한다', async () => {
@@ -306,6 +442,58 @@ describe('SheetJS 폴백', () => {
     })
 })
 
+describe('줄 번호', () => {
+    /**
+     * 빈 줄과 빈 열을 끼운 xlsx. 1행과 A열이 비어 있고 4행도 비어 있다.
+     * 실제로 시트가 B2에서 시작하는 파일이 있고, 출력물에는 빈 행이 끼어 있다.
+     */
+    async function gappedXlsxBytes() {
+        const workbook = new Workbook()
+        const sheet = workbook.addWorksheet('명렬표')
+        const put = (address, value) => {
+            sheet.getCell(address).value = value
+        }
+        ;['학년', '반', '번호', '이름'].forEach((v, i) => put(`${'BCDE'[i]}2`, v))
+        ;[3, 1, 4, '김철수'].forEach((v, i) => put(`${'BCDE'[i]}3`, v))
+        ;[3, 6, 7, '이영희'].forEach((v, i) => put(`${'BCDE'[i]}5`, v))
+        return await workbook.xlsx.writeBuffer()
+    }
+
+    it('두 파서가 같은 줄을 같은 번호로 말한다', async () => {
+        // `eachRow`는 빈 행을 건너뛰어 배열을 압축한다. 그대로 두면 같은 파일의
+        // 같은 줄이 exceljs와 SheetJS에서 다른 번호로 보고된다.
+        const bytes = await gappedXlsxBytes()
+        const byExcelJs = await rowsWithExcelJs(bytes)
+        const bySheetJs = rowsWithSheetJs(bytes)
+        expect(bySheetJs).toEqual(byExcelJs)
+        expect(byExcelJs.length).toBe(5)
+        expect(byExcelJs[4]).toContain('이영희')
+    })
+
+    it('건너뛴 빈 줄만큼 학생 줄이 당겨지지 않는다', async () => {
+        const result = await readRosterFile(fileOf('빈줄.xlsx', await gappedXlsxBytes()))
+        expect(result.headerLine).toBe(2)
+        expect(result.entries.map((e) => e.line)).toEqual([3, 5])
+        expect(result.skipped).toEqual([])
+    })
+
+    it('exceljs는 병합된 칸에 주인 값을 준다 — 이어받을 것이 없다', async () => {
+        // 두 파서가 같은 파일을 다르게 주는 자리다. 이어받기는 SheetJS 쪽을 위한 것이고,
+        // exceljs 경로에서 그 수가 늘어나면 없는 병합을 지어낸 것이다.
+        const workbook = new Workbook()
+        const sheet = workbook.addWorksheet('명렬표')
+        sheet.addRow(['학년', '반', '번호', '이름'])
+        sheet.addRow([3, 1, 4, '김철수'])
+        sheet.addRow([null, null, 7, '이영희'])
+        sheet.mergeCells('A2:A3')
+        sheet.mergeCells('B2:B3')
+        const result = await readRosterFile(fileOf('병합.xlsx', await workbook.xlsx.writeBuffer()))
+        expect(result.parser).toBe('exceljs')
+        expect(result.entries.map((e) => [e.grade, e.classNo])).toEqual([[3, 1], [3, 1]])
+        expect(result.inherited).toBe(0)
+    })
+})
+
 describe('샘플 양식', () => {
     it('base64로 옮겨도 바이트가 유지된다', async () => {
         // Rust의 write_bytes_file이 이 문자열을 그대로 디스크에 쓴다.
@@ -313,7 +501,7 @@ describe('샘플 양식', () => {
         const buffer = await buildSampleWorkbook()
         const back = Uint8Array.from(atob(bufferToBase64(buffer)), (c) => c.charCodeAt(0))
         const result = await readRosterFile(fileOf('양식.xlsx', back))
-        expect(result.entries.length).toBe(3)
+        expect(result.entries.length).toBe(SAMPLE_ROWS.length)
         expect(result.entries[0].name).toBe('김철수')
     })
 
@@ -321,8 +509,18 @@ describe('샘플 양식', () => {
         // 샘플이 우리 파서를 통과하지 못하면 배포할 이유가 없다.
         const bytes = await buildSampleWorkbook()
         const result = await readRosterFile(fileOf('샘플.xlsx', bytes))
-        expect(result.entries.length).toBe(3)
+        expect(result.entries.length).toBe(SAMPLE_ROWS.length)
         expect(result.missing).toEqual([])
-        expect(result.entries[0]).toEqual({grade: 3, classNo: 6, number: 1, name: '김철수'})
+        expect(result.entries[0]).toEqual({grade: 3, classNo: 1, number: 4, name: '김철수', line: 2})
+    })
+
+    it('반이 섞여 있고 같은 번호가 두 반에 있다', async () => {
+        // 교과 강좌는 선택과목이라 여러 반이 한 명단에 모이고, 번호 하나로는 학생을
+        // 가릴 수 없다. 한 반으로만 된 양식을 내려받으면 학년 · 반 열을 비워 두어도
+        // 되는 줄 알고, 그 파일은 교과 강좌에 들어가지 못한다.
+        const seats = SAMPLE_ROWS.map(([grade, classNo]) => `${grade}-${classNo}`)
+        expect(new Set(seats).size).toBeGreaterThan(1)
+        const numbers = SAMPLE_ROWS.map(([, , number]) => number)
+        expect(new Set(numbers).size).toBeLessThan(numbers.length)
     })
 })

@@ -1,12 +1,15 @@
 /**
  * 명렬표 스토어.
  *
- * 여기서 잡는 것은 둘이다.
+ * 여기서 잡는 것은 셋이다.
  *   · **명단은 학급으로 묻는다.** 학년 · 반 · 번호는 학적이지 소속이 아니라,
  *     반으로 걸러내면 교과 강좌(여러 반에서 모인다)와 전학생을 담지 못한다.
  *   · **학적을 건드리는 일은 학교를 함께 넘긴다.** 순회 교사가 학교를 둘 이상
  *     등록하면 같은 학년 · 반이 겹치는데, 학교를 빼고 물으면 다른 학교의 3학년
  *     6반이 섞여 들어온다. 그때는 이미 늦다.
+ *   · **줄은 손대지 않고 그대로 넘긴다.** 줄을 학생에 맞추는 열쇠는 역할이 정하고
+ *     (담임은 번호, 교과는 학년 · 반 · 번호) 그 판단은 전부 Rust가 한다. 스토어가
+ *     학년 · 반이나 줄 번호를 떨어뜨리면 교과에서 학생을 가릴 방법이 사라진다.
  *
  * 학생 이름은 전부 가짜다.
  */
@@ -17,6 +20,9 @@ import {useRosterStore} from './roster'
 import {useAppStore} from './app'
 
 vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn()}))
+
+/** 저장 결과. `seatClosed`만 되돌릴 수 없는 쓰기다. */
+const APPLIED = {added: 1, created: 1, renamed: 0, withdrawn: 0, blocked: 0, seatClosed: 0}
 
 beforeEach(() => {
     setActivePinia(createPinia())
@@ -54,15 +60,37 @@ describe('명렬표', () => {
             classId: 9, entries: [{number: 1, name: '학생1'}],
         })
 
-        invoke.mockResolvedValue({added: 1, renamed: 0, withdrawn: 0})
+        invoke.mockResolvedValue(APPLIED)
         await roster.apply(9, '2026-03-02', [])
         const applyCall = invoke.mock.calls.find((c) => c[0] === 'apply_roster')
         expect(applyCall[1]).toEqual({classId: 9, effectiveDate: '2026-03-02', rows: []})
     })
 
+    it('줄을 손대지 않고 그대로 넘긴다 — 학년 · 반과 줄 번호가 열쇠의 일부다', async () => {
+        // 교과 강좌는 (학년, 반, 번호)가 열쇠다. 스토어가 학년 · 반을 떨어뜨리면
+        // 3학년 1반 4번과 3학년 6반 4번을 가릴 방법이 사라진다. 줄 번호는 버린 줄이
+        // 자기를 가리키는 값이라 함께 간다.
+        const entries = [
+            {grade: 3, classNo: 1, number: 4, name: '학생1', line: 2},
+            {grade: 3, classNo: 6, number: 4, name: '학생2', line: 3},
+        ]
+        await useRosterStore().preview(9, entries)
+
+        expect(invoke).toHaveBeenCalledWith('preview_roster', {classId: 9, entries})
+    })
+
+    it('저장 결과를 그대로 돌려준다 — 화면이 마감한 학적을 경고로 말해야 한다', async () => {
+        const roster = useRosterStore()
+        invoke.mockResolvedValue(APPLIED)
+
+        const result = await roster.apply(9, '2026-03-02', [])
+
+        expect(result).toEqual(APPLIED)
+    })
+
     it('저장한 뒤 같은 학급의 명단을 다시 읽는다', async () => {
         const roster = useRosterStore()
-        invoke.mockResolvedValue({added: 1, renamed: 0, withdrawn: 0})
+        invoke.mockResolvedValue(APPLIED)
 
         await roster.apply(9, '2026-03-02', [])
 

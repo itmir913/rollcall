@@ -6,10 +6,13 @@
  * 조용히 엉뚱한 값이 들어간다 — 번호 자리에 학년이 들어가도 숫자라서 통과한다.
  *
  * 기본 양식은 `학년 · 반 · 번호 · 이름` 네 열이다.
+ *
+ * 교과 강좌 명렬표는 여러 반이 섞여 있어 반 열의 이름이 `원반` · `소속반`인 경우가 있다.
+ * 담임 학급을 뜻하는 같은 값이므로 `classNo`로 받는다.
  */
 export const ROSTER_COL_ALIASES = {
     grade: ['학년', 'grade'],
-    classNo: ['반', '학급', '반번호', 'class', 'classno', 'class_no', 'classnum'],
+    classNo: ['반', '학급', '반번호', '원반', '소속반', 'class', 'classno', 'class_no', 'classnum'],
     number: ['번호', '번', '출석번호', 'number', 'no', 'num'],
     name: ['이름', '성명', '학생명', '학생이름', 'name'],
 }

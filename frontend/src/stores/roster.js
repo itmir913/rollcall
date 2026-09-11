@@ -6,14 +6,21 @@ import {useAppStore} from './app'
 /**
  * 학생 명단. 파일에서 읽은 것이 하나의 미리보기로 수렴한다.
  *
- * 재가져오기는 교체가 아니라 **차분**이다. 사라진 번호는 삭제하지 않고 전출로 남긴다.
- * 미리보기의 action을 교사가 바꿀 수 있고, 저장은 그 확정본만 반영한다.
+ * 재가져오기는 교체가 아니라 **차분**이다. 명단에서 빠진 번호는 삭제하지 않고 나간 날만
+ * 적는다(`class_member.left_on`) — **내 명단에서 빠지는 것과 학교를 떠나는 것
+ * (`student.enrolled_to`)은 다른 일이다.** 미리보기의 action을 교사가 바꿀 수 있고,
+ * 저장은 그 확정본만 반영한다.
  *
  * **명단은 학급에 매달린다.** 학년 · 반 · 번호는 그 학생의 학적이지 내 명단의 소속이
  * 아니다 — 교과 강좌는 여러 반에서 모이므로 반으로 걸러낼 수 없고, 담임 명렬표에도
  * 반이 다른 학생이 들어오는 날이 있다. 그래서 질의가 받는 것은 `classId` 하나다.
  *
- * 학생 자체는 여전히 **학교에 매달린다.** 이름을 고치거나 전출로 마감하는 것은
+ * **줄을 학생에 맞추는 열쇠는 학급의 역할이 정한다.** 담임은 번호 하나이고, 교과
+ * 강좌는 (학년, 반, 번호) 학적 자리 전체다 — 선택과목은 1반부터 n반까지 모여 번호
+ * 하나로는 학생을 가릴 수 없다. 그 판단은 전부 Rust가 하고, 여기서는 파일에서 읽은
+ * 줄을 그대로 넘긴다.
+ *
+ * 학생 자체는 여전히 **학교에 매달린다.** 이름을 고치거나 학적을 마감하는 것은
  * 명단이 아니라 학적을 건드리는 일이라 학교를 함께 넘긴다.
  */
 export const useRosterStore = defineStore('roster', () => {
@@ -52,6 +59,9 @@ export const useRosterStore = defineStore('roster', () => {
      *
      * 여기서 돌려주는 학년 · 반은 **파일이 적어 둔 학적**이다. 어느 명단에 넣을지는
      * 교사가 고른 학급이 정한다 — 파일이 화면의 범위를 바꾸지 않는다.
+     *
+     * **교과 강좌에는 묻지 않는다.** 강좌는 여러 반에서 모이므로 `mixed`가 정상이고,
+     * 그 값을 읽는 자리가 생기면 교과에 늘 붙어 있는 경고가 된다. 부르는 쪽이 정한다.
      */
     async function detectClass(entries) {
         error.value = ''
@@ -63,6 +73,11 @@ export const useRosterStore = defineStore('roster', () => {
         }
     }
 
+    /**
+     * 차분 미리보기. 줄은 `{grade, classNo, number, name, line}`이고, `line`은 파일의
+     * 몇 번째 줄인가다 — 교과에서 `4번 김하늘`이 두 줄 나란히 서면 그 값이 없이는
+     * 어느 줄을 고칠지 말하지 못한다. 돌려받는 줄의 `key`가 화면 목록의 열쇠다.
+     */
     async function preview(classId, entries) {
         error.value = ''
         try {
@@ -74,6 +89,11 @@ export const useRosterStore = defineStore('roster', () => {
         }
     }
 
+    /**
+     * 확정본을 저장한다. 돌려받는 것은
+     * `{added, created, renamed, withdrawn, blocked, seatClosed}`이고,
+     * `seatClosed`만 되돌릴 수 없는 쓰기다 — 화면이 그것을 경고 위계로 말한다.
+     */
     async function apply(classId, effectiveDate, rows) {
         error.value = ''
         try {

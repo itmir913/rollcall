@@ -101,6 +101,10 @@ pub struct RosterEntry {
     pub class_no: Option<i64>,
     pub number: i64,
     pub name: String,
+    /// 파일의 몇 번째 줄인가. **버린 줄이 자기를 가리키기 위한 값이다** —
+    /// 교과에서 '4번 김하늘'이 두 줄 나란히 서면 어느 줄을 고칠지 말하지 못한다.
+    #[serde(default)]
+    pub line: Option<i64>,
 }
 
 /// 재가져오기 미리보기 한 줄.
@@ -109,20 +113,41 @@ pub struct RosterEntry {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterDiffRow {
+    /// 화면 목록의 열쇠이자 미리보기와 적용을 잇는 자리표.
+    /// 교과는 번호가 겹쳐 번호로 줄을 가릴 수 없다. (`NeisDiffItem.key`와 같은 뜻)
+    #[serde(default)]
+    pub key: usize,
+    /// 그 줄이 가리키는 학적 자리. **담임 적용은 이 둘을 읽지 않는다** — 보여주기용이다.
+    #[serde(default)]
+    pub grade: Option<i64>,
+    #[serde(default)]
+    pub class_no: Option<i64>,
+    #[serde(default)]
+    pub line: Option<i64>,
     pub number: i64,
     pub incoming_name: Option<String>,
     pub current_name: Option<String>,
     pub student_id: Option<i64>,
-    /// added | unchanged | renamed | withdrawn
+    /// added | unchanged | renamed | withdrawn | linked | blocked
     pub action: String,
+    /// 그 줄에 붙는 말. blocked의 이유 등. **앱이 이 문장을 다시 해석하지 않는다.**
+    #[serde(default)]
+    pub why: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterApplyResult {
+    /// 명단에 들어온 줄.
     pub added: i64,
+    /// 그중 학적을 새로 만든 수. 교과에서 인원과 같으면 파일의 반이 통째로 틀린 신호다.
+    pub created: i64,
     pub renamed: i64,
     pub withdrawn: i64,
+    /// 앉힐 수 없어 넘긴 줄.
+    pub blocked: i64,
+    /// 담임이 자리를 넘겨받으며 마감한 학적. 되돌릴 수 없는 쓰기다.
+    pub seat_closed: i64,
 }
 
 /// 명렬표에서 읽어낸 학급. 첫 실행에서 "우리 반"을 되묻지 않기 위한 것이다.

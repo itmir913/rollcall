@@ -11,7 +11,14 @@
  * 서식이 복잡한 정상 파일에서 값이 달라지는 경우가 있어 순서를 이렇게 둔다.
  *
  * 이 모듈은 **파일 형식을 다룰 뿐 업무 규칙을 다루지 않는다.** 명단 차분(추가·
- * 전출·개명 판정)과 저장은 전부 Rust가 한다.
+ * 전출·개명 판정)과 저장은 전부 Rust가 한다. 학년·반이 필수인지 아닌지도 여기서
+ * 정하지 않는다 — 이 모듈은 대상 학급을 모른다. 없는 열은 `missing`으로 알리고
+ * 판단은 화면이 한다.
+ *
+ * **줄 번호는 파일의 줄 번호와 같아야 한다.** 세 경로(exceljs · SheetJS · CSV)가
+ * 모두 빈 줄을 그대로 세어 같은 번호를 말한다. 교사가 안내받은 줄을 엑셀에서 열어
+ * 멀쩡한 줄을 보는 순간 이 화면의 모든 숫자를 믿지 않게 된다. 나이스 파일을 읽는
+ * `neisFile.js`가 같은 이유로 같은 방법을 쓴다.
  */
 import {Workbook} from 'exceljs'
 import * as XLSX from 'xlsx'
@@ -80,6 +87,10 @@ export function decodeCsvBytes(buffer) {
  *
  * 줄 단위로 먼저 자르면 `"홍길동, 김"` 같은 값이나 셀 안 줄바꿈에서 깨진다.
  * 그래서 글자를 하나씩 본다.
+ *
+ * **빈 줄을 버리지 않는다.** 버리면 그 뒤 줄이 전부 한 칸씩 당겨져, 안내한 줄 번호와
+ * 교사가 파일에서 여는 줄이 어긋난다. 빈 줄은 `rowsToEntries`가 조용히 넘긴다.
+ * 다만 마지막 줄바꿈이 만드는 꼬리 한 줄은 파일에 없는 줄이라 뗀다.
  */
 export function parseCsv(text) {
     const rows = []
@@ -116,7 +127,9 @@ export function parseCsv(text) {
     row.push(field)
     rows.push(row)
 
-    return rows.filter((r) => r.some((c) => String(c).trim() !== ''))
+    const last = rows[rows.length - 1]
+    if (rows.length > 1 && last.length === 1 && last[0] === '') rows.pop()
+    return rows
 }
 
 // ── 시트 → 행 ─────────────────────────────────────────────────
@@ -131,20 +144,36 @@ export async function rowsWithExcelJs(buffer) {
     await workbook.xlsx.load(buffer)
     const sheet = workbook.worksheets[0]
     if (!sheet) throw new Error('시트가 없습니다.')
+    // **`eachRow`를 쓰지 않는다.** 그것은 빈 행을 건너뛰어 배열을 압축하므로 같은
+    // 파일의 같은 줄이 SheetJS와 다른 번호로 보고된다. 행 번호로 훑어 자리를 지킨다.
     const rows = []
-    sheet.eachRow((row) => {
-        // row.values는 1-based라 첫 칸이 비어 있다.
-        rows.push(row.values.slice(1).map(cellText))
-    })
+    for (let r = 1; r <= sheet.rowCount; r++) {
+        const row = sheet.getRow(r)
+        const cells = []
+        for (let c = 1; c <= sheet.columnCount; c++) cells.push(cellText(row.getCell(c).value))
+        rows.push(cells)
+    }
     return rows
 }
 
+/**
+ * SheetJS로 읽는다. **exceljs와 같은 모양을 내놓아야 한다.**
+ *
+ *  · 범위를 A1부터로 넓힌다 — 시트가 B2에서 시작하면 줄 번호와 열 번호가 통째로 밀린다.
+ *  · `blankrows`를 켠다 — 빈 행을 빼면 그 뒤 줄 번호가 전부 당겨진다.
+ */
 export function rowsWithSheetJs(buffer) {
     const workbook = XLSX.read(buffer, {type: 'array'})
     const name = workbook.SheetNames[0]
     if (!name) throw new Error('시트가 없습니다.')
-    const raw = XLSX.utils.sheet_to_json(workbook.Sheets[name], {header: 1, defval: ''})
-    return raw.map((row) => row.map(cellText))
+    const sheet = workbook.Sheets[name]
+    const range = XLSX.utils.decode_range(sheet['!ref'] ?? 'A1')
+    range.s.r = 0
+    range.s.c = 0
+    const raw = XLSX.utils.sheet_to_json(sheet, {
+        header: 1, raw: true, blankrows: true, defval: '', range,
+    })
+    return raw.map((row) => (Array.isArray(row) ? row.map(cellText) : []))
 }
 
 /**
@@ -154,8 +183,9 @@ export function rowsWithSheetJs(buffer) {
 export async function readSheetRows(buffer) {
     try {
         const rows = await rowsWithExcelJs(buffer)
-        if (rows.length) return {rows, parser: 'exceljs'}
-        // 빈 결과는 실패로 본다. 정상 파일이라면 헤더 한 줄은 나온다.
+        // **행 수가 아니라 내용으로 판단한다.** 서식만 남은 빈 행도 행으로 세어지므로
+        // 길이만 보면 아무것도 읽지 못한 파일에서 폴백이 돌지 않는다.
+        if (hasContent(rows)) return {rows, parser: 'exceljs'}
         throw new Error('읽어낸 행이 없습니다.')
     } catch (first) {
         try {
@@ -166,6 +196,11 @@ export async function readSheetRows(buffer) {
             )
         }
     }
+}
+
+/** 값이 한 칸이라도 있는가. 빈 표를 '읽었다'고 말하지 않기 위한 것이다. */
+function hasContent(rows) {
+    return rows.some((row) => row.some((cell) => String(cell ?? '').trim() !== ''))
 }
 
 // ── 헤더 → 열 ─────────────────────────────────────────────────
@@ -181,13 +216,24 @@ export function mapHeaderRow(headerRow) {
     return map
 }
 
+/** 그 줄에 읽을 것이 있는가. 빈 줄은 줄 번호를 위해 남아 있을 뿐이다. */
+function rowHasContent(row) {
+    return (row ?? []).some((cell) => String(cell ?? '').trim() !== '')
+}
+
 /**
  * 헤더가 있는 줄을 찾는다. 제목 줄이 앞에 붙은 파일이 흔해서 첫 줄만 보지 않는다.
  * 필수 열(번호·이름)이 모두 잡히는 첫 줄이 헤더다.
+ *
+ * **세는 것은 내용이 있는 줄이다.** 줄 번호를 지키려고 빈 줄을 남기게 되면서, 물리적인
+ * 열 줄을 세면 제목과 빈 줄이 앞에 붙은 파일에서 머리글이 범위 밖으로 밀린다 —
+ * 나이스 출력물이 정확히 그런 모양이다. 돌려주는 `index`는 그대로 물리적 자리다.
  */
 export function findHeaderRow(rows) {
-    const limit = Math.min(rows.length, HEADER_SCAN_ROWS)
-    for (let i = 0; i < limit; i++) {
+    let looked = 0
+    for (let i = 0; i < rows.length && looked < HEADER_SCAN_ROWS; i++) {
+        if (!rowHasContent(rows[i])) continue
+        looked += 1
         const map = mapHeaderRow(rows[i])
         if (REQUIRED_COLS.every((c) => map[c] !== undefined)) {
             return {index: i, map}
@@ -203,42 +249,90 @@ function toNumber(text) {
     return Number.isInteger(n) && n >= 1 ? n : null
 }
 
+/** 그 줄이 머리글인가. 출력물은 페이지마다 머리글을 통째로 반복한다. */
+function isHeaderRow(row) {
+    const map = mapHeaderRow(row)
+    return REQUIRED_COLS.every((c) => map[c] !== undefined)
+}
+
 /**
  * 행들을 명단 항목으로 바꾼다.
  *
  * 번호나 이름이 없는 줄은 **조용히 버리지 않고** 어떤 줄이 왜 빠졌는지 남긴다.
- * 30명 중 29명만 들어왔는데 아무 말이 없으면 교사는 알 방법이 없다.
+ * 30명 중 29명만 들어왔는데 아무 말이 없으면 교사는 알 방법이 없다. 그래서 빈 줄인지는
+ * **네 칸을 모두 보고** 판단한다 — 번호와 이름만 보면 학년 · 반만 적힌 줄이 '완전히 빈 줄'로
+ * 분류되어 `skipped`에도 남지 않는다. 담임 파일에서는 꼬리의 빈 줄이었지만, 반이 섞이는
+ * 교과 명렬표에서는 진짜 한 명이 아무 말 없이 사라지는 경로다.
+ *
+ * 학년 · 반이 **세로 병합된 파일**은 그 값을 위에서 이어받는다. exceljs는 병합 아래칸에
+ * 주인 값을 주지만 SheetJS는 빈칸으로 주는데, 폴백(SheetJS)을 타는 파일이 정확히
+ * 한셀 · 나이스 출력물이라 교과 명렬표에서 가장 먼저 만날 형태다. 조건은 셋이다 —
+ * 그 줄에 번호나 이름이 있을 때만, 그 칸이 비어 있을 때만, 그리고 **몇 줄을 이어받았는지
+ * 반드시 센다**(`inherited`). 조용히 값을 만들지 않는다.
+ *
+ * @returns {{entries: Array, skipped: Array, inherited: number}}
  */
 export function rowsToEntries(rows, headerIndex, map) {
     const entries = []
     const skipped = []
+    let inherited = 0
+    // 위에서 이어받을 학년 · 반. 머리글을 다시 만나면(다음 페이지) 비운다.
+    let lastGrade = null
+    let lastClassNo = null
 
     for (let i = headerIndex + 1; i < rows.length; i++) {
-        const row = rows[i]
-        const at = (col) => (map[col] === undefined ? '' : row[map[col]])
-        const rawName = String(at('name') ?? '').trim()
-        const number = toNumber(at('number'))
+        const row = rows[i] ?? []
+        const line = i + 1
+        const at = (col) => (map[col] === undefined ? '' : String(row[map[col]] ?? '').trim())
 
-        if (!rawName && number === null) continue // 완전히 빈 줄
+        // 반복된 머리글은 버린 줄이 아니다. 앞 페이지의 학년 · 반을 넘겨서도 안 된다.
+        if (isHeaderRow(row)) {
+            lastGrade = null
+            lastClassNo = null
+            continue
+        }
 
+        const gradeText = at('grade')
+        const classText = at('classNo')
+        const numberText = at('number')
+        const rawName = at('name')
+
+        if (!gradeText && !classText && !numberText && !rawName) continue // 완전히 빈 줄
+
+        // 읽지 못한 칸은 이어받을 값으로 두지 않는다. 남겨 두면 다음 줄이 그 값을 물려받는다.
+        if (gradeText) lastGrade = toNumber(gradeText)
+        if (classText) lastClassNo = toNumber(classText)
+
+        const number = toNumber(numberText)
         if (number === null) {
-            skipped.push({line: i + 1, reason: `번호가 숫자가 아닙니다: "${at('number')}"`})
+            skipped.push({
+                line,
+                reason: numberText === ''
+                    ? `번호가 비어 있습니다.${rawName ? ` (이름 "${rawName}")` : ''}`
+                    : `번호가 숫자가 아닙니다: "${numberText}"`,
+            })
             continue
         }
         if (!rawName) {
-            skipped.push({line: i + 1, reason: `${number}번의 이름이 비어 있습니다.`})
+            skipped.push({line, reason: `${number}번의 이름이 비어 있습니다.`})
             continue
         }
 
+        const borrowed = (!gradeText && lastGrade !== null) || (!classText && lastClassNo !== null)
+        if (borrowed) inherited += 1
+
         entries.push({
-            grade: toNumber(at('grade')),
-            classNo: toNumber(at('classNo')),
+            grade: gradeText ? toNumber(gradeText) : lastGrade,
+            classNo: classText ? toNumber(classText) : lastClassNo,
             number,
             name: rawName,
+            // 버린 줄이 자기를 가리키기 위한 값이다 — 교과에서 '4번 김하늘'이 두 줄
+            // 나란히 서면 번호만으로는 어느 줄을 고칠지 말하지 못한다.
+            line,
         })
     }
 
-    return {entries, skipped}
+    return {entries, skipped, inherited}
 }
 
 // ── 진입점 ────────────────────────────────────────────────────
@@ -247,7 +341,7 @@ export function rowsToEntries(rows, headerIndex, map) {
  * 파일 하나를 읽어 명단으로. 화면은 이 함수만 부른다.
  *
  * @param {File} file
- * @returns {Promise<{entries, skipped, parser, headerLine, columns, missing}>}
+ * @returns {Promise<{entries, skipped, parser, headerLine, columns, missing, inherited}>}
  */
 export async function readRosterFile(file) {
     const ext = extensionOf(file.name)
@@ -274,11 +368,15 @@ export async function readRosterFile(file) {
         ;({rows, parser} = await readSheetRows(buffer))
     }
 
-    if (!rows.length) throw new Error('파일이 비어 있습니다.')
+    // 빈 줄도 줄 번호를 위해 남아 있으므로 행 수가 아니라 내용으로 판단한다.
+    if (!hasContent(rows)) throw new Error('파일이 비어 있습니다.')
 
     const header = findHeaderRow(rows)
     if (!header) {
-        const first = rows[0].map((c) => String(c).trim()).filter(Boolean).join(' · ')
+        // 빈 줄을 남기게 되었으므로 `rows[0]`이 빈 행일 수 있다. 그것을 보여주면
+        // 교사에게 '(비어 있음)'만 돌려주게 된다 — 읽은 것을 말하지 못한다.
+        const firstRow = rows.find(rowHasContent) ?? []
+        const first = firstRow.map((c) => String(c).trim()).filter(Boolean).join(' · ')
         const missing = REQUIRED_COLS.map((c) => COL_LABELS[c]).join(' · ')
         throw new Error(
             `머리글에서 ${missing} 열을 찾지 못했습니다.\n` +
@@ -287,7 +385,7 @@ export async function readRosterFile(file) {
         )
     }
 
-    const {entries, skipped} = rowsToEntries(rows, header.index, header.map)
+    const {entries, skipped, inherited} = rowsToEntries(rows, header.index, header.map)
     if (!entries.length) throw new Error('머리글은 찾았지만 학생 줄이 없습니다.')
 
     return {
@@ -296,7 +394,10 @@ export async function readRosterFile(file) {
         parser,
         headerLine: header.index + 1,
         columns: Object.keys(header.map),
+        // 없는 열을 알리기만 한다. 학년 · 반이 필수인지는 대상 학급을 아는 화면이 판단한다.
         missing: ['grade', 'classNo'].filter((c) => header.map[c] === undefined),
+        // 학년 · 반이 비어 위에서 이어받은 줄 수.
+        inherited,
     }
 }
 
@@ -304,10 +405,16 @@ export async function readRosterFile(file) {
 
 export const SAMPLE_HEADERS = ['학년', '반', '번호', '이름']
 
+/**
+ * 반을 섞어 둔다. 교과 강좌는 선택과목이라 여러 반이 한 명단에 모이고, **번호 하나로는
+ * 학생을 가릴 수 없다** — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 한 반으로만
+ * 된 양식을 내려받으면 학년 · 반 열을 비워 두어도 되는 줄 알고, 그 파일은 교과 강좌에
+ * 들어가지 못한다. 담임 명렬표로 쓸 때는 학년 · 반을 읽지 않으므로 섞여 있어도 무방하다.
+ */
 export const SAMPLE_ROWS = [
-    [3, 6, 1, '김철수'],
-    [3, 6, 2, '이영희'],
-    [3, 6, 3, '박민수'],
+    [3, 1, 4, '김철수'],
+    [3, 6, 4, '이영희'],
+    [3, 6, 11, '박민수'],
 ]
 
 /** 샘플 명렬표를 xlsx 바이트로 만든다. 저장은 호출한 쪽이 한다. */

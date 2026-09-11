@@ -43,7 +43,7 @@ const STEPS = ['시작하기', '학년도', '학교', '맡은 것', '완료']
 const INTRO = [
     '학년도와 학교를 정합니다. 최대 교시와 서류 제출 기한은 학교마다 다릅니다.',
     '맡은 것을 등록합니다. 담임 학급과 교과 강좌를 함께 넣을 수 있습니다.',
-    '담임 학급의 명렬표를 파일에서 가져옵니다. 번호와 이름만 있으면 됩니다.',
+    '맡은 것마다 명렬표를 파일에서 가져옵니다. 교과 강좌는 학년 · 반도 함께 필요합니다.',
 ]
 
 const step = ref(1)
@@ -181,7 +181,12 @@ async function addSubject() {
 async function add(payload) {
     error.value = ''
     try {
-        const id = await app.createClass(payload)
+        // **교과 강좌를 더했다고 모드가 넘어가지 않는다.** `selectClass`가 모드를
+        // `app_config`에 저장하므로, 교과를 마지막으로 더한 교사는 다음 실행이
+        // 교과 모드로 열린다. 다만 **아직 아무것도 고르지 않았으면 고른다** —
+        // 교과만 맡은 비담임 교사에게는 그 강좌가 유일한 자리다.
+        const select = payload.role === 'homeroom' || app.classId == null
+        const id = await app.createClass({...payload, select})
         await refreshCounts()
         openId.value = id
         return id
@@ -192,8 +197,13 @@ async function add(payload) {
 }
 
 /**
- * 명렬표를 펼친다. **그 학급을 함께 고른다** — 명단이 붙는 곳은 지금 고른 학급이라,
- * 펼친 줄과 고른 학급이 어긋나면 다른 반 명단에 들어간다.
+ * 명렬표를 펼친다. **담임 학급이면 그 학급을 함께 고른다** — 명단이 붙는 곳은 지금
+ * 고른 학급이라, 펼친 줄과 고른 학급이 어긋나면 다른 반 명단에 들어간다.
+ *
+ * **교과 강좌에서는 고르지 않는다.** `selectClass`는 모드를 `app_config`에 저장하므로,
+ * 온보딩 끝에 교과 명렬표를 마지막으로 만진 교사는 다음 실행이 교과 모드로 열린다.
+ * 이 화면은 `meta.bare`라 그 전환이 눈에 보이지도 않는다. 명단이 붙는 곳은
+ * `RosterPanel`에 넘기는 `classId`가 이미 정하므로 고르지 않아도 어긋나지 않는다.
  */
 async function toggleRoster(cls) {
     if (openId.value === cls.id) {
@@ -202,7 +212,7 @@ async function toggleRoster(cls) {
     }
     error.value = ''
     try {
-        await app.selectClass(cls.id)
+        if (cls.role === 'homeroom') await app.selectClass(cls.id)
         openId.value = cls.id
     } catch (e) {
         error.value = String(e)
@@ -392,14 +402,13 @@ onMounted(async () => {
                         <span class="row__what">{{ schoolLabel(cls) }}</span>
                         <span class="row__when">{{ rosterLabel(cls.id) }}</span>
                         <span class="row__acts">
-                            <!-- 교과 강좌는 반이 섞여 번호만으로 학생을 가릴 수 없다.
-                                 명렬표 들이기가 아직 담임만이라 단추를 열지 않는다 —
-                                 눌러도 되지 않는 단추가 아무 말 없이 실패하는 것보다
-                                 아직 없다고 적는 편이 낫다. -->
-                            <UiButton disabled size="tight" title="다음 판에서 만듭니다">
-                                명렬표는 아직
+                            <UiButton size="tight" @click="toggleRoster(cls)">
+                                {{ openId === cls.id ? '명렬표 닫기' : '명렬표 넣기' }}
                             </UiButton>
                         </span>
+                    </div>
+                    <div v-if="openId === cls.id" class="mine__panel">
+                        <RosterPanel :class-id="cls.id"/>
                     </div>
                 </template>
 
@@ -410,7 +419,8 @@ onMounted(async () => {
                                type="text" @keyup.enter="addSubject"/>
                         <UiButton size="tight" variant="primary" @click="addSubject">추가</UiButton>
                         <span class="set__hint">
-                            반이 섞입니다 — 선택과목은 1반부터 n반까지 모이므로 학년 · 반을 묻지 않습니다
+                            반이 섞입니다 — 선택과목은 1반부터 n반까지 모이므로 학년 · 반을 묻지 않습니다.
+                            대신 명렬표 파일에 학년 · 반 열이 있어야 합니다
                         </span>
                     </span>
                 </div>
@@ -469,7 +479,10 @@ onMounted(async () => {
                 </span>
             </div>
             <template #foot>
-                <span>명렬표는 학기 중에도 다시 가져올 수 있습니다. 사라진 번호는 지우지 않고 전출로 남습니다.</span>
+                <span>
+                    명렬표는 학기 중에도 다시 가져올 수 있습니다. 명단에서 빠진 번호는 지우지 않고
+                    나간 날만 적습니다 — 지난 출결은 그대로 남습니다.
+                </span>
             </template>
         </UiLedger>
 

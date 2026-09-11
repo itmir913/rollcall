@@ -4,6 +4,10 @@
  * 예전에는 파일이 말하는 학년 · 반이 그 자리를 정했다. 학년 · 반 · 번호는 그 학생의
  * 학적이지 소속이 아니므로 지금은 `classId`가 정하고, 파일이 가리키는 반은
  * **알리기만 한다** — 다른 반 학생이 우리 반 명단에 실리는 일이 실제로 있다.
+ *
+ * **열쇠는 역할이 정한다.** 담임은 번호 하나이고, 교과 강좌는 (학년, 반, 번호) 자리
+ * 전체다 — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 화면도 그만큼 갈린다:
+ * 교과에서만 자리 칸과 반별 인원을 그리고, 학급 판단(`detectClass`)은 묻지 않는다.
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {flushPromises, mount} from '@vue/test-utils'
@@ -16,25 +20,72 @@ import RosterImport from './RosterImport.vue'
 vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn().mockResolvedValue([])}))
 vi.mock('@tauri-apps/plugin-dialog', () => ({save: vi.fn(), open: vi.fn()}))
 
-const ENTRIES = [{grade: 3, classNo: 6, number: 1, name: '김하늘'}]
-const DIFF = [{number: 1, incomingName: '김하늘', currentName: null, studentId: null, action: 'added'}]
+const HOMEROOM = {
+    id: 10, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+    grade: 3, classNo: 6, validTo: null,
+}
+const SUBJECT = {
+    id: 21, schoolId: 1, yearId: 2, role: 'subject', name: '인공지능기초A',
+    grade: null, classNo: null, validTo: null,
+}
+
+const ENTRIES = [{grade: 3, classNo: 6, number: 1, name: '김하늘', line: 2}]
+const DIFF = [{
+    key: 0, grade: 3, classNo: 6, line: 2, number: 1,
+    incomingName: '김하늘', currentName: null, studentId: null, action: 'added',
+}]
+
+/** 저장 결과. 칸을 전부 채워 둔다 — 빠뜨리면 화면에 `undefined명`이 나온다. */
+const APPLIED = {
+    added: 1, created: 0, renamed: 0, withdrawn: 0, blocked: 0, seatClosed: 0,
+}
+
+/** 교과 강좌 미리보기. **같은 번호가 반을 달리해 두 줄 선다** — 번호로는 못 가린다. */
+const SUBJECT_DIFF = [
+    {
+        key: 0, grade: 3, classNo: 1, line: 2, number: 4,
+        incomingName: '김하늘', currentName: null, studentId: null, action: 'added',
+    },
+    {
+        key: 1, grade: 3, classNo: 6, line: 3, number: 4,
+        incomingName: '박서연', currentName: null, studentId: null, action: 'added',
+    },
+    {
+        key: 2, grade: 3, classNo: 6, line: 4, number: 7,
+        incomingName: '이도윤', currentName: '이도윤', studentId: 5, action: 'unchanged',
+    },
+]
 
 /** 파일을 읽은 것처럼 만든다. 파일 형식은 RosterImport가 이미 따로 검사한다. */
-async function load(wrapper) {
+async function load(wrapper, result = {}) {
     wrapper.findComponent(RosterImport).vm.$emit('loaded', {
-        entries: ENTRIES, parser: 'exceljs', skipped: [],
+        entries: ENTRIES, parser: 'exceljs', skipped: [], missing: [], inherited: 0, ...result,
     })
     await flushPromises()
 }
 
-function build(detected = {grade: 3, classNo: 6, mixed: false}) {
+function build({
+    detected = {grade: 3, classNo: 6, mixed: false},
+    diff = DIFF,
+    applied = APPLIED,
+    students = [],
+} = {}) {
     const roster = useRosterStore()
     vi.spyOn(roster, 'detectClass').mockResolvedValue(detected)
-    vi.spyOn(roster, 'fetchStudents').mockResolvedValue()
-    vi.spyOn(roster, 'preview').mockResolvedValue(DIFF)
-    vi.spyOn(roster, 'apply').mockResolvedValue({added: 1, renamed: 0, withdrawn: 0})
+    vi.spyOn(roster, 'fetchStudents').mockResolvedValue(students)
+    vi.spyOn(roster, 'preview').mockResolvedValue(diff)
+    vi.spyOn(roster, 'apply').mockResolvedValue(applied)
     return {wrapper: mount(RosterPanel), roster}
 }
+
+/** 교과 강좌를 보고 있게 만든다. 화면이 갈리는 것은 학급의 역할 하나다. */
+function pickSubject() {
+    const app = useAppStore()
+    app.classes = [HOMEROOM, SUBJECT]
+    app.classId = SUBJECT.id
+}
+
+const save = (wrapper) => wrapper.findAll('button').find((b) => b.text() === '저장')
 
 beforeEach(() => {
     setActivePinia(createPinia())
@@ -45,11 +96,8 @@ beforeEach(() => {
     app.yearId = 2
     app.years = [{id: 2, year: 2026}]
     app.schools = [{id: 1, name: '한빛고등학교', maxSlot: 7, dueDays: 7, dueSkipOffdays: true}]
-    app.classes = [{
-        id: 10, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
-        grade: 3, classNo: 6, validTo: null,
-    }]
-    app.classId = 10
+    app.classes = [HOMEROOM]
+    app.classId = HOMEROOM.id
 })
 
 describe('명렬표 가져오기', () => {
@@ -59,15 +107,14 @@ describe('명렬표 가져오기', () => {
 
         expect(roster.preview).toHaveBeenCalledWith(10, ENTRIES)
 
-        const save = wrapper.findAll('button').find((b) => b.text() === '저장')
-        await save.trigger('click')
+        await save(wrapper).trigger('click')
         await flushPromises()
 
         expect(roster.apply).toHaveBeenCalledWith(10, '2026-09-10', DIFF)
     })
 
     it('파일이 다른 반을 가리켜도 막지 않고 알린다', async () => {
-        const {wrapper, roster} = build({grade: 2, classNo: 1, mixed: false})
+        const {wrapper, roster} = build({detected: {grade: 2, classNo: 1, mixed: false}})
         await load(wrapper)
 
         // 막지 않는다. 미리보기는 그대로 지금 학급으로 간다.
@@ -81,5 +128,247 @@ describe('명렬표 가져오기', () => {
         await load(wrapper)
 
         expect(wrapper.text()).not.toContain('가리킵니다')
+    })
+
+    it('담임 화면에는 자리 칸을 그리지 않는다 — 같은 반이 서른 번 반복된다', async () => {
+        const {wrapper} = build()
+        await load(wrapper)
+
+        expect(wrapper.findAll('.row__seat')).toHaveLength(0)
+        expect(wrapper.text()).not.toContain('반별 인원')
+    })
+})
+
+describe('명렬표 가져오기 — 교과 강좌', () => {
+    it('학급 판단을 묻지 않는다 — 반이 섞인 것이 정상이다', async () => {
+        pickSubject()
+        const {wrapper, roster} = build({diff: SUBJECT_DIFF})
+        await load(wrapper)
+
+        expect(roster.detectClass).not.toHaveBeenCalled()
+        expect(roster.preview).toHaveBeenCalledWith(SUBJECT.id, ENTRIES)
+        expect(wrapper.text()).not.toContain('가리킵니다')
+    })
+
+    it('번호가 겹쳐도 줄이 통째로 선다 — 목록의 열쇠는 번호가 아니라 key다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: SUBJECT_DIFF})
+        await load(wrapper)
+
+        // 4번이 두 줄이다. 번호를 키로 쓰면 한 줄이 사라지거나 서로 덮어쓴다.
+        expect(wrapper.findAll('.row__seat')).toHaveLength(SUBJECT_DIFF.length)
+        expect(wrapper.text()).toContain('김하늘')
+        expect(wrapper.text()).toContain('박서연')
+    })
+
+    it('줄마다 다른 키를 단다 — 번호를 키로 쓰면 4번 두 줄이 같은 줄이 된다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: SUBJECT_DIFF})
+        await load(wrapper)
+
+        // Vue가 목록을 짝지을 때 쓰는 키. Rust가 채워 보내는 0..n이 그 자리다.
+        const keys = wrapper.findAll('.row').map((row) => row.element.__vnode.key)
+        expect(keys).toEqual([0, 1, 2])
+
+        const numbers = SUBJECT_DIFF.map((row) => row.number)
+        expect(new Set(numbers).size, '번호는 겹친다').toBeLessThan(numbers.length)
+    })
+
+    it('같은 번호 두 줄을 눌러도 서로 섞이지 않는다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: SUBJECT_DIFF.map((row) => ({...row}))})
+        await load(wrapper)
+
+        const rows = () => wrapper.findAll('.row')
+        await rows()[0].find('button').trigger('click')
+
+        expect(rows()[0].find('.row__name').text()).toBe('김하늘')
+        expect(rows()[0].find('button').text()).toBe('그대로')
+        expect(rows()[1].find('.row__name').text()).toBe('박서연')
+        expect(rows()[1].find('button').text()).toBe('새로 들어옴')
+    })
+
+    it('자리를 보인다 — 어느 반 4번인지 보이지 않으면 눈으로 맞춰야 한다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: SUBJECT_DIFF})
+        await load(wrapper)
+
+        const seats = wrapper.findAll('.row__seat').map((s) => s.text())
+        expect(seats).toEqual(['3학년 1반', '3학년 6반', '3학년 6반'])
+    })
+
+    it('반별 인원을 머리에 적는다 — 교과 교사는 이 숫자로 파일을 확인한다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: SUBJECT_DIFF})
+        await load(wrapper)
+
+        expect(wrapper.find('.roster__seats').text()).toContain('3학년 1반 1 · 6반 2 — 3명')
+    })
+
+    it('지금 명단에도 자리를 보인다 — 미리보기만 고치면 한쪽이 갈라진다', async () => {
+        pickSubject()
+        const {wrapper} = build({
+            students: [
+                {id: 1, grade: 3, classNo: 1, number: 4, name: '김하늘'},
+                {id: 2, grade: 3, classNo: 6, number: 4, name: '박서연'},
+            ],
+        })
+        await flushPromises()
+
+        expect(wrapper.findAll('.row__seat').map((s) => s.text()))
+            .toEqual(['3학년 1반', '3학년 6반'])
+    })
+
+    it('학년 · 반 열이 통째로 없으면 한 문장으로 멈추고 양식을 옆에 둔다', async () => {
+        // 서른 줄을 전부 같은 이유의 blocked로 세우면 그것이 곧 늘 붙어 있는 경고가 된다.
+        pickSubject()
+        const {wrapper, roster} = build({diff: SUBJECT_DIFF})
+        await load(wrapper, {missing: ['grade', 'classNo']})
+
+        expect(roster.preview).not.toHaveBeenCalled()
+        const stop = wrapper.find('.roster__stop')
+        expect(stop.text()).toContain('학년 · 반 열이')
+        expect(stop.findAll('button').some((b) => b.text() === '양식 내려받기')).toBe(true)
+    })
+
+    it('담임은 학년 · 반 열이 없어도 그대로 간다 — 열쇠가 번호 하나다', async () => {
+        const {wrapper, roster} = build()
+        await load(wrapper, {missing: ['grade', 'classNo']})
+
+        expect(wrapper.find('.roster__stop').exists()).toBe(false)
+        expect(roster.preview).toHaveBeenCalledWith(10, ENTRIES)
+    })
+})
+
+describe('명렬표 가져오기 — 앉히지 못한 줄', () => {
+    /**
+     * 줄을 눌러 바꾸는 시험이 있으므로 매번 새로 만든다.
+     *
+     * **`why`는 Rust가 실제로 내보내는 문장이어야 한다.** 지어낸 문구를 세워 두면
+     * 이 시험이 production에 없는 출력을 "검증"한다 — 이 저장소가 스토어 가짜에
+     * 옛 인자 모양을 단언해 초록으로 지나간 적이 있다.
+     * 줄 번호는 **문장에 들어 있지 않다.** 화면이 한 곳에서만 붙인다.
+     */
+    const blocked = () => [
+        {
+            key: 0, grade: null, classNo: null, line: 5, number: 4,
+            incomingName: '김하늘', currentName: null, studentId: 7, action: 'blocked',
+            why: '학년 · 반이 비어 있어 어느 반의 4번인지 구별할 수 없습니다. '
+                + '파일에서 그 줄을 채운 뒤 다시 가져오세요.',
+        },
+        {
+            key: 1, grade: null, classNo: null, line: 6, number: 5,
+            incomingName: '박서연', currentName: null, studentId: null, action: 'blocked',
+            why: '같은 자리(3학년 1반 5번)가 파일에 두 줄 이상 있습니다. '
+                + '한 자리에 두 학생일 수 없으므로 파일을 확인하세요.',
+        },
+    ]
+
+    it('이유를 그대로 적고 파일 줄 번호를 함께 보인다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: blocked()})
+        await load(wrapper)
+
+        const text = wrapper.text()
+        expect(text).toContain('5번째 줄 — 학년 · 반이 비어 있어 어느 반의 4번인지')
+        expect(text).toContain('6번째 줄 — 같은 자리(3학년 1반 5번)가 파일에')
+        expect(wrapper.findAll('.row.is-warn')).toHaveLength(2)
+        // 줄 번호는 한 번만 적힌다. Rust와 화면이 각각 붙이면 겹친다.
+        expect(text).not.toContain('5번째 줄 — 5번째 줄')
+    })
+
+    it('빠짐을 자동으로 표시하지 않았다는 것을 알린다', async () => {
+        // 읽지 못한 줄은 짝 찾기에 참여하지 못한다. 그 줄이 가리키던 학생이 짝을 잃어
+        // 명단에서 빠지면, 교사는 "한 줄만 못 넣었구나" 하고 저장을 누른다.
+        pickSubject()
+        const {wrapper} = build({diff: blocked()})
+        await load(wrapper)
+
+        expect(wrapper.text()).toContain('빠짐은 자동으로 표시하지 않았습니다')
+    })
+
+    it('학적이 있는 줄만 [명단에만 잇기]로 돈다 — 단추는 줄마다 하나다', async () => {
+        pickSubject()
+        const {wrapper} = build({diff: blocked()})
+        await load(wrapper)
+
+        const buttons = wrapper.findAll('.row__acts button')
+        expect(buttons).toHaveLength(2)
+        expect(buttons[0].text()).toBe('넘김')
+        // 학적이 없는 줄은 넘기는 것 말고 할 일이 없다.
+        expect(buttons[1].attributes('disabled')).toBeDefined()
+
+        await buttons[0].trigger('click')
+        expect(wrapper.findAll('.row__acts button')[0].text()).toBe('명단에만 잇기')
+
+        await wrapper.findAll('.row__acts button')[0].trigger('click')
+        expect(wrapper.findAll('.row__acts button')[0].text()).toBe('넘김')
+    })
+})
+
+describe('명렬표 가져오기 — 저장 결과', () => {
+    it('전출이라고 말하지 않는다 — 내 명단에서 빠지는 것과 학교를 떠나는 것은 다르다', async () => {
+        const {wrapper} = build({
+            diff: [{
+                key: 0, grade: 3, classNo: 6, line: null, number: 3,
+                incomingName: null, currentName: '이도윤', studentId: 5, action: 'withdrawn',
+            }],
+        })
+        await load(wrapper)
+
+        expect(wrapper.text()).toContain('내 명단에서 뺌')
+        expect(wrapper.text()).not.toContain('전출로')
+    })
+
+    it('학적을 새로 만든 수와 넘긴 줄을 함께 말한다', async () => {
+        const {wrapper} = build({
+            applied: {added: 3, created: 2, renamed: 1, withdrawn: 0, blocked: 1, seatClosed: 0},
+        })
+        await load(wrapper)
+        await save(wrapper).trigger('click')
+        await flushPromises()
+
+        const text = wrapper.text()
+        expect(text).toContain('명단에 새로 3명')
+        expect(text).toContain('학적을 새로 만든 것 2명')
+        expect(text).toContain('앉히지 못해 넘긴 줄 1개')
+        expect(text).not.toContain('undefined')
+    })
+
+    it('마감한 학적은 경고 위계로 말한다 — 되돌릴 수 없는 유일한 쓰기다', async () => {
+        const {wrapper} = build({
+            applied: {added: 1, created: 1, renamed: 0, withdrawn: 0, blocked: 0, seatClosed: 2},
+        })
+        await load(wrapper)
+        await save(wrapper).trigger('click')
+        await flushPromises()
+
+        const warn = wrapper.findAll('.notice--warn').map((n) => n.text()).join(' ')
+        expect(warn).toContain('학적 2건을 마감했습니다')
+        expect(warn).toContain('되돌릴 수 없습니다')
+    })
+
+    it('교과에서 전원의 학적을 새로 만들었으면 파일의 반을 의심하라고 적는다', async () => {
+        pickSubject()
+        const {wrapper} = build({
+            diff: SUBJECT_DIFF,
+            applied: {added: 3, created: 3, renamed: 0, withdrawn: 0, blocked: 0, seatClosed: 0},
+        })
+        await load(wrapper)
+        await save(wrapper).trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('파일의 학년 · 반이 통째로 다른지')
+    })
+
+    it('담임에는 그 말을 붙이지 않는다 — 3월에는 전원이 새 학적인 것이 정상이다', async () => {
+        const {wrapper} = build({
+            applied: {added: 1, created: 1, renamed: 0, withdrawn: 0, blocked: 0, seatClosed: 0},
+        })
+        await load(wrapper)
+        await save(wrapper).trigger('click')
+        await flushPromises()
+
+        expect(wrapper.text()).not.toContain('통째로 다른지')
     })
 })

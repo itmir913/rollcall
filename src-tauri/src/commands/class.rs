@@ -27,6 +27,9 @@ pub(crate) struct ClassScope {
     pub id: i64,
     pub school_id: i64,
     pub year_id: i64,
+    /// homeroom | subject. **명렬표의 열쇠가 이 값으로 갈린다** —
+    /// 담임은 번호 하나, 교과는 학적 자리(학년 · 반 · 번호) 전체다.
+    pub role: String,
     pub name: String,
     pub grade: Option<i64>,
     pub class_no: Option<i64>,
@@ -82,19 +85,41 @@ fn scope_of(
         id: class_id,
         school_id,
         year_id,
+        role,
         name,
         grade,
         class_no,
     })
 }
 
-/// 담임 명렬표가 학생을 앉힐 학적 자리. 학년 · 반이 비어 있으면 앉힐 곳이 없다.
+/// 담임 명렬표가 학생을 앉힐 학적 자리. **필드가 비공개인 것이 이 타입의 전부다.**
 ///
-/// 교과 강좌는 반이 섞여 이 값이 비어 있는 것이 정상이고, 그쪽 명렬표는 파일이
+/// `UPDATE student SET enrolled_to`(자리 넘겨받기)는 되돌릴 수 없는 쓰기다. 교과 파일의
+/// 반 오타 하나가 남의 반 학생을 전출시키면 안 되므로, 그 쓰기를 하는 함수는 이 값을
+/// 받게 해 두었다. `if role == "subject"` 한 줄로 막으면 다음 사람이 그 줄을 지운다 —
+/// **만들 수 없는 타입**으로 막는다.
+pub(crate) struct HomeroomSeat {
+    grade: i64,
+    class_no: i64,
+}
+
+impl HomeroomSeat {
+    pub(crate) fn at(&self) -> (i64, i64) {
+        (self.grade, self.class_no)
+    }
+}
+
+/// 담임 학급의 학적 자리. **`HomeroomSeat`을 만드는 유일한 곳이다.**
+///
+/// 교과 경로에서는 이 값을 얻을 수 없고, 그래서 이 값을 받는 함수를 부를 수도 없다.
+/// 교과 강좌는 반이 섞여 학년 · 반이 비어 있는 것이 정상이고, 그쪽 명렬표는 파일이
 /// 학년 · 반을 줄마다 들고 온다. 담임 학급이 비어 있는 것은 만들 때 빠뜨린 것이다.
-pub(crate) fn homeroom_seat(scope: &ClassScope) -> Result<(i64, i64), String> {
+pub(crate) fn homeroom_seat(scope: &ClassScope) -> Result<HomeroomSeat, String> {
+    if scope.role != "homeroom" {
+        return Err(format!("담임 학급이 아닙니다: {}", scope.name));
+    }
     match (scope.grade, scope.class_no) {
-        (Some(grade), Some(class_no)) => Ok((grade, class_no)),
+        (Some(grade), Some(class_no)) => Ok(HomeroomSeat { grade, class_no }),
         _ => Err(format!(
             "{}의 학년 · 반이 정해져 있지 않습니다. 설정에서 먼저 채워주세요.",
             scope.name

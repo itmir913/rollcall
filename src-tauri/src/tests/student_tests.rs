@@ -11,16 +11,16 @@
 use crate::commands::class::member_rows_on;
 use crate::commands::student::*;
 use crate::tests::*;
-use crate::types::{ContactItem, RosterDiffRow, RosterEntry};
+use crate::types::{ContactItem, RosterDiffRow, RosterEntry, StudentItem};
 use rusqlite::Connection;
 
 fn entry(number: i64, name: &str) -> RosterEntry {
-    RosterEntry {
-        grade: None,
-        class_no: None,
-        number,
-        name: name.to_string(),
-    }
+    entry_of(None, None, number, name)
+}
+
+/// 학년 · 반이 붙은 줄. 교과 명렬표는 줄마다 학적 자리를 들고 온다.
+fn entry_at(grade: i64, class_no: i64, number: i64, name: &str) -> RosterEntry {
+    entry_of(Some(grade), Some(class_no), number, name)
 }
 
 fn entry_of(grade: Option<i64>, class_no: Option<i64>, number: i64, name: &str) -> RosterEntry {
@@ -29,7 +29,63 @@ fn entry_of(grade: Option<i64>, class_no: Option<i64>, number: i64, name: &str) 
         class_no,
         number,
         name: name.to_string(),
+        line: None,
     }
+}
+
+/// 지금 명단 한 줄. 차분은 DB를 모르는 순수 함수라 이 값을 그대로 받는다.
+fn member(id: i64, number: i64, name: &str) -> StudentItem {
+    member_at(id, 3, 6, number, name)
+}
+
+fn member_at(id: i64, grade: i64, class_no: i64, number: i64, name: &str) -> StudentItem {
+    StudentItem {
+        id,
+        school_id: 1,
+        year_id: 1,
+        grade,
+        class_no,
+        number,
+        name: name.to_string(),
+        enrolled_from: "2026-03-02".to_string(),
+        enrolled_to: None,
+    }
+}
+
+/// 미리보기 한 줄의 바탕. 칸이 늘어도 시험이 깨지지 않게 여기 한 곳에 모은다.
+fn diff_row(number: i64, action: &str) -> RosterDiffRow {
+    RosterDiffRow {
+        key: 0,
+        grade: None,
+        class_no: None,
+        line: None,
+        number,
+        incoming_name: None,
+        current_name: None,
+        student_id: None,
+        action: action.to_string(),
+        why: None,
+    }
+}
+
+fn added_row(number: i64, name: &str) -> RosterDiffRow {
+    RosterDiffRow {
+        incoming_name: Some(name.to_string()),
+        ..diff_row(number, "added")
+    }
+}
+
+fn withdrawn_row(number: i64, name: &str, student_id: i64) -> RosterDiffRow {
+    RosterDiffRow {
+        current_name: Some(name.to_string()),
+        student_id: Some(student_id),
+        ..diff_row(number, "withdrawn")
+    }
+}
+
+/// 그 학급의 명단 인원. 소속 줄은 남아도 지금 명단은 아니다.
+fn member_count_of(conn: &Connection, class_id: i64) -> usize {
+    get_students_impl(conn, class_id).unwrap().len()
 }
 
 fn contact(kind: &str, phone: &str) -> ContactItem {
@@ -102,23 +158,23 @@ fn an_empty_roster_says_nothing() {
 #[test]
 fn new_number_is_added() {
     let current = vec![];
-    let rows = diff_roster(&current, &[entry(1, "김철수")]);
+    let rows = diff_roster(RosterKeying::ByNumber, &current, &[entry(1, "김철수")]);
     assert_eq!(rows[0].action, "added");
     assert_eq!(rows[0].student_id, None);
 }
 
 #[test]
 fn same_number_and_name_is_unchanged() {
-    let current = vec![(10, 1, "김철수".to_string())];
-    let rows = diff_roster(&current, &[entry(1, "김철수")]);
+    let current = vec![member(10, 1, "김철수")];
+    let rows = diff_roster(RosterKeying::ByNumber, &current, &[entry(1, "김철수")]);
     assert_eq!(rows[0].action, "unchanged");
 }
 
 #[test]
 fn same_number_different_name_needs_teacher_decision() {
     // 개명인지, 번호를 물려받은 전입인지, 오타인지 프로그램은 판정할 수 없다.
-    let current = vec![(10, 1, "김철수".to_string())];
-    let rows = diff_roster(&current, &[entry(1, "김철호")]);
+    let current = vec![member(10, 1, "김철수")];
+    let rows = diff_roster(RosterKeying::ByNumber, &current, &[entry(1, "김철호")]);
     assert_eq!(rows[0].action, "renamed");
     assert_eq!(rows[0].current_name.as_deref(), Some("김철수"));
     assert_eq!(rows[0].incoming_name.as_deref(), Some("김철호"));
@@ -126,8 +182,8 @@ fn same_number_different_name_needs_teacher_decision() {
 
 #[test]
 fn missing_number_is_withdrawn_not_deleted() {
-    let current = vec![(10, 1, "김철수".to_string()), (11, 2, "이영희".to_string())];
-    let rows = diff_roster(&current, &[entry(1, "김철수")]);
+    let current = vec![member(10, 1, "김철수"), member(11, 2, "이영희")];
+    let rows = diff_roster(RosterKeying::ByNumber, &current, &[entry(1, "김철수")]);
     let withdrawn: Vec<_> = rows.iter().filter(|r| r.action == "withdrawn").collect();
     assert_eq!(withdrawn.len(), 1);
     assert_eq!(withdrawn[0].number, 2);
@@ -136,12 +192,347 @@ fn missing_number_is_withdrawn_not_deleted() {
 
 #[test]
 fn diff_is_sorted_by_number() {
-    let current = vec![(10, 3, "박민수".to_string())];
-    let rows = diff_roster(&current, &[entry(2, "이영희"), entry(1, "김철수")]);
+    let current = vec![member(10, 3, "박민수")];
+    let rows = diff_roster(
+        RosterKeying::ByNumber,
+        &current,
+        &[entry(2, "이영희"), entry(1, "김철수")],
+    );
     assert_eq!(
         rows.iter().map(|r| r.number).collect::<Vec<_>>(),
         vec![1, 2, 3]
     );
+    // 자리표는 목록 순서 그대로다. 미리보기와 적용이 이 값으로 이어진다.
+    assert_eq!(
+        rows.iter().map(|r| r.key).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+}
+
+// ── 교과의 열쇠는 자리다 ──────────────────────────────────────
+
+#[test]
+fn 교과에서_같은_번호_다른_반_두_줄이_서로_다른_학생으로_온다() {
+    // 선택과목이라 1반~n반이 섞인다. 번호 하나로 가리면 두 학생이 한 줄로 합쳐진다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+
+    let incoming = vec![entry_at(3, 6, 4, "박하늘"), entry_at(3, 1, 4, "김하늘")];
+    let rows = preview_roster_impl(&conn, subject, &incoming).unwrap();
+    assert_eq!(rows.len(), 2, "두 줄이 한 줄로 합쳐졌다");
+    assert!(rows.iter().all(|r| r.action == "added"), "{rows:?}");
+    // 교과는 학적 자리 순으로 선다.
+    assert_eq!(rows[0].class_no, Some(1));
+    assert_eq!(rows[1].class_no, Some(6));
+
+    let result = apply_roster_impl(&conn, subject, "2026-03-02", &rows).unwrap();
+    assert_eq!(result.added, 2);
+    assert_eq!(result.created, 2);
+
+    let active = get_students_impl(&conn, subject).unwrap();
+    assert_eq!(
+        active
+            .iter()
+            .map(|s| (s.grade, s.class_no, s.number, s.name.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (3, 1, 4, "김하늘".to_string()),
+            (3, 6, 4, "박하늘".to_string()),
+        ]
+    );
+}
+
+#[test]
+fn 교과_파일에_학년이_빈_줄이_있으면_그_줄만_blocked이고_전출이_꺼진다() {
+    // 읽지 못한 줄은 짝 찾기에 참여하지 못한다. 그대로 두면 그 줄이 가리키던 학생이
+    // 짝을 잃어 전출로 잡히고, 교사가 [저장]을 누르면 명단에서 빠진다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+    let a = insert_student_at(&conn, year, 3, 1, 4, "김하늘");
+    let b = insert_student_at(&conn, year, 3, 6, 11, "박하늘");
+    join_class(&conn, subject, a);
+    join_class(&conn, subject, b);
+
+    let incoming = vec![
+        entry_at(3, 1, 4, "김하늘"),
+        RosterEntry {
+            line: Some(7),
+            ..entry(11, "박하늘")
+        },
+    ];
+    let rows = preview_roster_impl(&conn, subject, &incoming).unwrap();
+
+    let blocked: Vec<_> = rows.iter().filter(|r| r.action == "blocked").collect();
+    assert_eq!(blocked.len(), 1);
+    // 줄 번호는 문장이 아니라 `line` 칸으로 온다. 화면이 한 곳에서만 붙인다 —
+    // 양쪽이 각각 붙이면 "7번째 줄 — 7번째 줄: …"이 된다.
+    assert_eq!(blocked[0].line, Some(7));
+    assert!(!blocked[0].why.as_deref().unwrap().contains("번째 줄"));
+    assert!(
+        !rows.iter().any(|r| r.action == "withdrawn"),
+        "읽지 못한 줄이 있는데 전출이 켜졌다: {rows:?}"
+    );
+    // 짝을 잃은 학생은 그대로 두고 이유를 적는다.
+    let kept = rows
+        .iter()
+        .find(|r| r.student_id == Some(b) && r.incoming_name.is_none())
+        .unwrap();
+    assert_eq!(kept.action, "unchanged");
+    assert!(kept.why.is_some());
+
+    let result = apply_roster_impl(&conn, subject, "2026-09-01", &rows).unwrap();
+    assert_eq!(result.blocked, 1);
+    assert_eq!(result.withdrawn, 0);
+    assert_eq!(member_count_of(&conn, subject), 2, "명단이 그대로다");
+}
+
+#[test]
+fn 파일_안에_같은_자리가_두_줄이면_blocked다() {
+    // 지금까지는 검사가 없어 둘 다 added로 갔고, 둘째가 ux_student_seat에서 터져
+    // 트랜잭션이 통째로 롤백됐다. 서른 줄을 확인한 교사에게 남는 것은 에러 하나뿐이다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+
+    let incoming = vec![entry_at(3, 1, 4, "김하늘"), entry_at(3, 1, 4, "박하늘")];
+    let rows = preview_roster_impl(&conn, subject, &incoming).unwrap();
+    assert!(rows.iter().all(|r| r.action == "blocked"), "{rows:?}");
+    assert!(rows[0].why.as_deref().unwrap().contains("3학년 1반 4번"));
+
+    let result = apply_roster_impl(&conn, subject, "2026-03-02", &rows).unwrap();
+    assert_eq!(result.blocked, 2);
+    assert_eq!(result.added, 0);
+    assert_eq!(student_count(&conn), 0, "아무것도 쓰지 않는다");
+}
+
+#[test]
+fn 자리에_남이_앉아_막힌_줄도_전출을_멈춘다() {
+    // **검토가 잡은 치명 결함의 회귀 시험이다.**
+    //
+    // 차분이 막은 줄만 전출을 멈추면, 자리를 맞춰 본 뒤에 막힌 줄은 그대로 지나간다.
+    // 그런데 그 줄도 짝을 빼앗는다 — 파일의 반 오타 한 글자로 `3학년 6반 4번`이
+    // `3학년 1반 4번`이 되면 그 줄은 남의 자리라 막히고, 내 명단의 김하늘은 짝을 잃는다.
+    // 교사가 "한 줄만 못 넣었구나" 하고 저장하면 유일한 학생이 명단에서 빠진다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+
+    let mine = insert_student_at(&conn, year, 3, 6, 4, "김하늘");
+    join_class(&conn, subject, mine);
+    // 3학년 1반 4번에는 내 강좌에 없는 학생이 앉아 있다.
+    insert_student_at(&conn, year, 3, 1, 4, "이수현");
+
+    // 반을 6 대신 1로 잘못 적은 파일 한 줄.
+    let rows = preview_roster_impl(&conn, subject, &[entry_at(3, 1, 4, "김하늘")]).unwrap();
+
+    let blocked = rows.iter().find(|r| r.action == "blocked").expect("막힌 줄");
+    assert_eq!(blocked.class_no, Some(1));
+
+    let mine_row = rows.iter().find(|r| r.student_id == Some(mine)).expect("내 학생");
+    assert_eq!(
+        mine_row.action, "unchanged",
+        "막힌 줄이 있으면 전출을 자동으로 표시하지 않는다"
+    );
+    assert!(mine_row.why.is_some(), "왜 표시하지 않았는지 함께 말한다");
+
+    // 교사가 그대로 저장해도 명단이 비지 않는다.
+    let result = apply_roster_impl(&conn, subject, "2026-09-01", &rows).unwrap();
+    assert_eq!(result.withdrawn, 0);
+    assert_eq!(result.blocked, 1);
+    assert_eq!(member_count(&conn), 1, "오타 한 글자가 유일한 학생을 뺐다");
+}
+
+#[test]
+fn 교과는_남의_반_학적을_마감하지_않는다() {
+    // 교과 파일의 반 오타 하나가 남의 반 학생을 전출시키면 안 된다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+    let theirs = insert_student_at(&conn, year, 3, 7, 12, "최지훈");
+
+    let rows = preview_roster_impl(&conn, subject, &[entry_at(3, 7, 12, "김하늘")]).unwrap();
+    assert_eq!(rows[0].action, "blocked");
+    assert_eq!(rows[0].student_id, Some(theirs), "linked가 쓸 값이다");
+    assert!(rows[0]
+        .why
+        .as_deref()
+        .unwrap()
+        .contains("그 학생이 맞습니다"));
+
+    apply_roster_impl(&conn, subject, "2026-09-01", &rows).unwrap();
+    assert_eq!(student_count(&conn), 1, "아무것도 만들지 않았다");
+
+    // 화면이 그 줄을 added로 바꿔 보내도 거절한다. 조용히 지나가지 않는다.
+    let forced = vec![RosterDiffRow {
+        action: "added".into(),
+        ..rows[0].clone()
+    }];
+    let err = apply_roster_impl(&conn, subject, "2026-09-01", &forced).unwrap_err();
+    assert!(err.contains("마감할 수 없습니다"), "{err}");
+
+    let enrolled_to: Option<String> = conn
+        .query_row(
+            "SELECT enrolled_to FROM student WHERE id = ?1",
+            rusqlite::params![theirs],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(enrolled_to, None, "남의 반 학적이 마감됐다");
+}
+
+#[test]
+fn linked는_학적을_건드리지_않고_명단에만_잇는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+    let theirs = insert_student_at(&conn, year, 3, 7, 12, "최지훈");
+
+    let row = RosterDiffRow {
+        grade: Some(3),
+        class_no: Some(7),
+        incoming_name: Some("김하늘".into()),
+        student_id: Some(theirs),
+        ..diff_row(12, "linked")
+    };
+    let result = apply_roster_impl(&conn, subject, "2026-09-01", &[row]).unwrap();
+    assert_eq!(result.added, 1);
+    assert_eq!(result.created, 0, "학적을 만들지 않는다");
+
+    assert_eq!(student_count(&conn), 1);
+    assert_eq!(member_count(&conn), 1);
+    let name: String = conn
+        .query_row(
+            "SELECT name FROM student WHERE id = ?1",
+            rusqlite::params![theirs],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(name, "최지훈", "이름까지 고치면 그것은 학적 수정이다");
+
+    // 화면이 보낸 student_id를 그대로 믿지 않는다.
+    let bogus = RosterDiffRow {
+        student_id: Some(9999),
+        ..diff_row(12, "linked")
+    };
+    let err = apply_roster_impl(&conn, subject, "2026-09-01", &[bogus]).unwrap_err();
+    assert!(err.contains("이을 학생을 찾을 수 없습니다"), "{err}");
+}
+
+#[test]
+fn 같은_교과_파일을_두_번_넣어도_아무_일도_일어나지_않는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+    let incoming = vec![
+        entry_at(3, 1, 4, "김하늘"),
+        entry_at(3, 6, 4, "박하늘"),
+        entry_at(2, 3, 20, "최지훈"),
+    ];
+
+    let rows = preview_roster_impl(&conn, subject, &incoming).unwrap();
+    apply_roster_impl(&conn, subject, "2026-03-02", &rows).unwrap();
+    assert_eq!(student_count(&conn), 3);
+    assert_eq!(member_count(&conn), 3);
+
+    let again = preview_roster_impl(&conn, subject, &incoming).unwrap();
+    assert!(again.iter().all(|r| r.action == "unchanged"), "{again:?}");
+    let result = apply_roster_impl(&conn, subject, "2026-09-01", &again).unwrap();
+    assert_eq!(result.added, 0);
+    assert_eq!(result.created, 0);
+    assert_eq!(result.withdrawn, 0);
+    assert_eq!(student_count(&conn), 3, "학생 행은 그대로다");
+    assert_eq!(member_count(&conn), 3);
+}
+
+#[test]
+fn 담임_학급_학생이_내_교과_강좌에도_있으면_학생_행은_하나_소속이_둘이다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let home = homeroom(&conn, year);
+    let subject = insert_class(&conn, year, "subject", "지구과학Ⅰ", None, None);
+
+    let rows = preview_roster_impl(&conn, home, &[entry(1, "김철수")]).unwrap();
+    apply_roster_impl(&conn, home, "2026-03-02", &rows).unwrap();
+
+    // 교과 명렬표에는 그 학생이 학적 자리와 함께 들어온다.
+    let rows = preview_roster_impl(&conn, subject, &[entry_at(3, 6, 1, "김철수")]).unwrap();
+    assert_eq!(rows[0].action, "added", "내 강좌 명단에는 아직 없다");
+    assert_eq!(rows[0].student_id, None, "화면 토글이 studentId로 갈린다");
+    assert!(rows[0].why.as_deref().unwrap().contains("이미 있는 학생"));
+
+    let result = apply_roster_impl(&conn, subject, "2026-03-02", &rows).unwrap();
+    assert_eq!(result.added, 1);
+    assert_eq!(result.created, 0, "학적을 다시 만들지 않는다");
+
+    assert_eq!(student_count(&conn), 1, "학생 행은 하나다");
+    assert_eq!(member_count(&conn), 2, "소속이 둘이다");
+}
+
+#[test]
+fn 담임_명렬표에_반이_다른_학생이_있어도_재가져오기가_전출시키지_않는다() {
+    // 담임 열쇠를 자리로 넓히면 파일의 12번 줄이 이 학생과 짝을 잃어 매 재가져오기마다
+    // 전출 + 중복 학적이 된다. 지난 출결이 옛 행에 남아 격자에서 통째로 사라진다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let class = homeroom(&conn, year);
+    let mine = insert_student_at(&conn, year, 3, 6, 1, "학생1");
+    let other = insert_student_at(&conn, year, 3, 7, 12, "학생2");
+    join_class(&conn, class, mine);
+    join_class(&conn, class, other);
+
+    let incoming = vec![entry(1, "학생1"), entry(12, "학생2")];
+    let rows = preview_roster_impl(&conn, class, &incoming).unwrap();
+    assert!(rows.iter().all(|r| r.action == "unchanged"), "{rows:?}");
+
+    let result = apply_roster_impl(&conn, class, "2026-09-01", &rows).unwrap();
+    assert_eq!(result.withdrawn, 0);
+    assert_eq!(result.created, 0);
+    assert_eq!(student_count(&conn), 2, "중복 학적이 생겼다");
+    assert_eq!(member_count_of(&conn, class), 2);
+
+    let class_no: i64 = conn
+        .query_row(
+            "SELECT class_no FROM student WHERE id = ?1",
+            rusqlite::params![other],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        class_no, 7,
+        "학적은 그대로다. 담임 명단은 반으로 걸러지지 않는다"
+    );
+}
+
+#[test]
+fn 담임은_자리를_넘겨받으며_옛_학적을_마감한다() {
+    // 한 자리에 두 명일 수 없다. 되돌릴 수 없는 쓰기이므로 몇 건인지 세어 돌려준다.
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let class = homeroom(&conn, year);
+    let old = insert_student_at(&conn, year, 3, 6, 5, "이영희");
+
+    let rows = preview_roster_impl(&conn, class, &[entry(5, "최지훈")]).unwrap();
+    assert_eq!(rows[0].action, "added");
+    assert!(
+        rows[0].why.as_deref().unwrap().contains("마감하고"),
+        "저장 전에 알린다: {:?}",
+        rows[0].why
+    );
+
+    let result = apply_roster_impl(&conn, class, "2026-09-01", &rows).unwrap();
+    assert_eq!(result.seat_closed, 1);
+    assert_eq!(result.created, 1);
+
+    let enrolled_to: Option<String> = conn
+        .query_row(
+            "SELECT enrolled_to FROM student WHERE id = ?1",
+            rusqlite::params![old],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(enrolled_to.as_deref(), Some("2026-09-01"));
 }
 
 // ── 적용 ──────────────────────────────────────────────────────
@@ -285,22 +676,7 @@ fn number_can_be_reused_after_withdrawal_in_one_apply() {
     let class = homeroom(&conn, year);
     let old = enroll(&conn, class, year, 5, "이영희");
 
-    let rows = vec![
-        RosterDiffRow {
-            number: 5,
-            incoming_name: None,
-            current_name: Some("이영희".into()),
-            student_id: Some(old),
-            action: "withdrawn".into(),
-        },
-        RosterDiffRow {
-            number: 5,
-            incoming_name: Some("최지훈".into()),
-            current_name: None,
-            student_id: None,
-            action: "added".into(),
-        },
-    ];
+    let rows = vec![withdrawn_row(5, "이영희", old), added_row(5, "최지훈")];
 
     apply_roster_impl(&conn, class, "2026-09-01", &rows).unwrap();
     let active = get_students_impl(&conn, class).unwrap();
@@ -316,20 +692,8 @@ fn apply_rolls_back_on_error() {
     let class = homeroom(&conn, year);
 
     let rows = vec![
-        RosterDiffRow {
-            number: 1,
-            incoming_name: Some("김철수".into()),
-            current_name: None,
-            student_id: None,
-            action: "added".into(),
-        },
-        RosterDiffRow {
-            number: 2,
-            incoming_name: Some("  ".into()), // 실패 유발
-            current_name: None,
-            student_id: None,
-            action: "added".into(),
-        },
+        added_row(1, "김철수"),
+        added_row(2, "  "), // 실패 유발
     ];
     assert!(apply_roster_impl(&conn, class, "2026-09-01", &rows).is_err());
     assert!(get_students_impl(&conn, class).unwrap().is_empty());
@@ -348,13 +712,7 @@ fn apply_refuses_a_row_that_points_at_another_class() {
     let other = insert_class(&conn, year, "homeroom", "3학년 7반", Some(3), Some(7));
     let id = enroll(&conn, class, year, 1, "김철수");
 
-    let rows = vec![RosterDiffRow {
-        number: 1,
-        incoming_name: None,
-        current_name: Some("김철수".into()),
-        student_id: Some(id),
-        action: "withdrawn".into(),
-    }];
+    let rows = vec![withdrawn_row(1, "김철수", id)];
     let err = apply_roster_impl(&conn, other, "2026-09-01", &rows).unwrap_err();
     assert!(err.contains("찾을 수 없습니다"), "{err}");
 
@@ -380,19 +738,7 @@ fn two_schools_can_hold_the_same_class_without_mixing() {
         .unwrap();
 
     enroll(&conn, class, year, 1, "김철수");
-    apply_roster_impl(
-        &conn,
-        theirs_class,
-        "2026-03-02",
-        &[RosterDiffRow {
-            number: 1,
-            incoming_name: Some("최지훈".into()),
-            current_name: None,
-            student_id: None,
-            action: "added".into(),
-        }],
-    )
-    .unwrap();
+    apply_roster_impl(&conn, theirs_class, "2026-03-02", &[added_row(1, "최지훈")]).unwrap();
 
     let mine = get_students_impl(&conn, class).unwrap();
     let theirs = get_students_impl(&conn, theirs_class).unwrap();
@@ -448,22 +794,7 @@ fn a_number_handed_over_on_one_day_shows_one_student_that_day() {
     let class = homeroom(&conn, year);
     let old = enroll(&conn, class, year, 5, "이영희");
 
-    let rows = vec![
-        RosterDiffRow {
-            number: 5,
-            incoming_name: None,
-            current_name: Some("이영희".into()),
-            student_id: Some(old),
-            action: "withdrawn".into(),
-        },
-        RosterDiffRow {
-            number: 5,
-            incoming_name: Some("최지훈".into()),
-            current_name: None,
-            student_id: None,
-            action: "added".into(),
-        },
-    ];
+    let rows = vec![withdrawn_row(5, "이영희", old), added_row(5, "최지훈")];
     apply_roster_impl(&conn, class, "2026-09-01", &rows).unwrap();
 
     let on_day = member_rows_on(&conn, class, "2026-09-01").unwrap();
