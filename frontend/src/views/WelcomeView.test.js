@@ -71,7 +71,15 @@ async function goStep(wrapper, n) {
     await steps(wrapper)[n - 1].trigger('click')
 }
 
+/** 모달은 body로 Teleport된다. 그 안의 단추를 글자로 찾는다. */
+function modalButton(text) {
+    return [...document.querySelectorAll('.modal__foot button')]
+        .find((b) => b.textContent.trim() === text)
+}
+
+// 모달이 body에 남으면 다음 시험이 앞의 모달을 찾는다.
 beforeEach(() => {
+    document.body.innerHTML = ''
     setActivePinia(createPinia())
 
     const app = useAppStore()
@@ -138,6 +146,81 @@ describe('첫 실행 — 학년도와 학교', () => {
         // 직접 대입하면 학교 목록도 맡은 것 목록도 지난 학년도의 것으로 남는다.
         expect(select).toHaveBeenCalledWith(3)
         expect(app.yearId).toBe(2)
+    })
+
+    it('학년도를 직접 만든다 — 고르기만 되면 2월의 교사가 앱을 쓸 수 없다', async () => {
+        // 2월에 다음 학년도를 미리 준비하거나 지난해 기록을 옮겨 적는 교사가 있다.
+        const app = useAppStore()
+        const create = vi.spyOn(app, 'createYear').mockResolvedValue(9)
+
+        const wrapper = await render()
+        await goStep(wrapper, 2)
+
+        await wrapper.find('input[placeholder="2027"]').setValue('2027')
+        await wrapper.findAll('button').find((b) => b.text() === '학년도 만들기').trigger('click')
+        await flushPromises()
+
+        // 시작일 · 종료일은 묻지 않는다. 3월 규칙으로 채운다.
+        expect(create).toHaveBeenCalledWith(2027)
+    })
+
+    it('연도가 아닌 값은 만들지 않고 이유를 적는다', async () => {
+        const app = useAppStore()
+        const create = vi.spyOn(app, 'createYear').mockResolvedValue(9)
+
+        const wrapper = await render()
+        await goStep(wrapper, 2)
+
+        await wrapper.find('input[placeholder="2027"]').setValue('19')
+        await wrapper.findAll('button').find((b) => b.text() === '학년도 만들기').trigger('click')
+        await flushPromises()
+
+        expect(create).not.toHaveBeenCalled()
+        expect(wrapper.text()).toContain('1900 이상')
+    })
+
+    it('학교를 목록에서 내린다 — 한 번 묻고, 지운다고 말하지 않는다', async () => {
+        // 되돌리기 어려운 것은 삭제뿐이라 거기에만 한 번 묻는다. 그런데 학교는
+        // 지난 기록이 가리키므로 행은 남고 목록에서만 내려간다 — 문구가 그래야 한다.
+        const app = useAppStore()
+        app.schools = [{id: 1, name: '한빛고등학교'}, {id: 2, name: '푸른중학교'}]
+        const schoolStore = useSchoolStore()
+        const retire = vi.spyOn(schoolStore, 'retireSchool').mockResolvedValue()
+
+        const wrapper = await render()
+        await goStep(wrapper, 3)
+
+        const drops = wrapper.findAll('.drop')
+        expect(drops).toHaveLength(2)
+
+        await drops[1].trigger('click')
+        await flushPromises()
+
+        // UiModal은 body로 Teleport한다. 화면 나무가 아니라 문서에서 찾는다.
+        const modal = document.querySelector('.modal')
+        expect(modal.textContent).toContain('목록에서 내립니다')
+        expect(modal.textContent).toContain('푸른중학교')
+        expect(modal.textContent).not.toContain('지웁니다')
+
+        modalButton('내리기').click()
+        await flushPromises()
+
+        expect(retire).toHaveBeenCalledWith(2)
+    })
+
+    it('내리기를 취소하면 아무것도 하지 않는다', async () => {
+        const app = useAppStore()
+        app.schools = [{id: 1, name: '한빛고등학교'}]
+        const retire = vi.spyOn(useSchoolStore(), 'retireSchool').mockResolvedValue()
+
+        const wrapper = await render()
+        await goStep(wrapper, 3)
+        await wrapper.find('.drop').trigger('click')
+        await flushPromises()
+        modalButton('취소').click()
+        await flushPromises()
+
+        expect(retire).not.toHaveBeenCalled()
     })
 
     it('학교가 하나도 없는 것이 첫 실행의 정상 상태다 — 그 자리에서 만든다', async () => {
