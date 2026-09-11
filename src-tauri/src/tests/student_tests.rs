@@ -26,12 +26,12 @@ fn entry_of(grade: Option<i64>, class_no: Option<i64>, number: i64, name: &str) 
     }
 }
 
-fn contact(label: &str, value: &str) -> ContactItem {
+fn contact(kind: &str, phone: &str) -> ContactItem {
     ContactItem {
         id: 0,
-        label: label.into(),
-        value: value.into(),
-        note: None,
+        kind: kind.into(),
+        phone: phone.into(),
+        memo: String::new(),
         sort_order: 0,
     }
 }
@@ -462,8 +462,8 @@ fn a_student_can_hold_many_contacts_in_order() {
 
     let contacts = get_contacts_impl(&conn, sid).unwrap();
     assert_eq!(contacts.len(), 2);
-    assert_eq!(contacts[0].label, "어머니");
-    assert_eq!(contacts[1].label, "학생 본인");
+    assert_eq!(contacts[0].kind, "어머니");
+    assert_eq!(contacts[1].kind, "학생 본인");
     // 순서는 저장 시점의 배열 순서를 따른다.
     assert_eq!(contacts[0].sort_order, 0);
     assert_eq!(contacts[1].sort_order, 1);
@@ -528,7 +528,7 @@ fn a_rejected_save_leaves_the_previous_list_intact() {
 
     let contacts = get_contacts_impl(&conn, sid).unwrap();
     assert_eq!(contacts.len(), 1);
-    assert_eq!(contacts[0].label, "어머니");
+    assert_eq!(contacts[0].kind, "어머니");
 }
 
 #[test]

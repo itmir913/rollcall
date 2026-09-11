@@ -388,15 +388,14 @@ pub fn withdraw_student_impl(
 
 // ── 연락처 ────────────────────────────────────────────────────
 
-/// 연락처는 `label` · `value` · 순서 셋뿐이다.
+/// 연락처는 `type` · `phone` · `memo` · 순서다.
 ///
-/// `ContactItem.note`는 저장하지 않는다 — `contact` 테이블에 자리가 없다.
-/// 덧붙일 말은 `label`에 적는다(`어머니(직장)`). 관계와 번호 외에 무엇을 더 적을지는
+/// 덧붙일 말은 `memo`에 적는다(`직장 번호 · 주간에는 받지 않음`). 관계와 번호 외에 무엇을 더 적을지는
 /// 아직 정해지지 않았고, 자리를 먼저 만들면 무엇을 넣을지부터 되묻게 된다.
 pub fn get_contacts_impl(conn: &Connection, student_id: i64) -> Result<Vec<ContactItem>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, label, value, sort_order FROM contact
+            "SELECT id, type, phone, memo, sort_order FROM contact
              WHERE student_id = ?1 ORDER BY sort_order, id",
         )
         .map_err(|e| e.to_string())?;
@@ -404,10 +403,10 @@ pub fn get_contacts_impl(conn: &Connection, student_id: i64) -> Result<Vec<Conta
         .query_map(rusqlite::params![student_id], |r| {
             Ok(ContactItem {
                 id: r.get(0)?,
-                label: r.get(1)?,
-                value: r.get(2)?,
-                note: None,
-                sort_order: r.get(3)?,
+                kind: r.get(1)?,
+                phone: r.get(2)?,
+                memo: r.get(3)?,
+                sort_order: r.get(4)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -427,11 +426,11 @@ pub fn set_contacts_impl(
     contacts: &[ContactItem],
 ) -> Result<(), String> {
     for c in contacts {
-        if c.label.trim().is_empty() {
+        if c.kind.trim().is_empty() {
             return Err("연락처 이름(관계)이 비어 있습니다.".to_string());
         }
-        if c.value.trim().is_empty() {
-            return Err(format!("{}의 번호가 비어 있습니다.", c.label));
+        if c.phone.trim().is_empty() {
+            return Err(format!("{}의 번호가 비어 있습니다.", c.kind));
         }
     }
     with_transaction(conn, || {
@@ -442,9 +441,15 @@ pub fn set_contacts_impl(
         .map_err(|e| e.to_string())?;
         for (i, c) in contacts.iter().enumerate() {
             conn.execute(
-                "INSERT INTO contact (student_id, label, value, sort_order)
-                 VALUES (?1, ?2, ?3, ?4)",
-                rusqlite::params![student_id, c.label.trim(), c.value.trim(), i as i64],
+                "INSERT INTO contact (student_id, type, phone, memo, sort_order)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                rusqlite::params![
+                    student_id,
+                    c.kind.trim(),
+                    c.phone.trim(),
+                    c.memo.trim(),
+                    i as i64
+                ],
             )
             .map_err(|e| e.to_string())?;
         }

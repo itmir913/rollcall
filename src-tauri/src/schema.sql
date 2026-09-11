@@ -51,8 +51,13 @@ CREATE TABLE IF NOT EXISTS academic_year
 );
 
 -- ─── 학생 ──────────────────────────────────────────────────────
--- 명렬표가 (학년, 반, 번호, 이름)이므로 학급 정보는 학생이 들고 있다.
--- "우리 반"은 별도 테이블이 아니라 이 값들로 걸러낸 결과다.
+-- 학생은 **학교와 학년도에 속한다. 학급에 매달지 않는다.**
+--
+-- 학년 · 반 · 번호는 그 학생의 **학적**이지 내 명단의 소속이 아니다. 둘을 같은 것으로
+-- 보면 두 자리에서 막힌다 — 교과 강좌는 여러 반에서 모이므로 반으로 걸러낼 수 없고,
+-- 담임 명렬표에도 반이 다른 학생이 들어오는 날이 있다. 누가 내 명단에 있는가는
+-- class_member가 말한다.
+--
 -- 학교는 학생이 매단다 — 순회 교사는 같은 해에 여러 학교를 맡는다.
 CREATE TABLE IF NOT EXISTS student
 (
@@ -67,25 +72,86 @@ CREATE TABLE IF NOT EXISTS student
     enrolled_to   TEXT
 );
 
--- 같은 학교·학년도·학급에서 재학 중인 번호는 하나뿐이다.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_student_active_number
+-- 같은 학교 · 학년도에서 학적 한 자리는 한 명이다.
+-- 교과 명렬표를 불러올 때 이미 있는 학생을 다시 만들지 않고 이 열쇠로 찾는다 —
+-- 담임 반 학생이 내 강좌에도 들어오면 학생 행은 하나, class_member가 둘이다.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_student_seat
     ON student (school_id, year_id, grade, class_no, number)
     WHERE enrolled_to IS NULL;
 
 CREATE INDEX IF NOT EXISTS ix_student_class
     ON student (school_id, year_id, grade, class_no, number);
 
--- ─── 보호자 연락처 ─────────────────────────────────────────────
+-- ─── 연락처 ────────────────────────────────────────────────────
+-- **별도 표다.** 학생마다 있는 번호가 다르다 — 본인만 있는 학생, 어머니만 있는 학생,
+-- 아버지와 어머니가 둘 다 있는 학생. 칸을 고정하면 없는 학생에게는 빈 칸이 남고
+-- 넷째가 필요한 학생은 담지 못한다.
 CREATE TABLE IF NOT EXISTS contact
 (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     student_id INTEGER NOT NULL REFERENCES student (id) ON DELETE CASCADE,
-    label      TEXT    NOT NULL,
-    value      TEXT    NOT NULL,
+    -- 본인 · 부 · 모 · 조부모 · 시설 … 목록을 코드에 박지 않는다.
+    -- 화면이 흔한 것을 단추로 띄우되 그 밖의 것도 적을 수 있다 —
+    -- 가족의 모양은 미리 셀 수 없다.
+    type       TEXT    NOT NULL CHECK (type <> ''),
+    phone      TEXT    NOT NULL CHECK (phone <> ''),
+    -- "주간에는 받지 않음" 같은 것. 앱은 이 문장을 해석하지 않는다.
+    memo       TEXT    NOT NULL DEFAULT '',
+    -- 먼저 걸 번호. 셋이 있을 때 급한 순간에 고민하지 않게 순서를 둔다.
     sort_order INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS ix_contact_student ON contact (student_id, sort_order);
+
+-- ─── 내가 맡은 것 ──────────────────────────────────────────────
+-- 담임 학급과 교과 강좌가 이 표에 함께 온다. 기록하는 것이 달라 화면은 나뉘지만,
+-- "내가 맡은 무엇"이라는 점은 같아서 표를 나누면 이동 · 설정이 두 벌이 된다.
+--
+-- **학년도에 매달린다.** 3월이 되면 지난해 줄을 valid_to로 마감하고 새로 넣는다.
+CREATE TABLE IF NOT EXISTS teaching_class
+(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    school_id  INTEGER NOT NULL REFERENCES school (id) ON DELETE CASCADE,
+    year_id    INTEGER NOT NULL REFERENCES academic_year (id) ON DELETE CASCADE,
+    -- homeroom = 구분 · 종류 · 기간을 기록한다 (absence_span)
+    -- subject  = 교시마다 있었는지 없었는지만 기록한다 (subject_session)
+    --
+    -- 두 모드는 화면에서 서로 새지 않는다. 쓰는 사람이 다르기 때문이다 —
+    -- 비담임 교사에게 서류 미제출이 스쳐 지나가면 매일 남의 일을 보는 것이 된다.
+    role       TEXT    NOT NULL CHECK (role IN ('homeroom', 'subject')),
+    -- 화면에 적히는 이름. '3학년 6반' · '지구과학Ⅰ'
+    name       TEXT    NOT NULL CHECK (name <> ''),
+    -- 담임일 때 그 반을 가리키는 값. **교과 강좌는 반이 섞이므로 NULL이다.**
+    grade      INTEGER CHECK (grade IS NULL OR grade >= 1),
+    class_no   INTEGER CHECK (class_no IS NULL OR class_no >= 1),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    valid_from TEXT    NOT NULL,
+    valid_to   TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_class_scope
+    ON teaching_class (year_id, school_id, role, sort_order);
+
+-- ─── 소속 ──────────────────────────────────────────────────────
+-- "누가 내 명단에 있는가". 담임 학급이든 교과 강좌든 이 표가 답한다.
+--
+-- 담임 명렬표는 보통 그 반 학생만 들어오지만 **반이 다른 학생을 막지 않는다.**
+-- 막으면 현장의 예외를 담을 수 없다 — 알리기만 하고 넣는다.
+-- 프로그램이 강제하는 것은 기본 규칙까지다.
+CREATE TABLE IF NOT EXISTS class_member
+(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id   INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES student (id) ON DELETE CASCADE,
+    joined_on  TEXT    NOT NULL,
+    -- 명단에서 빠져도 지우지 않는다. 명렬표 재가져오기와 같은 규칙이다 —
+    -- 지난 기록이 어느 명단의 것이었는지 남아야 한다.
+    left_on    TEXT,
+    UNIQUE (class_id, student_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_member_class ON class_member (class_id, left_on);
+CREATE INDEX IF NOT EXISTS ix_member_student ON class_member (student_id);
 
 -- ─── 출결 구분 (축 1) ──────────────────────────────────────────
 -- 질병 · 미인정 · 출석인정 · 기타
@@ -208,6 +274,41 @@ CREATE INDEX IF NOT EXISTS ix_span_incomplete
 CREATE INDEX IF NOT EXISTS ix_span_doc ON absence_span (doc_done, doc_due);
 CREATE INDEX IF NOT EXISTS ix_span_neis ON absence_span (neis_done, date);
 
+-- ─── 교과 수업 한 칸 ───────────────────────────────────────────
+-- 교과 교사가 기록하는 것은 `그 교시에 있었는가` 하나뿐이다. 구분 · 종류 · 기간도,
+-- 서류도, 나이스도 없다. 그래서 absence_span을 재사용하지 않는다 —
+-- 열의 대부분이 언제나 비어 있는 표는 읽는 사람을 매번 헷갈리게 한다.
+--
+-- **이 행이 있으면 그 교시를 기록했다는 뜻이다.** 빠진 학생이 없는 날과 아직 부르지
+-- 않은 날을 구별해야 하기 때문에, 결석자 행만으로는 부족하다.
+CREATE TABLE IF NOT EXISTS subject_session
+(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_id   INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
+    date       TEXT    NOT NULL,
+    -- slots.rs의 토큰과 같다. 조회 · 종례는 교과 수업이 아니므로 교시만 온다.
+    slot       TEXT    NOT NULL,
+    taken_on   TEXT    NOT NULL,
+    memo       TEXT    NOT NULL DEFAULT '',
+    UNIQUE (class_id, date, slot)
+);
+
+CREATE INDEX IF NOT EXISTS ix_session_date ON subject_session (class_id, date);
+
+-- 그 칸에서 **빠진 학생만** 적는다. 있던 학생은 적지 않는다.
+-- 담임 쪽에서 출석한 학생을 적지 않는 것과 같은 이유다 — 예외만 기록한다.
+CREATE TABLE IF NOT EXISTS subject_absence
+(
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id INTEGER NOT NULL REFERENCES subject_session (id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES student (id) ON DELETE CASCADE,
+    memo       TEXT    NOT NULL DEFAULT '',
+    UNIQUE (session_id, student_id)
+);
+
+CREATE INDEX IF NOT EXISTS ix_subject_absence_student
+    ON subject_absence (student_id);
+
 -- ─── 한도 규정 ─────────────────────────────────────────────────
 -- 체험학습 연 20일, 생리통 조퇴 월 1회처럼 **세어야 하는 규정**이다.
 --
@@ -236,7 +337,15 @@ CREATE TABLE IF NOT EXISTS quota_rule
 );
 
 -- ─── 앱 설정 ───────────────────────────────────────────────────
--- 앱 전체에 걸린 값만 둔다(마지막에 연 학교·학년도·학급 같은 것).
+-- 앱 전체에 걸린 값만 둔다. 지금 쓰는 열쇠는 넷이다.
+--   yearId           지금 보고 있는 학년도
+--   mode             homeroom | subject — 사이드바 스위치의 값
+--   homeroomClassId  담임 모드에서 마지막에 본 학급
+--   subjectClassId   교과 모드에서 마지막에 본 강좌
+--
+-- **모드마다 마지막 자리를 따로 기억한다.** 오가며 쓰는 값이라, 돌아왔을 때 있던
+-- 자리가 아니면 매번 다시 골라야 한다.
+--
 -- **학교 단위 값은 여기 넣지 않는다.** school 행에 자리가 있다.
 CREATE TABLE IF NOT EXISTS app_config
 (

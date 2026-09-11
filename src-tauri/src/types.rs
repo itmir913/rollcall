@@ -111,15 +111,21 @@ pub struct RosterClass {
 
 // ── 연락처 ────────────────────────────────────────────────────
 
+/// 연락처 한 줄. **학생마다 있는 번호가 다르다** — 본인만 있는 학생, 어머니만 있는
+/// 학생, 둘 다 있는 학생. 그래서 칸이 아니라 줄이다.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContactItem {
     #[serde(default)]
     pub id: i64,
-    pub label: String,
-    pub value: String,
+    /// 본인 · 부 · 모 · 조부모 · 시설 … 목록을 코드에 박지 않는다.
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub phone: String,
+    /// "주간에는 받지 않음" 같은 것. 앱은 해석하지 않는다.
     #[serde(default)]
-    pub note: Option<String>,
+    pub memo: String,
+    /// 먼저 걸 번호를 정한다. 급한 순간에 고민하지 않게.
     #[serde(default)]
     pub sort_order: i64,
 }

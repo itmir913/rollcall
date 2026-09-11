@@ -2,6 +2,7 @@ use rusqlite::Connection;
 
 pub mod attendance_tests;
 pub mod axis_tests;
+pub mod class_tests;
 pub mod db_tests;
 pub mod due_tests;
 pub mod export_tests;
@@ -96,4 +97,52 @@ pub fn quota_rule_id(conn: &Connection, name: &str) -> i64 {
         |r| r.get(0),
     )
     .unwrap()
+}
+
+/// 맡은 것 하나. role은 homeroom · subject다.
+pub fn insert_class(
+    conn: &Connection,
+    year_id: i64,
+    role: &str,
+    name: &str,
+    grade: Option<i64>,
+    class_no: Option<i64>,
+) -> i64 {
+    let school = school_id(conn);
+    conn.execute(
+        "INSERT INTO teaching_class (school_id, year_id, role, name, grade, class_no, valid_from)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-03-02')",
+        rusqlite::params![school, year_id, role, name, grade, class_no],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+/// 학생을 그 명단에 넣는다. **학적과 무관하다** — 소속은 이 표가 말한다.
+pub fn join_class(conn: &Connection, class_id: i64, student_id: i64) -> i64 {
+    conn.execute(
+        "INSERT INTO class_member (class_id, student_id, joined_on) VALUES (?1, ?2, '2026-03-02')",
+        rusqlite::params![class_id, student_id],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+/// 학적 자리를 직접 지정해 학생을 넣는다. 다른 반 학생을 만들 때 쓴다.
+pub fn insert_student_at(
+    conn: &Connection,
+    year_id: i64,
+    grade: i64,
+    class_no: i64,
+    number: i64,
+    name: &str,
+) -> i64 {
+    let school = school_id(conn);
+    conn.execute(
+        "INSERT INTO student (school_id, year_id, grade, class_no, number, name, enrolled_from)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, '2026-03-02')",
+        rusqlite::params![school, year_id, grade, class_no, number, name],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
 }
