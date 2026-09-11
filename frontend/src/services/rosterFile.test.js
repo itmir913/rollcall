@@ -14,6 +14,8 @@ import {
     readRosterFile,
     readSheetRows,
     rowsToEntries,
+    rowsWithExcelJs,
+    rowsWithSheetJs,
 } from './rosterFile.js'
 import {matchColumn, normalizeHeader} from '../data/columnAliases.js'
 
@@ -23,6 +25,22 @@ async function xlsxBytes(rows) {
     const sheet = workbook.addWorksheet('명렬표')
     rows.forEach((r) => sheet.addRow(r))
     return await workbook.xlsx.writeBuffer()
+}
+
+/**
+ * SheetJS로 쓴 바이트. `bookType`으로 규격을 바꾼다.
+ *
+ * `ods`는 zip이지만 xlsx 규격이 아니라 exceljs가 시트를 하나도 찾지 못한다 —
+ * 한셀 계열이 내보낸 파일에서 폴백이 도는 상황과 같다.
+ */
+function sheetJsBytes(bookType) {
+    const sheet = XLSX.utils.aoa_to_sheet([
+        ['학년', '반', '번호', '이름'],
+        [3, 6, 1, '김철수'],
+    ])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, sheet, '명렬표')
+    return XLSX.write(wb, {type: 'array', bookType})
 }
 
 function fileOf(name, bytes) {
@@ -252,19 +270,39 @@ describe('readRosterFile', () => {
 })
 
 describe('SheetJS 폴백', () => {
-    it('SheetJS가 만든 파일도 같은 행으로 읽힌다', async () => {
-        // 비표준 xlsx를 흉내내기 위해 다른 라이브러리로 쓴 파일을 넣는다.
-        const sheet = XLSX.utils.aoa_to_sheet([
-            ['학년', '반', '번호', '이름'],
-            [3, 6, 1, '김철수'],
-        ])
-        const wb = XLSX.utils.book_new()
-        XLSX.utils.book_append_sheet(wb, sheet, '명렬표')
-        const bytes = XLSX.write(wb, {type: 'array', bookType: 'xlsx'})
-
-        const {rows} = await readSheetRows(bytes)
+    it('SheetJS가 만든 xlsx는 exceljs가 그대로 읽는다 — 아직 폴백이 아니다', async () => {
+        // 다른 라이브러리로 썼다는 것만으로는 exceljs가 거부하지 않는다.
+        // 이것을 폴백 테스트로 두면 exceljs 경로를 돌면서 통과해 버린다.
+        const {rows, parser} = await readSheetRows(sheetJsBytes('xlsx'))
+        expect(parser).toBe('exceljs')
         expect(rows[0]).toEqual(['학년', '반', '번호', '이름'])
         expect(rows[1]).toEqual(['3', '6', '1', '김철수'])
+    })
+
+    it('exceljs가 거부하는 파일을 SheetJS가 받는다', async () => {
+        // 한셀 계열이 내보낸 표는 zip이기는 하지만 xlsx 규격이 아니다.
+        // exceljs는 시트를 하나도 찾지 못하고, SheetJS는 읽어낸다.
+        const bytes = sheetJsBytes('ods')
+        await expect(rowsWithExcelJs(bytes)).rejects.toThrow()
+        expect(rowsWithSheetJs(bytes)[1]).toEqual(['3', '6', '1', '김철수'])
+
+        const {rows, parser} = await readSheetRows(bytes)
+        expect(parser).toBe('sheetjs')
+        expect(rows[1]).toEqual(['3', '6', '1', '김철수'])
+    })
+
+    it('폴백으로 읽은 파일도 명단까지 나온다 — 어느 파서였는지 함께 알린다', async () => {
+        // 값이 이상할 때 어디를 의심할지 알려주는 단서라 화면에 그대로 올린다.
+        const result = await readRosterFile(fileOf('한셀명렬표.xlsx', sheetJsBytes('ods')))
+        expect(result.parser).toBe('sheetjs')
+        expect(result.entries).toEqual([{grade: 3, classNo: 6, number: 1, name: '김철수'}])
+    })
+
+    it('두 파서가 모두 실패하면 양쪽 이유를 함께 말한다', async () => {
+        // 한쪽 이유만 보이면 교사가 보내온 파일을 두고 어디부터 볼지 알 수 없다.
+        const broken = new Uint8Array(sheetJsBytes('ods')).slice(0, 300)
+        expect(looksLikeZip(broken)).toBe(true) // 앞 네 바이트는 멀쩡한 zip이다
+        await expect(readSheetRows(broken)).rejects.toThrow(/exceljs:.*SheetJS:/s)
     })
 })
 

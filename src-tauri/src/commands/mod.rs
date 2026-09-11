@@ -1,20 +1,28 @@
 pub mod attendance;
 pub mod axis;
-pub mod check;
 pub mod config;
 pub mod export;
 pub mod file;
+pub mod home;
+pub mod mark;
+pub mod neis;
 pub mod project;
+pub mod school;
+pub mod stats;
 pub mod student;
 pub mod year;
 
 pub use attendance::*;
 pub use axis::*;
-pub use check::*;
 pub use config::*;
 pub use export::*;
 pub use file::*;
+pub use home::*;
+pub use mark::*;
+pub use neis::*;
 pub use project::*;
+pub use school::*;
+pub use stats::*;
 pub use student::*;
 pub use year::*;
 

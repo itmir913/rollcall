@@ -121,7 +121,12 @@ export function parseCsv(text) {
 
 // ── 시트 → 행 ─────────────────────────────────────────────────
 
-async function rowsWithExcelJs(buffer) {
+/**
+ * 두 파서는 각각 내보낸다. 화면은 `readSheetRows`만 부르지만, 테스트가 폴백을
+ * 확인하려면 **어느 파서가 무엇을 거부하는지**를 따로 물어볼 수 있어야 한다.
+ * `readSheetRows`만 열어 두면 앞 파서가 읽어 버린 파일로도 테스트가 통과한다.
+ */
+export async function rowsWithExcelJs(buffer) {
     const workbook = new Workbook()
     await workbook.xlsx.load(buffer)
     const sheet = workbook.worksheets[0]
@@ -134,7 +139,7 @@ async function rowsWithExcelJs(buffer) {
     return rows
 }
 
-function rowsWithSheetJs(buffer) {
+export function rowsWithSheetJs(buffer) {
     const workbook = XLSX.read(buffer, {type: 'array'})
     const name = workbook.SheetNames[0]
     if (!name) throw new Error('시트가 없습니다.')

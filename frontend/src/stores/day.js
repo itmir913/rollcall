@@ -1,129 +1,163 @@
 import {defineStore} from 'pinia'
-import {computed, ref} from 'vue'
 import {invoke} from '@tauri-apps/api/core'
+import {useAppStore} from './app'
 
-function todayIso() {
-    const d = new Date()
-    const p = (n) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
-}
+/**
+ * 오늘의 출결 — 격자와 그날의 구간들.
+ *
+ * `draft`는 **지금 찍을 조합**이다. 학생 번호를 누르면 그대로 저장되고, 같은 조합을
+ * 다시 누르면 취소된다. 그 판단은 Rust가 한다 — 화면은 결과를 다시 그릴 뿐이다.
+ */
+export const useDayStore = defineStore('day', {
+    state: () => ({
+        date: null,
+        grid: null,
+        draft: {reasonId: null, typeId: null, slots: []},
+        error: '',
+        busy: false,
+    }),
 
-const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토']
+    getters: {
+        rows: (s) => s.grid?.rows ?? [],
+        spans: (s) => s.grid?.spans ?? [],
+        dateLabel: (s) => s.grid?.dateLabel ?? '',
+        /** 구간이 하나라도 있는 학생 수. 구간 수가 아니다. */
+        recorded: (s) => new Set((s.grid?.spans ?? []).map((x) => x.studentId)).size,
+    },
 
-export function formatKorean(iso) {
-    const [y, m, d] = iso.split('-').map(Number)
-    const day = new Date(y, m - 1, d)
-    return `${y}.${String(m).padStart(2, '0')}.${String(d).padStart(2, '0')}.(${WEEKDAY[day.getDay()]})`
-}
+    actions: {
+        setDate(iso) {
+            this.date = iso
+        },
 
-export function shiftDate(iso, days) {
-    const [y, m, d] = iso.split('-').map(Number)
-    const next = new Date(y, m - 1, d + days)
-    const p = (n) => String(n).padStart(2, '0')
-    return `${next.getFullYear()}-${p(next.getMonth() + 1)}-${p(next.getDate())}`
-}
+        /** 하루씩 옮긴다. 어제·내일 버튼이 부른다. */
+        async move(delta) {
+            const base = new Date(`${this.date}T00:00:00`)
+            base.setDate(base.getDate() + delta)
+            const pad = (n) => String(n).padStart(2, '0')
+            this.date = `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}`
+            await this.fetchGrid()
+        },
 
-/** 하루치 격자. 저장은 전부 자동이다 — 확인 대화상자도, 저장 버튼도 없다. */
-export const useDayStore = defineStore('day', () => {
-    const date = ref(todayIso())
-    const grid = ref(null)
-    const loading = ref(false)
-    const error = ref('')
+        async fetchGrid() {
+            const app = useAppStore()
+            // 날짜를 고르는 화면은 오늘의 출결뿐이다. 출결 기록 · 서류 미제출자에서
+            // 수정하면 여기 날짜가 비어 있는데, 그대로 부르면 커맨드가 늘 실패해
+            // `error`가 오염되고 진짜 저장 실패와 구별되지 않는다.
+            if (!app.ready || !this.date) return
+            this.error = ''
+            try {
+                this.grid = await invoke('get_day_grid', {...app.scope, date: this.date})
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
 
-    const rows = computed(() => grid.value?.rows ?? [])
-    const items = computed(() => grid.value?.items ?? [])
-    const dateLabel = computed(() => formatKorean(date.value))
-    const recordedCount = computed(() => rows.value.filter((r) => r.spans.length > 0).length)
-    /** 두 축 중 하나라도 비어 있는 구간을 가진 학생 수 */
-    const incompleteCount = computed(
-        () => rows.value.filter((r) => r.spans.some((s) => !s.complete)).length,
-    )
+        /**
+         * 학생 하나에게 지금 조합을 찍는다.
+         * 같은 조합이 이미 있으면 Rust가 그 건을 지운다(무르기).
+         */
+        async stamp(studentId) {
+            this.error = ''
+            this.busy = true
+            try {
+                const result = await invoke('stamp_span', {
+                    input: {
+                        studentId,
+                        date: this.date,
+                        reasonId: this.draft.reasonId,
+                        typeId: this.draft.typeId,
+                        slots: [...this.draft.slots],
+                    },
+                })
+                await this.fetchGrid()
+                return result
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            } finally {
+                this.busy = false
+            }
+        },
 
-    async function fetchGrid(yearId, grade, classNo) {
-        loading.value = true
-        error.value = ''
-        try {
-            grid.value = await invoke('get_day_grid', {
-                yearId, grade, classNo, date: date.value,
-            })
-        } catch (e) {
-            error.value = String(e)
-            throw e
-        } finally {
-            loading.value = false
-        }
-    }
+        /** 구분 · 종류 · 기간을 고친다. 수정 모달이 저장을 누를 때만 부른다. */
+        async editSpan(spanId, {reasonId, typeId, slots}) {
+            this.error = ''
+            try {
+                await invoke('edit_span', {edit: {spanId, reasonId, typeId, slots}})
+                await this.fetchGrid()
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
 
-    function setDate(iso) {
-        date.value = iso
-    }
+        async deleteSpan(spanId) {
+            this.error = ''
+            try {
+                await invoke('delete_span', {spanId})
+                await this.fetchGrid()
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
 
-    function moveDate(days) {
-        date.value = shiftDate(date.value, days)
-    }
+        async setMemo(spanId, memo) {
+            this.error = ''
+            try {
+                await invoke('set_span_memo', {spanId, memo})
+                await this.fetchGrid()
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
 
-    function rowByNumber(number) {
-        return rows.value.find((r) => r.number === number) || null
-    }
+        async setTag(spanId, tagId) {
+            this.error = ''
+            try {
+                await invoke('set_span_tag', {spanId, tagId})
+                await this.fetchGrid()
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
 
-    /**
-     * 여러 학생에게 같은 출결을 한 번에 찍는다.
-     *
-     * 화면의 입력 방식이 이렇다 — 구분과 종류를 고른 뒤 학생을 눌러 나간다.
-     * 한 명을 눌러도 목록 하나짜리로 같은 경로를 탄다. 두 축이 비어 있어도
-     * 저장된다("안 왔는데 연락이 안 됨").
-     */
-    async function stamp({studentIds, reasonId, typeId, startSlot, endSlot, symptom}) {
-        return await invoke('add_spans', {
-            studentIds, date: date.value, reasonId, typeId, startSlot, endSlot, symptom,
-        })
-    }
+        /** 여러 날에 같은 조합을 찍기 전에 대상 날짜를 미리 본다. */
+        async previewBulk(from, to) {
+            const app = useAppStore()
+            this.error = ''
+            try {
+                return await invoke('preview_bulk', {schoolId: app.schoolId, from, to})
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
 
-    async function updateSpan({id, reasonId, typeId, startSlot, endSlot, symptom}) {
-        await invoke('update_span', {id, reasonId, typeId, startSlot, endSlot, symptom})
-    }
-
-    async function deleteSpan(id) {
-        await invoke('delete_span', {id})
-    }
-
-    async function setReason(studentId, reason, reasonId = null, typeId = null) {
-        await invoke('set_daily_reason', {
-            studentId, date: date.value, reasonId, typeId, reason,
-        })
-    }
-
-    /** 연속 결석 학생은 이것 하나로 끝난다. */
-    async function copyPrevious(studentId) {
-        return await invoke('copy_previous', {studentId, date: date.value})
-    }
-
-    async function renderPhrase(reasonId, typeId, symptom, startSlot, endSlot) {
-        return await invoke('render_phrase', {
-            reasonId, typeId, symptom, startSlot, endSlot, onDate: date.value,
-        })
-    }
-
-    async function bulkPreview(studentIds, from, to) {
-        return await invoke('bulk_preview', {studentIds, from, to})
-    }
-
-    async function bulkApply(studentIds, dates, reasonId, typeId, startSlot, endSlot, symptom) {
-        return await invoke('bulk_apply', {
-            studentIds, dates, reasonId, typeId, startSlot, endSlot, symptom,
-        })
-    }
-
-    /** 아직 두 축이 다 채워지지 않은 구간들. 채워 넣어야 할 목록이다. */
-    async function fetchIncomplete(yearId, grade, classNo) {
-        return await invoke('get_incomplete', {yearId, grade, classNo})
-    }
-
-    return {
-        date, grid, loading, error,
-        rows, items, dateLabel, recordedCount, incompleteCount,
-        fetchGrid, setDate, moveDate, rowByNumber,
-        stamp, updateSpan, deleteSpan, setReason, copyPrevious, renderPhrase,
-        bulkPreview, bulkApply, fetchIncomplete,
-    }
+        async applyBulk(studentId, from, to) {
+            this.error = ''
+            try {
+                const result = await invoke('apply_bulk', {
+                    input: {
+                        studentId,
+                        date: from,
+                        reasonId: this.draft.reasonId,
+                        typeId: this.draft.typeId,
+                        slots: [...this.draft.slots],
+                    },
+                    from,
+                    to,
+                })
+                await this.fetchGrid()
+                return result
+            } catch (e) {
+                this.error = String(e)
+                throw e
+            }
+        },
+    },
 })

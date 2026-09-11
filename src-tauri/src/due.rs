@@ -1,11 +1,17 @@
-//! 마감일 계산과 날짜 유틸. 순수 함수다.
+//! 마감일 계산과 날짜 유틸. 순수 함수다. DB를 모른다.
 //!
-//! `due_days`와 `include_weekend` 두 값으로만 계산한다. **공휴일 캘린더는 도입하지
-//! 않는다.** 목적은 규정을 정확히 모델링하는 것이 아니라 "이 학생 서류 아직 안 냈다"를
-//! 교사가 놓치지 않는 것이다. 하루 이틀 오차는 실무에 지장이 없고, 계산된 마감일은
-//! `daily_check.due_date`에 저장되어 교사가 직접 고칠 수 있다. 그것이 탈출구다.
+//! 제출 기한은 학교 설정의 두 값으로 정해진다 — `due_days`(며칠)와
+//! `due_skip_offdays`(주말·휴업일을 셀 것인가).
+//!
+//! **공휴일 API를 부르지 않는다.** 앱은 서버를 쓰지 않고, 개교기념일·재량휴업일은
+//! 어차피 외부 달력에 없다. 대신 교사가 설정에서 휴업일을 직접 등록하고, 그 목록이
+//! 여기로 넘어온다. 학사일정 테이블이 아니라 **마감 계산에서 건너뛸 날짜 목록**이다.
+//!
+//! 계산된 마감일은 `absence_span.doc_due`에 박아 둔다. 설정을 바꿔도 과거 기록의
+//! 마감이 소급 변경되지 않아야 하고, 교사가 개별로 고칠 수 있어야 하기 때문이다.
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
+use std::collections::HashSet;
 
 pub const DATE_FMT: &str = "%Y-%m-%d";
 
@@ -21,35 +27,51 @@ pub fn is_weekend(d: NaiveDate) -> bool {
     matches!(d.weekday(), Weekday::Sat | Weekday::Sun)
 }
 
-/// 기준일로부터 마감일. `include_weekend`가 false면 주말을 세지 않는다.
+/// 그날을 세지 않는가. 주말이거나 등록된 휴업일이면 건너뛴다.
+pub fn is_off_day(d: NaiveDate, off_days: &HashSet<NaiveDate>) -> bool {
+    is_weekend(d) || off_days.contains(&d)
+}
+
+/// 기준일로부터 마감일.
 ///
-/// `due_days == 0`이면 기준일이 곧 마감일이다(주말이어도 옮기지 않는다 —
-/// 교사가 정한 값을 프로그램이 조정하지 않는다).
-pub fn due_date(base: NaiveDate, due_days: i64, include_weekend: bool) -> NaiveDate {
-    if include_weekend {
+/// `skip_off_days`가 true면 주말과 휴업일을 세지 않는다.
+/// `due_days == 0`이면 기준일이 곧 마감일이다 — 주말이어도 옮기지 않는다.
+/// 교사가 정한 값을 프로그램이 조정하지 않는다.
+pub fn due_date(
+    base: NaiveDate,
+    due_days: i64,
+    skip_off_days: bool,
+    off_days: &HashSet<NaiveDate>,
+) -> NaiveDate {
+    if !skip_off_days {
         return base + Duration::days(due_days);
     }
     let mut remaining = due_days;
     let mut cursor = base;
-    while remaining > 0 {
+    // 무한 루프 방지 — 휴업일을 아무리 많이 등록해도 1년 안에서 끝낸다.
+    let limit = base + Duration::days(366);
+    while remaining > 0 && cursor < limit {
         cursor += Duration::days(1);
-        if !is_weekend(cursor) {
+        if !is_off_day(cursor, off_days) {
             remaining -= 1;
         }
     }
     cursor
 }
 
-/// 기간 안의 평일 목록. 기간 일괄 입력의 기본 후보다.
+/// 기간 안에서 셀 수 있는 날 목록. 여러 날 일괄 입력의 기본 후보다.
 ///
-/// 재량휴업일·공휴일은 여기서 빼지 않는다. 미리보기에서 교사가 지운다.
-/// 캘린더 테이블을 만들지 않기로 한 결정의 대가이자, 학교마다 다른 휴업일을
-/// 프로그램이 알 수 없다는 사실의 인정이다.
-pub fn weekdays_between(from: NaiveDate, to: NaiveDate) -> Vec<NaiveDate> {
+/// 주말과 등록된 휴업일을 뺀다. 등록되지 않은 휴업일은 미리보기에서 교사가 지운다 —
+/// 학사일정을 앱이 알 수 없다는 사실의 인정이다.
+pub fn open_days_between(
+    from: NaiveDate,
+    to: NaiveDate,
+    off_days: &HashSet<NaiveDate>,
+) -> Vec<NaiveDate> {
     let mut out = Vec::new();
     let mut cursor = from;
     while cursor <= to {
-        if !is_weekend(cursor) {
+        if !is_off_day(cursor, off_days) {
             out.push(cursor);
         }
         cursor += Duration::days(1);
@@ -73,4 +95,21 @@ pub fn format_korean(d: NaiveDate) -> String {
         d.day(),
         WEEKDAY_KO[d.weekday().num_days_from_monday() as usize]
     )
+}
+
+/// 학년도 시작(3월 1일) 기준의 학기. 3~8월이 1학기, 9~2월이 2학기다.
+pub fn semester_of(d: NaiveDate) -> u32 {
+    match d.month() {
+        3..=8 => 1,
+        _ => 2,
+    }
+}
+
+/// 그 날짜가 속한 학년도. 1·2월은 전년도 학년도에 속한다.
+pub fn academic_year_of(d: NaiveDate) -> i32 {
+    if d.month() >= 3 {
+        d.year()
+    } else {
+        d.year() - 1
+    }
 }
