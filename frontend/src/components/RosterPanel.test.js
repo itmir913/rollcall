@@ -1,5 +1,5 @@
 /**
- * 명렬표 가져오기 — **명단이 붙는 곳은 지금 고른 학급 하나다.**
+ * 명렬표 파일 열기 — **명단이 붙는 곳은 지금 고른 학급 하나다.**
  *
  * 예전에는 파일이 말하는 학년 · 반이 그 자리를 결정했다. 학년 · 반 · 번호는 그 학생의
  * 학적이지 소속이 아니므로 지금은 `classId`가 결정하고, 파일이 가리키는 반은
@@ -100,7 +100,7 @@ beforeEach(() => {
     app.classId = HOMEROOM.id
 })
 
-describe('명렬표 가져오기', () => {
+describe('명렬표 파일 열기', () => {
     it('미리보기도 저장도 classId 하나로 묻는다', async () => {
         const {wrapper, roster} = build()
         await load(wrapper)
@@ -139,7 +139,7 @@ describe('명렬표 가져오기', () => {
     })
 })
 
-describe('명렬표 가져오기 — 교과 강좌', () => {
+describe('명렬표 파일 열기 — 교과 강좌', () => {
     it('학급 판단을 묻지 않는다 — 반이 섞인 것이 정상이다', async () => {
         pickSubject()
         const {wrapper, roster} = build({diff: SUBJECT_DIFF})
@@ -240,7 +240,7 @@ describe('명렬표 가져오기 — 교과 강좌', () => {
     })
 })
 
-describe('명렬표 가져오기 — 자리를 결정하지 못한 줄', () => {
+describe('명렬표 파일 열기 — 자리를 결정하지 못한 줄', () => {
     /**
      * 줄을 눌러 바꾸는 시험이 있으므로 매번 새로 만든다.
      *
@@ -329,7 +329,7 @@ describe('명렬표 가져오기 — 자리를 결정하지 못한 줄', () => {
  * 보일 때 파일을 의심할지 해독을 의심할지 알려주는 단서다. 특히 어느 인코딩으로도
  * 깨끗하게 읽히지 않은 파일은 반드시 말한다. 읽히는 만큼 읽되 숨기지 않는다.
  */
-describe('명렬표 가져오기 — 무엇으로 읽었는가', () => {
+describe('명렬표 파일 열기 — 무엇으로 읽었는가', () => {
     const head = (wrapper) => wrapper.find('.ledger__head').text()
     const warnings = (wrapper) => wrapper.findAll('.notice--warn').map((n) => n.text()).join(' ')
 
@@ -378,7 +378,7 @@ describe('명렬표 가져오기 — 무엇으로 읽었는가', () => {
     })
 })
 
-describe('명렬표 가져오기 — 저장 결과', () => {
+describe('명렬표 파일 열기 — 저장 결과', () => {
     it('전출이라고 말하지 않는다 — 내 명단에서 빠지는 것과 학교를 떠나는 것은 다르다', async () => {
         const {wrapper} = build({
             diff: [{

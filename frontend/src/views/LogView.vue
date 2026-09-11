@@ -8,7 +8,7 @@
  * 서류와 나이스를 여기서 바로 체크한다. 출결을 확인하는 중에 "아, 이건 받았지"가
  * 떠오르는 곳이 바로 여기라 다른 화면으로 보내지 않는다.
  *
- * 나이스 가져오기도 여기다. 결과가 쌓이는 곳이 이 화면이라 사이드바 항목으로
+ * 나이스 파일 열기도 여기다. 결과가 쌓이는 곳이 이 화면이라 사이드바 항목으로
  * 만들지 않는다. **일 · 월을 묻지 않는다** — 나이스 파일 안에 기간이 들어 있다.
  */
 import {computed, onMounted, ref} from 'vue'
@@ -111,7 +111,7 @@ async function toggleNeis(span, value) {
 }
 
 /**
- * 나이스 가져오기.
+ * 나이스 파일 열기.
  *
  * **일 · 월을 묻지 않는다** — 기간은 파일 안에 있다. 그래서 단추가 하나뿐이고,
  * 고르는 것은 파일뿐이다. fs 플러그인을 통째로 열지 않고 `<input type="file">`을
@@ -183,7 +183,7 @@ function saveCsv(kind, args, suggested) {
 
     <UiPage v-else :subtitle="app.currentClass?.name ?? ''" title="출결 기록">
         <template #actions>
-            <UiButton variant="upload" @click="importNeis">NEIS 가져오기</UiButton>
+            <UiButton variant="upload" @click="importNeis">나이스 파일 열기</UiButton>
             <input ref="fileInput" accept=".xlsx" hidden type="file" @change="onPick"/>
             <UiButton variant="download"
                       @click="saveCsv('spans', {classId: app.classId, from: `${log.year}-${String(log.month).padStart(2,'0')}-01`, to: `${log.year}-${String(log.month).padStart(2,'0')}-31`}, `출결_${log.year}-${log.month}.csv`)">

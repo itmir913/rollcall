@@ -53,7 +53,7 @@ describe('명렬표', () => {
         expect(list).toHaveLength(1)
     })
 
-    it('미리보기와 저장 모두 학급을 넘긴다 — 재가져오기는 차분이다', async () => {
+    it('미리보기와 저장 모두 학급을 넘긴다 — 명렬표를 다시 여는 것은 차분이다', async () => {
         const roster = useRosterStore()
         await roster.preview(9, [{number: 1, name: '학생1'}])
         expect(invoke).toHaveBeenCalledWith('preview_roster', {

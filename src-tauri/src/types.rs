@@ -143,9 +143,9 @@ pub struct RosterEntry {
     pub line: Option<i64>,
 }
 
-/// 재가져오기 미리보기 한 줄.
+/// 다시 열기 미리보기 한 줄.
 ///
-/// 재가져오기는 교체가 아니라 차분이다. 사라진 번호는 삭제하지 않고 전출 처리한다.
+/// 명렬표를 다시 여는 것은 교체가 아니라 차분이다. 사라진 번호는 삭제하지 않고 전출 처리한다.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RosterDiffRow {
@@ -578,10 +578,10 @@ pub struct SubjectRollItem {
     pub homeroom_note: Option<String>,
 }
 
-// ── 나이스 가져오기 ───────────────────────────────────────────
+// ── 나이스 파일 열기 ───────────────────────────────────────────
 //
 // 파일 서식은 프런트(`services/neisFile.js`)가 맡는다. 여기부터가 업무 규칙이다 —
-// 명렬표 가져오기와 같은 경계다. 그래서 이 구조체들은 파일이 아니라 **읽어 낸 줄**을 받는다.
+// 명렬표 파일 열기와 같은 경계다. 그래서 이 구조체들은 파일이 아니라 **읽어 낸 줄**을 받는다.
 
 /// 나이스 파일에서 읽은 출결 한 건.
 ///

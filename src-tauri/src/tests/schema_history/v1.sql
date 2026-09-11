@@ -202,7 +202,7 @@ CREATE TABLE IF NOT EXISTS class_member
     class_id   INTEGER NOT NULL REFERENCES teaching_class (id) ON DELETE CASCADE,
     student_id INTEGER NOT NULL REFERENCES student (id) ON DELETE CASCADE,
     joined_on  TEXT    NOT NULL,
-    -- 명단에서 빠져도 지우지 않는다. 명렬표 재가져오기와 같은 규칙이다 —
+    -- 명단에서 빠져도 지우지 않는다. 명렬표 다시 열기와 같은 규칙이다 —
     -- 지난 기록이 어느 명단의 것이었는지 남아야 한다.
     left_on    TEXT,
     UNIQUE (class_id, student_id)

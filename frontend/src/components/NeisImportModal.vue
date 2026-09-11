@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 나이스 가져오기. **교체가 아니라 차분이다.**
+ * 나이스 파일 열기. **교체가 아니라 차분이다.**
  *
  * 같은 것은 그대로 두고, 없는 것은 추가하고, 다른 것은 어느 쪽을 남길지 교사가 고른다.
  * **앱에만 있는 기록은 지우지 않는다** — 나이스에 아직 안 넣은 것이 이 앱을 쓰는 이유라,
@@ -61,7 +61,7 @@ function toggleAll(group) {
     <UiModal :open="open" :subtitle="preview
                  ? `${store.meta?.parser}로 읽음 · ${preview.from} ~ ${preview.to}`
                  : ''"
-             size="wide" title="나이스 가져오기" @close="emit('close')">
+             size="wide" title="나이스 파일 열기" @close="emit('close')">
         <template v-if="preview">
             <div class="strip">
                 <div class="strip__cell is-ok">
@@ -179,7 +179,7 @@ function toggleAll(group) {
             <UiButton size="wide" @click="emit('close')">취소</UiButton>
             <UiButton :disabled="!store.hasWork || store.busy" size="wide" variant="primary"
                       @click="emit('apply')">
-                가져오기
+                저장
             </UiButton>
         </template>
     </UiModal>

@@ -94,7 +94,7 @@ export function compileSpec(raw) {
 const BUNDLED = compileSpec(bundled)
 
 if (!BUNDLED) {
-    // 번들 서식이 깨진 것은 배포 사고다. 조용히 지나가면 나이스 가져오기가 통째로
+    // 번들 서식이 깨진 것은 배포 사고다. 조용히 지나가면 나이스 파일 열기가 통째로
     // 죽은 채 앱이 뜬다 — 테스트가 이것을 잡는다.
     throw new Error('번들에 든 나이스 서식 정의가 올바르지 않습니다: neisFormats.json')
 }

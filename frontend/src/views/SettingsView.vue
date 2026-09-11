@@ -21,7 +21,7 @@
  * 목록일 뿐 한쪽의 기록이 다른 쪽에 새는 것이 아니다. **학급을 옮기는 길은 여기 두지
  * 않는다** — 그것은 이동 화면과 모드 스위치가 담당한다.
  *
- * 명렬표 가져오기도 여기 있다 — 학기에 한두 번 쓰는 일이라 사이드바에 둘 이유가 없다.
+ * 명렬표 파일 열기도 여기 있다 — 학기에 한두 번 쓰는 일이라 사이드바에 둘 이유가 없다.
  */
 import {computed, onMounted, ref, watch} from 'vue'
 import {useAppStore} from '../stores/app'
@@ -719,7 +719,7 @@ onMounted(async () => {
                   :hint="rosterClass ? `${rosterClass.name} 명단에 넣습니다` : '학급을 먼저 만들어주세요'"
                   title="명렬표">
             <div class="set__row">
-                <span class="set__label">파일에서 가져오기</span>
+                <span class="set__label">파일 열기</span>
                 <span class="set__value">
                     <!-- 자리는 늘 여기다. 위에서 [명렬표]를 누르면 상자가 새로 생기는 것이
                          아니라 이 상자가 가리키는 학급만 바뀐다. -->

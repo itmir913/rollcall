@@ -99,7 +99,7 @@ describe('UiButton', () => {
         expect(wrapper.find('svg').exists()).toBe(true)
     })
 
-    it('가져오기는 위 화살표다', () => {
+    it('파일 열기는 위 화살표다', () => {
         expect(mount(UiButton, {props: {variant: 'upload'}}).find('svg').exists()).toBe(true)
     })
 

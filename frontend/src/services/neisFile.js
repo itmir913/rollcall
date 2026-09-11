@@ -403,7 +403,7 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
         const daySlots = byColumn && slotColumns.length ? slotColumns.map(({token}) => token) : null
         // **결석은 기간을 묻지 않는다.** 앱도 Rust도 결석을 조회~종례 한 건으로 저장하므로
         // (`ranges_for` · `day_slots`), 결시교시가 어떻게 적혀 있든 한 건이다. 여기서
-        // 나누면 같은 하루가 두 건이 되고 가져오기에서 둘 다 조회~종례로 들어간다.
+        // 나누면 같은 하루가 두 건이 되고 파일 열기에서 둘 다 조회~종례로 들어간다.
         // 결시교시 칸이 빈 결석 줄이 '기간 미정'으로 남아 내 기록과 어긋나던 것도 함께 막는다.
         const runs = slotPrompt === 'none'
             ? [{startSlot: HOMEROOM, endSlot: CLOSING}]
@@ -565,7 +565,7 @@ export function compareRecords(appSpans, neisRows) {
  * 어느 쪽도 구분하지 못한 줄은 양쪽이 null인데, 그것을 축이 미정인 내 기록과 비교하면
  * 둘 다 비어 있다는 이유로 일치가 된다. 같은 것이 아니라 같은지를 모르는 것이다.
  * Rust의 `resolve`도 같은 줄을 읽지 못한 줄로 돌려보낸다 — 두 경로가 다른 말을 하면
- * 검증 화면은 일치라 하고 가져오기 화면은 못 읽었다고 한다.
+ * 검증 화면은 일치라 하고 파일 열기 화면은 못 읽었다고 한다.
  */
 export function sameRecord(mine, theirs) {
     if (unreadableCode(mine) || unreadableCode(theirs)) return false

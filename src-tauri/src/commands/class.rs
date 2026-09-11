@@ -214,7 +214,7 @@ pub(crate) fn member_count_on(conn: &Connection, class_id: i64, date: &str) -> R
         .map_err(|e| e.to_string())
 }
 
-/// 그날 명단에서 번호로 학생을 찾는다. 나이스 가져오기가 파일의 번호를 옮길 때 쓴다.
+/// 그날 명단에서 번호로 학생을 찾는다. 나이스 파일 열기가 파일의 번호를 옮길 때 쓴다.
 pub(crate) fn member_by_number_on(
     conn: &Connection,
     class_id: i64,

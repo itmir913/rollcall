@@ -1,5 +1,5 @@
 /**
- * 나이스 가져오기 창.
+ * 나이스 파일 열기 창.
  *
  * 화면이 지켜야 하는 것은 셋이다.
  *   · **왼쪽이 내 기록, 오른쪽이 나이스.** NEIS 검증 화면과 같은 배치여야 한다.
@@ -134,7 +134,7 @@ describe('고르기', () => {
         wrapper.unmount()
     })
 
-    it('할 일이 없으면 가져오기를 누를 수 없다', async () => {
+    it('할 일이 없으면 파일 열기를 누를 수 없다', async () => {
         const {wrapper, store} = build({...PREVIEW, items: [], add: 0, differ: 0, same: 0})
         store.picked = {add: new Set(), replace: new Set()}
         store.markNeis = false

@@ -109,7 +109,7 @@ fn 명단에서_빠져도_지우지_않는다() {
     let student = insert_student_at(&conn, s, 3, 6, 1, "학생1");
     join_class(&conn, class, student);
 
-    // 명렬표 재가져오기와 같은 규칙이다 — 지난 기록이 어느 명단의 것이었는지 남아야 한다.
+    // 명렬표 다시 열기와 같은 규칙이다 — 지난 기록이 어느 명단의 것이었는지 남아야 한다.
     conn.execute(
         "UPDATE class_member SET left_on = '2026-09-01' WHERE class_id = ?1",
         rusqlite::params![class],

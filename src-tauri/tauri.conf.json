@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "출결관리",
-        "width": 1180,
-        "height": 760,
+        "width": 1040,
+        "height": 700,
         "minWidth": 960,
         "minHeight": 600,
         "center": true,

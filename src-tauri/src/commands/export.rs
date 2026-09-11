@@ -419,7 +419,7 @@ const RANGE_SPANS: &str = "WHERE s.class_id = ?1 AND s.date >= ?2 AND s.date <= 
 
 // ── 구현 ──────────────────────────────────────────────────────
 
-/// 기간 안의 모든 기록. 나이스에 가져오기 기능이 없으므로 이 파일은 보관용이다.
+/// 기간 안의 모든 기록. 나이스에 파일을 읽어 들이는 기능이 없으므로 이 파일은 보관용이다.
 pub fn export_spans_csv_impl(
     conn: &Connection,
     class_id: i64,

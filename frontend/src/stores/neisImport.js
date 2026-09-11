@@ -5,7 +5,7 @@ import {useAppStore} from './app'
 import {useAxisStore} from './axis'
 
 /**
- * 나이스 가져오기. **교체가 아니라 차분이다.**
+ * 나이스 파일 열기. **교체가 아니라 차분이다.**
  *
  * 경계는 명렬표와 같다 — 파일 서식은 `services/neisFile.js`가 읽고, "같은가 · 다른가 ·
  * 없는가"라는 판단은 Rust가 한다. 그래야 화면을 고쳐도 업무 규칙이 따라 흔들리지 않는다.
@@ -65,7 +65,7 @@ export const useNeisImportStore = defineStore('neisImport', {
                     rows: read.rows,
                     today: app.today,
                 })
-                // 추가는 기본으로 고른다. 앱에 없는 기록을 넣는 것이 가져오기의 목적이다.
+                // 추가는 기본으로 고른다. 앱에 없는 기록을 넣는 것이 파일 열기의 목적이다.
                 this.picked.add = new Set(
                     this.preview.items.filter((i) => i.verdict === 'add').map((i) => i.key),
                 )

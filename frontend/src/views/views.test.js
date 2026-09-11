@@ -272,7 +272,7 @@ describe('오늘의 출결', () => {
         wrapper.unmount()
     })
 
-    it('가져오기가 실패하면 그 사실을 화면에 남긴다 — 빈 태그 목록으로 두지 않는다', async () => {
+    it('파일 열기가 실패하면 그 사실을 화면에 남긴다 — 빈 태그 목록으로 두지 않는다', async () => {
         const day = useDayStore()
         day.date = '2026-09-10'
         day.grid = {dateLabel: '', maxSlot: 7, rows: [], spans: []}

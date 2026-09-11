@@ -111,7 +111,7 @@ fn main() {
             get_session_roll,
             toggle_subject_absence,
             set_subject_absence_memo,
-            // 나이스 가져오기 — 교체가 아니라 차분이다
+            // 나이스 파일 열기 — 교체가 아니라 차분이다
             preview_neis_import,
             apply_neis_import,
             // 개요 · 통계
