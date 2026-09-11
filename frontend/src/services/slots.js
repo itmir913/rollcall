@@ -34,9 +34,12 @@ export function slotLabel(slot) {
 /**
  * 그 종류에서 고를 수 있는 기간.
  *
- * 결석은 하루 종일이라 고를 것이 없고, 지각은 온 때 하나(조회일 수 없다),
- * 조퇴는 나간 때 하나(종례일 수 없다), 결과는 빠진 교시 여러 개(조회·종례·?는 아니다).
- * 종류가 미정이면 교시를 전부 열어 둔다.
+ * 결석은 하루 종일이라 고를 것이 없고, 지각은 온 때 하나, 조퇴는 나간 때 하나,
+ * 결과는 빠진 교시 여러 개(조회·종례·?는 아니다). 종류가 미정이면 교시를 전부 열어 둔다.
+ *
+ * **지각은 조회를 고를 수 있다.** 지각은 `조회부터 N교시까지`이고, 조회만 놓친 날은
+ * 그 N이 조회다. 나이스 실파일에도 `질병지각 · 결시교시 조회,`가 있었다.
+ * 조퇴에서 종례를 닫아 두는 것은 그대로다 — 그쪽은 실무에서 쓰는 것을 아직 보지 못했다.
  */
 export function allowedSlots(slotPrompt, maxSlot) {
     const periods = slotList(maxSlot).slice(1, -1)
@@ -44,7 +47,7 @@ export function allowedSlots(slotPrompt, maxSlot) {
         case 'none':
             return []
         case 'end':
-            return [...periods, UNKNOWN, CLOSING]
+            return [HOMEROOM, ...periods, UNKNOWN, CLOSING]
         case 'start':
             return [HOMEROOM, ...periods, UNKNOWN]
         case 'multi':

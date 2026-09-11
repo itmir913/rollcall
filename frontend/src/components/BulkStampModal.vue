@@ -111,9 +111,12 @@ function toggle(date) {
 .bulk {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--s-md);
 }
 
+/* 이 창의 7px 둘은 눈금에 없는 값이다. pick 버튼이 나란히 놓이는 자리의 간격은
+   style.css의 .filters · .axis__line · .edit__row가 전부 7px이라 그쪽에 맞춘다.
+   눈금으로 옮기면 같은 버튼인데 창마다 간격이 달라 보인다. */
 .bulk__days {
     display: flex;
     flex-wrap: wrap;

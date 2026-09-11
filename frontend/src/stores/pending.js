@@ -115,24 +115,27 @@ export const usePendingStore = defineStore('pending', {
          *
          * 나이스 저장이 실패하는 날이 있어, 앱만 먼저 등재로 바뀌면 두 곳이 어긋난다.
          * 그래서 모달에서는 복사본을 고치고 여기서만 실제로 저장한다.
+         *
+         * **커맨드는 하나다.** 한 명분이 축 · 기간 · 사유 · 태그 · 등재 표시인데,
+         * 그것을 여기서 차례로 부르면 중간에 실패했을 때 앞의 것은 이미 들어가고
+         * 셋째는 반쯤 고쳐진 채 남는다. 무엇을 어떤 차례로 저장하는지는 업무 규칙이라
+         * Rust가 한 트랜잭션으로 묶는다.
          */
         async saveFocus(items) {
             const app = useAppStore()
             this.error = ''
             try {
-                for (const item of items) {
-                    await invoke('edit_span', {
-                        edit: {
-                            spanId: item.id,
-                            reasonId: item.reasonId,
-                            typeId: item.typeId,
-                            slots: item.slots,
-                        },
-                    })
-                    await invoke('set_span_memo', {spanId: item.id, memo: item.memo ?? ''})
-                    await invoke('set_span_tag', {spanId: item.id, tagId: item.tagId ?? null})
-                    await invoke('set_neis_done', {spanId: item.id, done: true, today: app.today})
-                }
+                await invoke('save_focus_entries', {
+                    entries: items.map((item) => ({
+                        spanId: item.id,
+                        reasonId: item.reasonId ?? null,
+                        typeId: item.typeId ?? null,
+                        slots: item.slots ?? [],
+                        memo: item.memo ?? '',
+                        tagId: item.tagId ?? null,
+                    })),
+                    today: app.today,
+                })
                 await this.fetchNeis()
             } catch (e) {
                 this.error = String(e)

@@ -8,7 +8,7 @@
  * "받은 것을 제대로 그리는가"이지 커맨드 호출이 아니다(그것은 스토어 테스트가 본다).
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
-import {mount} from '@vue/test-utils'
+import {flushPromises, mount} from '@vue/test-utils'
 import {createPinia, setActivePinia} from 'pinia'
 import {createRouter, createWebHashHistory} from 'vue-router'
 import {useAppStore} from '../stores/app'
@@ -25,12 +25,15 @@ import LogView from './LogView.vue'
 import DocsView from './DocsView.vue'
 import NeisView from './NeisView.vue'
 import StatsView from './StatsView.vue'
+import SettingsView from './SettingsView.vue'
 import VerifyView from './VerifyView.vue'
 import UpdateView from './UpdateView.vue'
 
 vi.mock('@tauri-apps/api/core', () => ({invoke: vi.fn().mockResolvedValue([])}))
 vi.mock('@tauri-apps/plugin-dialog', () => ({save: vi.fn(), open: vi.fn()}))
 vi.stubGlobal('__APP_VERSION__', '0.0.0')
+// jsdom에는 matchMedia가 없다. 테마 composable이 "시스템 따름"을 확인하려고 부른다.
+vi.stubGlobal('matchMedia', () => ({matches: false, addEventListener: () => {}}))
 
 const router = createRouter({
     history: createWebHashHistory(),
@@ -115,7 +118,17 @@ describe('개요', () => {
         expect(wrapper.text()).toContain('개요')
         expect(wrapper.text()).toContain('서류 미제출')
         expect(wrapper.text()).toContain('NEIS 미등재')
-        expect(wrapper.findAll('.strip__cell')).toHaveLength(5)
+        // 칸 수만 세면 미제출(11)과 그중 마감 지남(2)을 바꿔 이어도 그대로 지나간다.
+        // 둘은 뜻이 다른 수라 어느 숫자가 어느 이름 아래 오는지까지 본다.
+        const cells = wrapper.findAll('.strip__cell')
+        expect(cells).toHaveLength(5)
+        expect(cells.map((cell) => [cell.find('b').text(), cell.find('span').text()])).toEqual([
+            ['28', '재학'],
+            ['4', '오늘 기록'],
+            ['1', '구분 · 종류 미정'],
+            ['11', '미제출'],
+            ['2', '그중 마감 지남'],
+        ])
     })
 
     it('나이스 목록에도 마감 칸이 있다 — 칸을 없애면 두 목록의 눈높이가 어긋난다', () => {
@@ -127,8 +140,12 @@ describe('개요', () => {
         const wrapper = render(OverviewView)
         const rows = wrapper.findAll('.row')
         expect(rows).toHaveLength(2)
-        expect(rows[0].findAll('span').length).toBe(rows[1].findAll('span').length)
-        expect(wrapper.text()).toContain('마감 없음')
+        // 칸 수만 같으면 순서가 뒤바뀌어도 통과한다. 어느 칸이 몇 번째인지까지 비교한다.
+        const columns = (row) => row.findAll('span').map((cell) => cell.attributes('class'))
+        expect(columns(rows[1])).toEqual(columns(rows[0]))
+        // 서류 쪽 마감은 데이터에서 온다. 나이스 쪽은 마감이 없어 그 자리에 고정 문구가 온다.
+        expect(rows[0].find('.row__due').text()).toBe('마감 2026-09-17')
+        expect(rows[1].find('.row__due').text()).toBe('마감 없음')
     })
 
     it('명단이 없으면 무엇을 해야 하는지 알린다 — 빈 화면으로 두지 않는다', () => {
@@ -180,6 +197,30 @@ describe('오늘의 출결', () => {
         expect(document.querySelector('.modal').textContent).toContain('되돌릴 수 없습니다')
         wrapper.unmount()
     })
+
+    it('가져오기가 실패하면 그 사실을 화면에 남긴다 — 빈 태그 목록으로 두지 않는다', async () => {
+        const day = useDayStore()
+        day.date = '2026-09-10'
+        day.grid = {dateLabel: '', maxSlot: 7, rows: [], spans: []}
+        vi.spyOn(day, 'fetchGrid').mockResolvedValue()
+
+        const axis = useAxisStore()
+        vi.spyOn(axis, 'fetchMemos').mockImplementation(async () => {
+            axis.error = '사유 후보를 읽지 못했습니다.'
+            throw new Error('읽기 실패')
+        })
+        const school = useSchoolStore()
+        vi.spyOn(school, 'fetchAll').mockImplementation(async () => {
+            school.error = '태그를 읽지 못했습니다.'
+            throw new Error('읽기 실패')
+        })
+
+        const wrapper = render(TodayView)
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('사유 후보를 읽지 못했습니다.')
+        expect(wrapper.text()).toContain('태그를 읽지 못했습니다.')
+    })
 })
 
 describe('출결 기록 · 서류 · NEIS', () => {
@@ -192,9 +233,13 @@ describe('출결 기록 · 서류 · NEIS', () => {
             {date: '2026-09-09', dateLabel: '2026.09.09.(수)', enrolled: 28, spans: [span({id: 2})]},
         ]
         const wrapper = render(LogView)
-        expect(wrapper.findAll('.ledger').length).toBeGreaterThanOrEqual(2)
-        expect(wrapper.text()).toContain('2026.09.10.(목)')
-        expect(wrapper.text()).toContain('2026.09.09.(수)')
+        // 하루가 카드 하나다. 두 날을 한 카드에 몰면 카드가 하나로 줄고, 날짜 머리글이
+        // 목록 중간에 섞여 어디까지가 그날인지 흐려진다.
+        const cards = wrapper.findAll('.ledger')
+        expect(cards).toHaveLength(2)
+        expect(cards[0].text()).toContain('2026.09.10.(목)')
+        expect(cards[1].text()).toContain('2026.09.09.(수)')
+        expect(cards.map((card) => card.findAll('.row').length)).toEqual([1, 1])
     })
 
     it('서류 화면은 모은 명단을 그대로 보여준다 — 받은 줄도 자리에 남는다', () => {
@@ -217,6 +262,62 @@ describe('출결 기록 · 서류 · NEIS', () => {
         expect(wrapper.text()).toContain('한 명씩 등재')
         expect(wrapper.text()).toContain('이 날짜 전부 등재')
         expect(wrapper.find('.copy').exists()).toBe(true)
+    })
+})
+
+describe('설정', () => {
+    /** 읽기를 멈춰 세운다. 화면을 그린 직후 스토어가 빈 응답으로 덮이면 볼 것이 없다. */
+    function freezeFetches() {
+        vi.spyOn(useSchoolStore(), 'fetchAll').mockResolvedValue()
+        vi.spyOn(useAxisStore(), 'fetchAll').mockResolvedValue()
+    }
+
+    it('휴업일 지우기는 확인을 거친다 — 행이 사라지는 DELETE다', async () => {
+        freezeFetches()
+        const remove = vi.spyOn(useSchoolStore(), 'removeOffDay').mockResolvedValue()
+
+        const wrapper = render(SettingsView)
+        await wrapper.find('[title="휴업일 지우기"]').trigger('click')
+
+        expect(remove).not.toHaveBeenCalled()
+        expect(document.querySelector('.modal').textContent).toContain('되돌릴 수 없습니다')
+
+        const confirm = [...document.querySelectorAll('.modal__foot button')]
+            .find((button) => button.textContent.trim() === '지우기')
+        confirm.click()
+        await flushPromises()
+
+        expect(remove).toHaveBeenCalledWith(1)
+        wrapper.unmount()
+    })
+
+    it('지우기는 글자가 아니라 휴지통 모양 + 경고색이다', () => {
+        freezeFetches()
+        const wrapper = render(SettingsView)
+        const trash = wrapper.find('[title="휴업일 지우기"]')
+
+        expect(trash.classes()).toContain('btn--danger')
+        expect(trash.find('svg.icon').exists()).toBe(true)
+        expect(trash.text()).toBe('')
+    })
+
+    it('설정을 못 읽으면 그 사실을 화면에 남긴다', async () => {
+        const school = useSchoolStore()
+        vi.spyOn(school, 'fetchAll').mockImplementation(async () => {
+            school.error = '학교 설정을 읽지 못했습니다.'
+            throw new Error('읽기 실패')
+        })
+        const axis = useAxisStore()
+        vi.spyOn(axis, 'fetchAll').mockImplementation(async () => {
+            axis.error = '출결 구분을 읽지 못했습니다.'
+            throw new Error('읽기 실패')
+        })
+
+        const wrapper = render(SettingsView)
+        await flushPromises()
+
+        expect(wrapper.text()).toContain('학교 설정을 읽지 못했습니다.')
+        expect(wrapper.text()).toContain('출결 구분을 읽지 못했습니다.')
     })
 })
 

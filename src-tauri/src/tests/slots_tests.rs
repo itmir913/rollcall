@@ -5,25 +5,120 @@
 //!     같은 토큰이 학교에 따라 유효하기도 무효하기도 하다.
 //!   · 프로그램이 판정하지 않는다는 원칙 — 표현할 수 없는 구간만 거부하고,
 //!     종류와 구간이 어긋나는 것은 통과시킨다.
+//!
+//! 순서 · 표기 · 묶기는 프런트의 `services/slots.js`가 같은 규칙을 따로 구현한다.
+//! 그래서 그 셋은 **`slot_vectors.json` 한 파일**을 양쪽 테스트가 읽어 비교한다.
+//! 기대값을 양쪽에 손으로 베껴 두면 구현이 갈라질 때 테스트도 함께 갈라진다.
+//! 나머지(구간 검사 · 겹침 · slot_prompt)는 Rust에만 있어 여기서만 확인한다.
 
 use crate::slots::*;
+use serde::Deserialize;
+
+// ─── 고정 벡터 ─────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Vectors {
+    slot_list: Vec<SlotListCase>,
+    ordinal: Vec<OrdinalCase>,
+    display: Vec<DisplayCase>,
+    group_runs: Vec<GroupRunsCase>,
+    divergences: Vec<Divergence>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlotListCase {
+    max_slot: usize,
+    slots: Vec<String>,
+    note: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrdinalCase {
+    slot: String,
+    max_slot: usize,
+    /// null이면 순서값이 없다는 뜻. JS는 같은 자리를 -1로 돌려준다.
+    order: Option<usize>,
+    note: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DisplayCase {
+    slot: String,
+    label: String,
+    note: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct GroupRunsCase {
+    periods: Vec<usize>,
+    runs: Vec<(usize, usize)>,
+    note: Option<String>,
+}
+
+/// 두 구현이 실제로 다르게 답하는 자리. 합의된 값이 아니라 현재 값을 적어 둔 것이다.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Divergence {
+    #[serde(rename = "fn")]
+    func: String,
+    slot: String,
+    max_slot: usize,
+    rust: Option<usize>,
+    note: Option<String>,
+}
+
+fn vectors() -> Vectors {
+    serde_json::from_str(include_str!("slot_vectors.json"))
+        .expect("slot_vectors.json을 읽지 못했다")
+}
+
+/// 실패 메시지에 벡터의 설명을 함께 적는다. 어느 줄이 왜 있는지 모르면
+/// 다음 사람이 기대값을 고쳐 통과시키는 쪽을 고른다.
+fn why(note: &Option<String>) -> String {
+    note.as_deref().map(|n| format!(" — {n}")).unwrap_or_default()
+}
+
+#[test]
+fn no_vector_group_is_empty() {
+    // 항목 이름이 바뀌면 아래 반복문이 조용히 한 번도 돌지 않고 통과한다.
+    let v = vectors();
+    assert!(!v.slot_list.is_empty(), "slotList 묶음이 비어 있다");
+    assert!(!v.ordinal.is_empty(), "ordinal 묶음이 비어 있다");
+    assert!(!v.display.is_empty(), "display 묶음이 비어 있다");
+    assert!(!v.group_runs.is_empty(), "groupRuns 묶음이 비어 있다");
+    assert!(!v.divergences.is_empty(), "divergences 묶음이 비어 있다");
+}
 
 // ─── 순서 ──────────────────────────────────────────────────────
 
 #[test]
-fn slot_list_runs_from_homeroom_to_closing() {
-    assert_eq!(
-        slots(7),
-        vec!["조회", "1", "2", "3", "4", "5", "6", "7", "종례"]
-    );
+fn slot_list_matches_the_shared_vectors() {
+    for case in vectors().slot_list {
+        assert_eq!(
+            slots(case.max_slot),
+            case.slots,
+            "max_slot={}의 목록이 고정 벡터와 다르다{}",
+            case.max_slot,
+            why(&case.note)
+        );
+    }
 }
 
 #[test]
-fn slot_list_follows_the_school_setting() {
-    // 최대 교시는 학교가 들고 있는 값이다. 배열에 1~9를 박아 두고 자르지 않는다.
-    assert_eq!(slots(1), vec!["조회", "1", "종례"]);
-    assert_eq!(slots(9).len(), 11);
-    assert_eq!(slots(9).last().unwrap(), "종례");
+fn ordinal_matches_the_shared_vectors() {
+    for case in vectors().ordinal {
+        assert_eq!(
+            ordinal(&case.slot, case.max_slot),
+            case.order,
+            "max_slot={}에서 {:?}의 순서값이 고정 벡터와 다르다{}",
+            case.max_slot,
+            case.slot,
+            why(&case.note)
+        );
+    }
 }
 
 #[test]
@@ -40,59 +135,25 @@ fn ordinal_matches_the_position_in_the_list() {
     }
 }
 
-#[test]
-fn homeroom_is_first_and_closing_is_last() {
-    // 조회와 종례는 설정 대상이 아니라 언제나 하루의 양 끝이다.
-    for max_slot in [1, 5, 7, 9] {
-        assert_eq!(ordinal(HOMEROOM, max_slot), Some(0));
-        assert_eq!(ordinal(CLOSING, max_slot), Some(max_slot + 1));
-    }
-}
-
-// ─── 알 수 없는 토큰 ───────────────────────────────────────────
-
-#[test]
-fn ordinal_rejects_a_period_beyond_the_school_maximum() {
-    // 7교시까지인 학교에서 8교시는 존재하지 않는다.
-    assert_eq!(ordinal("8", 7), None);
-    assert_eq!(ordinal("7", 7), Some(7));
-}
-
-#[test]
-fn the_same_token_depends_on_the_school() {
-    // 같은 "8"이 학교마다 유효하기도 무효하기도 하다.
-    assert_eq!(ordinal("8", 7), None);
-    assert_eq!(ordinal("8", 9), Some(8));
-}
-
-#[test]
-fn ordinal_rejects_tokens_that_are_not_periods() {
-    assert_eq!(ordinal("0", 7), None);
-    assert_eq!(ordinal("-1", 7), None);
-    assert_eq!(ordinal("", 7), None);
-    assert_eq!(ordinal("점심", 7), None);
-    assert_eq!(ordinal(" 3", 7), None);
-    assert_eq!(ordinal(UNKNOWN, 7), None);
-}
-
 // ─── 표기 ──────────────────────────────────────────────────────
 
 #[test]
-fn display_appends_gyosi_only_to_numbers() {
-    assert_eq!(display("5"), "5교시");
-    assert_eq!(display(HOMEROOM), "조회");
-    assert_eq!(display(CLOSING), "종례");
-}
-
-#[test]
-fn display_keeps_the_open_mark_as_is() {
-    // 열린 쪽에 "?교시"라고 적히면 실제 교시처럼 읽힌다.
-    assert_eq!(display(UNKNOWN), "?");
+fn display_matches_the_shared_vectors() {
+    for case in vectors().display {
+        assert_eq!(
+            display(&case.slot),
+            case.label,
+            "{:?}의 표기가 고정 벡터와 다르다{}",
+            case.slot,
+            why(&case.note)
+        );
+    }
 }
 
 #[test]
 fn open_ends_render_as_a_question_mark() {
     // 저장은 NULL이고 화면에만 ?로 적는다.
+    // `format_span`은 기계가 읽는 표기라 프런트에 짝이 없다.
     assert_eq!(format_span(None, None), "? ~ ?");
     assert_eq!(format_span(Some("5"), None), "5 ~ ?");
     assert_eq!(format_span(None, Some("4")), "? ~ 4");
@@ -240,32 +301,34 @@ fn overlap_widens_an_unknown_token_to_the_whole_day() {
 // ─── 이어진 교시 묶기 ──────────────────────────────────────────
 
 #[test]
-fn consecutive_periods_become_one_span() {
-    assert_eq!(group_runs(vec![1, 2, 3]), vec![(1, 3)]);
+fn group_runs_matches_the_shared_vectors() {
+    // 이어지지 않은 것을 한 구간으로 저장하면 사이의 교시가 조용히 포함된다.
+    for case in vectors().group_runs {
+        assert_eq!(
+            group_runs(case.periods.clone()),
+            case.runs,
+            "{:?}를 묶은 결과가 고정 벡터와 다르다{}",
+            case.periods,
+            why(&case.note)
+        );
+    }
 }
 
-#[test]
-fn gapped_periods_become_separate_spans() {
-    // 1,3,5를 한 구간으로 저장하면 2교시와 4교시가 조용히 포함된다.
-    assert_eq!(group_runs(vec![1, 3, 5]), vec![(1, 1), (3, 3), (5, 5)]);
-}
+// ─── 갈라진 자리 ───────────────────────────────────────────────
 
 #[test]
-fn group_runs_sorts_and_dedups_first() {
-    assert_eq!(group_runs(vec![3, 1, 2]), vec![(1, 3)]);
-    assert_eq!(group_runs(vec![2, 3, 2, 3]), vec![(2, 3)]);
-}
-
-#[test]
-fn group_runs_handles_mixed_input() {
-    assert_eq!(
-        group_runs(vec![9, 1, 5, 2, 4, 6]),
-        vec![(1, 2), (4, 6), (9, 9)]
-    );
-}
-
-#[test]
-fn group_runs_handles_the_empty_and_single_cases() {
-    assert!(group_runs(vec![]).is_empty());
-    assert_eq!(group_runs(vec![7]), vec![(7, 7)]);
+fn recorded_divergences_still_behave_as_recorded() {
+    // 두 구현이 다르게 답하는 자리를 벡터 파일에 적어 두었다. 이 테스트는 그 차이를
+    // 옳다고 인정하는 것이 아니라, 어느 한쪽이 말없이 또 움직이는 것을 막는다.
+    // 차이를 없앨 때는 벡터 파일의 divergences 항목을 ordinal 쪽으로 옮긴다.
+    for case in vectors().divergences {
+        assert_eq!(case.func, "ordinal", "아직 ordinal 말고는 기록한 것이 없다");
+        assert_eq!(
+            ordinal(&case.slot, case.max_slot),
+            case.rust,
+            "{:?}에 대한 Rust 쪽 값이 기록과 다르다{}",
+            case.slot,
+            why(&case.note)
+        );
+    }
 }

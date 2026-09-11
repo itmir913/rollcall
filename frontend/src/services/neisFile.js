@@ -59,21 +59,44 @@ export function toIso(value) {
     return null
 }
 
-/** `조회` · `3교시` · `종례` → 우리 토큰. 교시 자리가 아니면 null. */
+/**
+ * `조회` · `3교시` · `종례` → 우리 토큰. 교시 자리가 아니면 null.
+ *
+ * **`0교시`는 받지 않는다.** 이 앱의 하루는 `조회 · 1교시 … N교시 · 종례`라 0교시에
+ * 자리가 없다. `0`으로 읽으면 순서값이 조회와 같아 그 줄이 조용히 `조회`로 바뀌는데,
+ * 0교시를 운영하는 학교가 실제로 있으므로 이름을 바꾸지도 버리지도 않는다 —
+ * `unsupportedSlotText`가 이유를 붙여 교사에게 알린다.
+ */
 export function slotTokenOf(text) {
     const s = String(text ?? '').replace(/\s/g, '')
     if (s === HOMEROOM) return HOMEROOM
     if (s === CLOSING) return CLOSING
     const m = s.match(/^(\d{1,2})교시$/)
-    return m ? String(Number(m[1])) : null
+    return m && Number(m[1]) >= 1 ? String(Number(m[1])) : null
+}
+
+/** 교시 표기이긴 한데 이 앱의 하루에 자리가 없는 것(`0교시`). 아니면 null. */
+export function unsupportedSlotText(text) {
+    const s = String(text ?? '').replace(/\s/g, '')
+    return /^\d{1,2}교시$/.test(s) && slotTokenOf(s) === null ? s : null
 }
 
 /** `조회,1교시,2교시,종례,` → `['조회','1','2','종례']`. 꼬리 쉼표는 나이스가 늘 붙인다. */
 export function parseSlotList(text) {
-    return String(text ?? '')
-        .split(/[,·]/)
+    return splitSlotText(text)
         .map(slotTokenOf)
         .filter((token) => token !== null)
+}
+
+/** 그 문자열에 섞인 `0교시`를 모은다. 조용히 버리지 않고 이유로 말하기 위한 것이다. */
+export function unsupportedSlotsIn(text) {
+    return splitSlotText(text)
+        .map(unsupportedSlotText)
+        .filter((token) => token !== null)
+}
+
+function splitSlotText(text) {
+    return String(text ?? '').split(/[,·]/)
 }
 
 /**
@@ -81,25 +104,48 @@ export function parseSlotList(text) {
  *
  * 규칙은 하나다 — **이어진 것끼리 묶고, 각 묶음의 두 끝이 그 구간이다.**
  *
- * · `조회,1교시,…,7교시,종례` → 조회~종례 (결석)
+ * · `조회,1교시,…,7교시,종례` → 조회~종례 (하루 종일)
  * · `4교시,…,종례`           → 4교시~종례 (조퇴)
  * · `조회,1교시,2교시`        → 조회~2교시 (지각)
  * · `2교시,3교시`            → 2교시~3교시 (결과)
  *
- * **종례의 자리는 그 줄에 적힌 마지막 교시 다음이다.** 학교 설정의 최대 교시로
- * 계산하면 안 된다 — 실제 파일에서 그날 교시 수가 3 · 6 · 7로 제각각이었고(단축수업 ·
- * 시험일), 7을 전제하면 `조회,1,2,3,종례`가 `조회~3교시`와 `종례` 두 조각으로 갈라진다.
+ * **종례가 몇 번째인지는 그날 교시가 몇 개였는지에 달렸고, 파일은 빠진 슬롯만 준다.**
+ * 학교 설정의 최대 교시로 계산하면 안 된다 — 실제 파일에서 그날 교시 수가 1 · 3 · 6 · 7로
+ * 제각각이었고(단축수업 · 시험일), 7을 전제하면 `조회,1,2,3,종례`가 `조회~3교시`와 `종례`
+ * 두 조각으로 갈라진다. 그래서 자리를 이렇게 정한다.
  *
- * 묶음이 둘 이상 나오는 것은 **나이스가 하루 두 구간을 한 줄로 합쳐 내보냈다는 뜻**이다.
- * 실제 파일에 `조회,1교시,6교시,7교시,종례`(1교시까지 지각 + 6교시부터 조퇴)가 있었다.
- * 합쳐진 줄의 출결구분은 하나뿐이라 어느 쪽이 지각인지 파일만으로는 알 수 없다 —
- * 그래서 나누기만 하고 **판정하지 않는다.** 화면이 그 줄에 표시하고 교사가 고친다.
+ *  1. **파일이 그날의 슬롯을 보여주면 그것을 쓴다.** 일일출석부는 머리글에 그날의
+ *     `조회 │ 1교시 … │ 종례`가 전부 적혀 있어 종례의 자리가 확실하다(`daySlots`).
+ *  2. 보여주지 않으면(월별 출결 현황) 그 줄에 적힌 **마지막 교시 다음으로 가정한다.**
+ *     가정이지만 **조건 없이 붙인다.**
+ *
+ * 2를 조건 없이 붙이는 이유는 실제 파일의 모양 때문이다. `7교시,종례`는 보통 날
+ * 마지막 교시에 조퇴한 가장 흔한 줄이고, 여기서 종례를 떼면 `7교시~7교시`와
+ * `종례~종례` 두 건이 되어 이미 올바르게 저장된 `7교시~종례`와 어긋난다. 게다가
+ * `종례~종례` 조퇴는 고르개가 표현할 수 없는 기간이다(조퇴에서 종례는 닫혀 있다).
+ *
+ * 대신 모호한 자리가 하나 남는다 — `조회,1교시,종례`는 교시가 하나뿐인 날의 하루
+ * 종일일 수도, 1교시까지 지각하고 종례를 더 빠진 날일 수도 있다. **파일만으로는
+ * 구별되지 않는다.** 흔한 쪽(그날이 거기서 끝났다)으로 읽는다. 실제 파일에서 그날
+ * 교시 수가 3 · 6 · 7로 제각각이었던 것이 그 근거다.
+ *
+ * 출결구분이 **결석**인 줄은 여기까지 오지 않는다. 결석은 기간을 묻지 않아 언제나
+ * 조회~종례 한 건이고, 그 판단은 종류를 아는 `buildRecords`가 한다.
+ *
+ * 묶음이 둘 이상 나오는 또 한 가지 경우는 **나이스가 하루 두 구간을 한 줄로 합쳐
+ * 내보낸 것**이다. 실제 파일에 `조회,1교시,6교시,7교시,종례`(1교시까지 지각 + 6교시부터
+ * 조퇴)가 있었다. 합쳐진 줄의 출결구분은 하나뿐이라 어느 쪽이 지각인지 파일만으로는
+ * 알 수 없다 — 그래서 나누기만 하고 **판정하지 않는다.** 교사가 고친다.
+ *
+ * @param {string[]} tokens 그 줄에서 빠진 슬롯
+ * @param {string[]|null} daySlots 파일이 보여주는 그날의 슬롯. 모르면 null.
  */
-export function slotRuns(tokens) {
+export function slotRuns(tokens, daySlots = null) {
     if (tokens.length === 0) return []
 
-    const periods = tokens.filter((t) => t !== HOMEROOM && t !== CLOSING).map(Number)
-    const closing = (periods.length ? Math.max(...periods) : 0) + 1
+    const periodsOf = (list) => list.filter((t) => t !== HOMEROOM && t !== CLOSING).map(Number)
+    const known = daySlots ? periodsOf(daySlots) : []
+    const closing = Math.max(0, ...periodsOf(tokens), ...known) + 1
     const ordinalOf = (t) => (t === HOMEROOM ? 0 : t === CLOSING ? closing : Number(t))
     const nameOf = (o) => (o === 0 ? HOMEROOM : o === closing ? CLOSING : String(o))
 
@@ -121,6 +167,11 @@ export function slotRuns(tokens) {
  * 그 사실을 교사에게 알린다.
  *
  * 긴 것부터 맞춘다 — `출석인정`이 `인정`보다 먼저 걸려야 `출석인정결석`이 제대로 구분된다.
+ *
+ * **띄어쓰기는 양쪽에서 지운다.** 파일의 표기만 다듬으면 `출석 인정`으로 저장한 학교에서
+ * 파일의 `출석인정결석`이 영영 맞지 않아 모르는 표기로 쌓인다. 다만 **돌려주는 것은
+ * DB에 적힌 그대로**다 — 이 문자열로 Rust가 축을 다시 찾기 때문에, 다듬은 쪽을 넘기면
+ * 그 줄이 읽지 못한 줄이 된다.
  */
 export function splitCodeLabel(label, reasons = [], types = []) {
     const text = String(label ?? '').replace(/\s/g, '')
@@ -128,13 +179,16 @@ export function splitCodeLabel(label, reasons = [], types = []) {
     if (!text) return empty
 
     const longestFirst = (list) =>
-        [...list].map((v) => String(v?.label ?? v)).sort((a, b) => b.length - a.length)
+        [...list]
+            .map((v) => String(v?.label ?? v))
+            .map((label) => ({label, key: label.replace(/\s/g, '')}))
+            .sort((a, b) => b.key.length - a.key.length)
 
-    const typeLabel = longestFirst(types).find((t) => t && text.endsWith(t)) ?? null
-    if (!typeLabel) return empty
-    const head = text.slice(0, text.length - typeLabel.length)
-    const reasonLabel = longestFirst(reasons).find((r) => r && head === r) ?? null
-    return reasonLabel ? {reasonLabel, typeLabel} : empty
+    const typeHit = longestFirst(types).find(({key}) => key && text.endsWith(key)) ?? null
+    if (!typeHit) return empty
+    const head = text.slice(0, text.length - typeHit.key.length)
+    const reasonHit = longestFirst(reasons).find(({key}) => key && head === key) ?? null
+    return reasonHit ? {reasonLabel: reasonHit.label, typeLabel: typeHit.label} : empty
 }
 
 /** 그 종류가 교사에게 묻는 교시가 어느 쪽인지. 문구를 Rust와 맞추는 데 쓴다. */
@@ -147,21 +201,28 @@ function promptOf(typeLabel, types) {
  * 머리글 한 줄에서 열 위치를 찾는다. 머리글이 아니면 null.
  *
  * 교시 열은 별칭이 아니라 모양으로 알아본다 — 학교마다 교시 수가 다르다.
+ * **그래서 이 목록이 곧 그날의 슬롯이다.** `slotRuns`가 종례의 자리를 여기서 안다.
+ *
+ * 다루지 못하는 교시 열(`0교시`)은 `unsupported`로 따로 돌려준다. 모른 척하면 그 칸의
+ * 결시 표시가 통째로 사라져, 0교시에 빠진 학생이 아무 말 없이 출석으로 남는다.
  */
 export function mapNeisColumns(row) {
     const columns = {}
     const slots = []
+    const unsupported = []
     row.forEach((cell, index) => {
         const key = matchNeisColumn(cell)
         if (key && columns[key] === undefined) columns[key] = index
         const token = slotTokenOf(cell)
         if (token) slots.push({index, token})
+        const odd = token ? null : unsupportedSlotText(cell)
+        if (odd) unsupported.push({index, text: odd})
     })
     const usable =
         columns.number !== undefined &&
         columns.name !== undefined &&
         (columns.code !== undefined || columns.slots !== undefined || slots.length > 0)
-    return usable ? {columns, slots} : null
+    return usable ? {columns, slots, unsupported} : null
 }
 
 /**
@@ -194,6 +255,12 @@ export function captionOf(row) {
  * 표시는 한두 글자이고 꼬리는 그보다 길다. 꼬리 줄은 결국 출결 내용이 비어 있어
  * 데이터가 아닌 줄로 걸러지므로, 꼬리를 따로 알아보는 규칙은 두지 않는다 —
  * 두면 사유가 `9 / 1`인 줄까지 조용히 버린다.
+ *
+ * **여기에는 가정이 하나 들어 있다 — 칸이 비면 출석, 한두 글자가 있으면 결시.**
+ * 확인한 일일출석부가 하나뿐이라(2026-09-11) 그 파일이 쓰는 `/` 말고 다른 표기를
+ * 본 적이 없어, 표기를 목록으로 두지 않고 "무엇이든 적혀 있으면 빠진 것"으로 읽는다.
+ * 나이스가 **출석을 표시하는** 서식(`○` 같은 것)을 내보내면 이 가정이 뒤집혀 반 전체가
+ * 결석이 된다. 교시 열이 통째로 이상할 때 가장 먼저 확인할 곳이 여기다.
  */
 function isMark(cell) {
     const text = String(cell ?? '').trim()
@@ -242,6 +309,7 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
 
     let columns = null
     let slotColumns = []
+    let oddColumns = []
     let caption = null
     let lastNumber = null
     let lastName = ''
@@ -255,6 +323,7 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
         if (header) {
             columns = header.columns
             slotColumns = header.slots
+            oddColumns = header.unsupported
             // 페이지가 바뀌었다. 앞 페이지의 마지막 학생을 이어받지 않는다.
             lastNumber = null
             lastName = ''
@@ -264,12 +333,20 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
         const cell = (key) =>
             !columns || columns[key] === undefined ? '' : (row[columns[key]] ?? '')
         const codeText = cell('code')
+        // 교시 열로 주는 서식(일일출석부)인가, 결시교시 문자열로 주는 서식(월별)인가.
+        const byColumn = Boolean(columns) && columns.slots === undefined
         const slotTokens = !columns
             ? []
-            : columns.slots === undefined
+            : byColumn
                 ? slotColumns.filter(({index: at}) => isMark(row[at])).map(({token}) => token)
                 : parseSlotList(cell('slots'))
-        const hasContent = codeText !== '' || slotTokens.length > 0
+        // 이 앱이 다루지 못하는 교시(`0교시`). 빼고 읽으면 기간이 조용히 밀린다.
+        const oddSlots = !columns
+            ? []
+            : byColumn
+                ? oddColumns.filter(({index: at}) => isMark(row[at])).map(({text}) => text)
+                : unsupportedSlotsIn(cell('slots'))
+        const hasContent = codeText !== '' || slotTokens.length > 0 || oddSlots.length > 0
 
         // **캡션은 출결 내용이 없는 줄에서만 읽는다.** 사유 칸의 `※ …`가 그 줄을
         // 삼키면 출결 한 건이 조용히 사라진다.
@@ -312,11 +389,26 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
             return
         }
 
+        // **`0교시`는 이 앱의 하루에 자리가 없다.** 빼고 읽으면 기간이 한 칸 밀린 채
+        // 저장되므로 그 줄은 넘기고 무엇이 걸렸는지 말한다. 그 한 건은 교사가 직접 넣는다.
+        if (oddSlots.length) {
+            skipped.push({line, why: `이 앱이 다루지 못하는 교시입니다: ${oddSlots.join(', ')}`})
+            return
+        }
+
         const {reasonLabel, typeLabel} = splitCodeLabel(codeText, reasons, types)
         if (codeText && !typeLabel) unknownCodes.add(codeText)
         const slotPrompt = promptOf(typeLabel, types)
 
-        const runs = slotRuns(slotTokens)
+        // 일일출석부는 머리글에 그날의 슬롯이 전부 적혀 있다. 종례의 자리를 가정하지 않는다.
+        const daySlots = byColumn && slotColumns.length ? slotColumns.map(({token}) => token) : null
+        // **결석은 기간을 묻지 않는다.** 앱도 Rust도 결석을 조회~종례 한 건으로 저장하므로
+        // (`ranges_for` · `day_slots`), 결시교시가 어떻게 적혀 있든 한 건이다. 여기서
+        // 나누면 같은 하루가 두 건이 되고 가져오기에서 둘 다 조회~종례로 들어간다.
+        // 결시교시 칸이 빈 결석 줄이 '기간 미정'으로 남아 내 기록과 어긋나던 것도 함께 막는다.
+        const runs = slotPrompt === 'none'
+            ? [{startSlot: HOMEROOM, endSlot: CLOSING}]
+            : slotRuns(slotTokens, daySlots)
         const spans = runs.length ? runs : [{startSlot: null, endSlot: null}]
         for (const run of spans) {
             rows.push({
@@ -332,7 +424,8 @@ export function buildRecords(table, {parser = 'exceljs', reasons = [], types = [
                 endSlot: run.endSlot,
                 spanText: spanTextOf(slotPrompt, run.startSlot, run.endSlot),
                 detail: cell('detail') || null,
-                // 나이스가 하루 두 구간을 한 줄로 합쳐 내보낸 것이다. 판정하지 않고 알린다.
+                // 한 줄이 두 구간으로 나뉘었다 — 나이스가 합쳐 내보냈거나, 종례를 앞
+                // 교시에 붙일 근거가 파일에 없거나. 어느 쪽이든 판정하지 않고 알린다.
                 merged: spans.length > 1,
             })
         }
@@ -468,8 +561,15 @@ export function compareRecords(appSpans, neisRows) {
  *
  * 기간까지 보는 이유는, 같은 날 같은 학생의 `1교시부터 조퇴`와 `5교시부터 조퇴`가
  * 축만으로는 구별되지 않기 때문이다. 나이스 파일이 결시교시를 주므로 비교할 수 있다.
+ *
+ * **구분하지 못한 표기는 일치라고 말하지 않는다.** 출결 표기가 적혀 있는데 두 축
+ * 어느 쪽도 구분하지 못한 줄은 양쪽이 null인데, 그것을 축이 미정인 내 기록과 비교하면
+ * 둘 다 비어 있다는 이유로 일치가 된다. 같은 것이 아니라 같은지를 모르는 것이다.
+ * Rust의 `resolve`도 같은 줄을 읽지 못한 줄로 돌려보낸다 — 두 경로가 다른 말을 하면
+ * 검증 화면은 일치라 하고 가져오기 화면은 못 읽었다고 한다.
  */
 export function sameRecord(mine, theirs) {
+    if (unreadableCode(mine) || unreadableCode(theirs)) return false
     const norm = (v) => String(v ?? '').replace(/\s/g, '')
     return (
         norm(mine.reasonLabel) === norm(theirs.reasonLabel) &&
@@ -477,6 +577,16 @@ export function sameRecord(mine, theirs) {
         norm(mine.startSlot) === norm(theirs.startSlot) &&
         norm(mine.endSlot) === norm(theirs.endSlot)
     )
+}
+
+/**
+ * 출결 표기는 있는데 두 축 어느 쪽도 구분하지 못한 기록인가.
+ *
+ * 내 기록의 `codeLabel`은 두 축이 다 정해졌을 때만 채워지므로(Rust `SpanItem`) 이
+ * 조건에 걸리는 것은 나이스 줄뿐이다. 그래도 양쪽에 같이 물어 두 경로를 맞춘다.
+ */
+function unreadableCode(row) {
+    return Boolean(row?.codeLabel) && !row?.reasonLabel && !row?.typeLabel
 }
 
 /** 정렬 기준. 번호순과 날짜순 둘뿐이다. */

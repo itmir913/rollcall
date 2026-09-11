@@ -43,6 +43,8 @@ async function pickRule(ruleId) {
     })
 }
 
+// 한쪽이 실패해도 나머지는 그린다. 실패는 각 스토어의 error에 담겨 화면 아래
+// UiNotice가 그대로 보여준다 — 규정 목록이 빈 것이 "규정이 없다"로 읽히면 안 된다.
 onMounted(async () => {
     if (!app.ready) return
     await Promise.all([
@@ -156,6 +158,7 @@ function saveCsv(kind, args, suggested) {
         </UiLedger>
 
         <UiNotice :text="stats.error" kind="error"/>
+        <UiNotice :text="school.error" kind="error"/>
         <UiNotice :text="download.error" kind="error"/>
         <UiNotice :text="download.done" kind="ok"/>
     </UiPage>

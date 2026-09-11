@@ -243,6 +243,187 @@ fn mark_day_neis_leaves_no_open_transaction() {
     conn.execute_batch("ROLLBACK").unwrap();
 }
 
+// ── 집중 등재 저장 ────────────────────────────────────────────
+
+/// 저장한 뒤 그 구간이 어떻게 남았는지. 튜플로 늘어놓으면 어느 자리가 무엇인지
+/// 세어 가며 읽어야 한다.
+#[derive(Debug, PartialEq)]
+struct SpanState {
+    reason_id: Option<i64>,
+    type_id: Option<i64>,
+    start_slot: Option<String>,
+    end_slot: Option<String>,
+    tag_id: Option<i64>,
+    memo: String,
+    neis_done: i64,
+}
+
+fn span_state(conn: &Connection, span_id: i64) -> SpanState {
+    conn.query_row(
+        "SELECT reason_id, type_id, start_slot, end_slot, tag_id, memo, neis_done
+           FROM absence_span WHERE id = ?1",
+        rusqlite::params![span_id],
+        |r| {
+            Ok(SpanState {
+                reason_id: r.get(0)?,
+                type_id: r.get(1)?,
+                start_slot: r.get(2)?,
+                end_slot: r.get(3)?,
+                tag_id: r.get(4)?,
+                memo: r.get(5)?,
+                neis_done: r.get(6)?,
+            })
+        },
+    )
+    .unwrap()
+}
+
+fn focus_entry(
+    span_id: i64,
+    reason_id: Option<i64>,
+    type_id: Option<i64>,
+    slots: &[&str],
+    memo: &str,
+    tag_id: Option<i64>,
+) -> crate::types::FocusEntry {
+    crate::types::FocusEntry {
+        edit: crate::types::SpanEdit {
+            span_id,
+            reason_id,
+            type_id,
+            slots: slots.iter().map(|s| s.to_string()).collect(),
+        },
+        memo: memo.to_string(),
+        tag_id,
+    }
+}
+
+/// 한 명분만 저장한다.
+fn save_one(conn: &Connection, entry: crate::types::FocusEntry) -> Result<(), String> {
+    save_focus_entries_impl(conn, &[entry], TODAY)
+}
+
+/// 축 · 기간 · 사유 · 태그 · 등재 표시가 한 번에 들어간다. 화면이 커맨드를
+/// 네 번 조립하면 그 차례가 곧 업무 규칙이 되어 프런트로 샌다.
+#[test]
+fn save_focus_entries_applies_every_field_at_once() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 1, "김가온");
+    let span = add_span(&conn, student, "2026-09-10", None);
+    let (reason, r#type) = axes(&conn, "질병", "지각");
+    let tag = tag_id(&conn, "체험학습");
+
+    save_one(
+        &conn,
+        focus_entry(span, reason, r#type, &["2"], "늦잠", Some(tag)),
+    )
+    .unwrap();
+
+    // 지각은 조회부터 도착 교시까지다.
+    assert_eq!(
+        span_state(&conn, span),
+        SpanState {
+            reason_id: reason,
+            type_id: r#type,
+            start_slot: Some("조회".to_string()),
+            end_slot: Some("2".to_string()),
+            tag_id: Some(tag),
+            memo: "늦잠".to_string(),
+            neis_done: 1,
+        }
+    );
+    assert_eq!(neis_flags(&conn, span), (1, Some(TODAY.to_string())));
+}
+
+/// 태그를 뗀 것도 그대로 저장한다. 비어 있는 값을 건너뛰면 교사가 지운 태그가
+/// 화면에만 사라지고 DB에는 남는다.
+#[test]
+fn save_focus_entries_clears_what_the_teacher_emptied() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 1, "김가온");
+    let span = add_span(&conn, student, "2026-09-10", None);
+    let tag = tag_id(&conn, "생리통");
+    save_one(&conn, focus_entry(span, None, None, &[], "복통", Some(tag))).unwrap();
+
+    save_one(&conn, focus_entry(span, None, None, &[], "", None)).unwrap();
+
+    let after = span_state(&conn, span);
+    assert_eq!(after.tag_id, None);
+    assert_eq!(after.memo, "");
+}
+
+/// 가운데 한 건이 실패하면 앞의 것도 남지 않는다. 절반만 들어간 저장은
+/// 무엇이 저장됐는지 교사가 확인할 방법이 없다.
+#[test]
+fn save_focus_entries_rolls_back_when_one_item_fails() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 1, "김가온");
+    let first = add_span(&conn, student, "2026-09-10", None);
+    let (reason, r#type) = axes(&conn, "질병", "지각");
+
+    let err = save_focus_entries_impl(
+        &conn,
+        &[
+            focus_entry(first, reason, r#type, &["2"], "늦잠", None),
+            focus_entry(999, reason, r#type, &["2"], "", None),
+        ],
+        TODAY,
+    )
+    .unwrap_err();
+    assert!(err.contains("999"), "{err}");
+
+    // 첫 건은 손대기 전 그대로다.
+    assert_eq!(
+        span_state(&conn, first),
+        SpanState {
+            reason_id: None,
+            type_id: None,
+            start_slot: None,
+            end_slot: None,
+            tag_id: None,
+            memo: String::new(),
+            neis_done: 0,
+        }
+    );
+}
+
+#[test]
+fn save_focus_entries_leaves_no_open_transaction() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 1, "김가온");
+    let span = add_span(&conn, student, "2026-09-10", None);
+
+    save_one(&conn, focus_entry(span, None, None, &[], "", None)).unwrap();
+    // 실패한 뒤에도 열린 채 남으면 안 된다 — 커넥션이 하나뿐이라 세션 내내 이어진다.
+    assert!(save_one(&conn, focus_entry(999, None, None, &[], "", None)).is_err());
+
+    conn.execute_batch("BEGIN")
+        .expect("트랜잭션이 열린 채 남았다");
+    conn.execute_batch("ROLLBACK").unwrap();
+}
+
+/// 기준일이 깨져 있으면 저장 자체를 거절한다. 등재한 날짜가 비면 언제 넣었는지가 사라진다.
+#[test]
+fn save_focus_entries_rejects_a_malformed_today() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 1, "김가온");
+    let span = add_span(&conn, student, "2026-09-10", None);
+
+    assert!(save_focus_entries_impl(
+        &conn,
+        &[focus_entry(span, None, None, &[], "늦잠", None)],
+        "9월 11일"
+    )
+    .is_err());
+    let after = span_state(&conn, span);
+    assert_eq!((after.memo, after.neis_done), (String::new(), 0));
+}
+
 // ── 서류 미제출 목록 ──────────────────────────────────────────
 
 #[test]

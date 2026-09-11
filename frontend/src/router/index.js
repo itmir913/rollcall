@@ -1,7 +1,8 @@
 import {createRouter, createWebHashHistory} from 'vue-router'
+import {useAppStore} from '../stores/app'
 
 /**
- * 흐름: Welcome → 초기 설정 → 개요(`/`)
+ * 흐름: Welcome → 개요(`/`)
  *
  * 사이드바는 **빈도로 나눈다.** 개요가 입구이고, 그 아래 넷이 매일 여는 화면이다 —
  * 찍고(오늘의 출결), 확인하고(출결 기록), 서류를 챙기고(서류 미제출자),
@@ -50,4 +51,24 @@ export const NAV_FOOT = [
     {to: '/update', label: '업데이트 확인'},
 ]
 
-export default createRouter({history: createWebHashHistory(), routes})
+/**
+ * 첫 실행이면 Welcome으로 되돌린다. 판단만 떼어 둔 것은 라우터를 띄우지 않고도
+ * 확인할 수 있어야 하기 때문이다.
+ *
+ * 부팅을 **기다리지 않는다.** 부팅 전에는 그대로 통과시키고, 끝난 뒤의 이동에서만
+ * 판단한다 — 가드에서 `boot()`를 부르면 App.vue가 부른 것과 겹쳐 `init_db`가 두 번 돌고,
+ * 열 때마다 백업 파일이 둘씩 쌓인다.
+ *
+ * Welcome 자신은 되돌리지 않는다. 되돌리면 그 자리에서 이동이 끝나지 않는다.
+ * 학급이 정해지면 `needsWelcome`이 꺼지므로 [시작하기]가 개요로 넘어간다.
+ */
+export function welcomeRedirect(app, to) {
+    if (!app.booted || to.name === 'welcome') return true
+    return app.needsWelcome ? {name: 'welcome'} : true
+}
+
+const router = createRouter({history: createWebHashHistory(), routes})
+
+router.beforeEach((to) => welcomeRedirect(useAppStore(), to))
+
+export default router

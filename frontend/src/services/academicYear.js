@@ -1,23 +1,17 @@
 /**
- * 학년도 계산. Rust의 `due::academic_year_of` · `semester_of`와 같은 규칙이다.
+ * 학년도와 달력 연도의 변환.
  *
- * 학년도는 3월에 열린다. `getFullYear()`를 그대로 쓰면 2027년 2월에 "2027학년도"를
- * 만들어 버리는데, 그날은 아직 2026학년도다.
+ * 학년도는 3월에 열린다. 그래서 학년도와 달만 가지고는 달력 연도가 정해지지
+ * 않는다 — 2026학년도 1월은 2027년이다. 월 필터가 고른 달을 날짜로 바꿀 때
+ * 이 차이를 놓치면 1·2월 기록이 한 해 전 날짜로 조회된다.
+ *
+ * 날짜가 속한 학년도를 되돌리는 계산은 여기에 두지 않는다. 그것은 Rust의
+ * `due::academic_year_of`가 하고, 화면은 이미 학년도를 알고 있는 상태로 들어온다.
  */
-
-/** 그 날짜가 속한 학년도. 1·2월은 전년도다. */
-export function academicYearOf(date) {
-    return date.getMonth() + 1 >= 3 ? date.getFullYear() : date.getFullYear() - 1
-}
 
 /** 학년도와 달로 실제 달력 연도를 만든다. 1·2월은 이듬해다. */
 export function calendarYearOf(academicYear, month) {
     return month >= 3 ? academicYear : academicYear + 1
-}
-
-/** 3~8월이 1학기, 9~2월이 2학기다. */
-export function semesterOf(month) {
-    return month >= 3 && month <= 8 ? 1 : 2
 }
 
 /** 월 필터의 차례. 학년도가 3월에 열리므로 1월·2월이 뒤에 온다. */

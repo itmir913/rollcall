@@ -11,6 +11,8 @@ import {invoke} from '@tauri-apps/api/core'
 export const useAppStore = defineStore('app', {
     state: () => ({
         booted: false,
+        /** 이번 실행에서 DB 파일이 새로 만들어졌는가. `init_db`가 알려준다. */
+        firstRun: false,
         error: '',
         schoolId: null,
         school: null,
@@ -24,6 +26,16 @@ export const useAppStore = defineStore('app', {
     getters: {
         /** 학생 명단과 학급이 정해졌는가. 아니면 첫 실행 흐름으로 보낸다. */
         ready: (s) => Boolean(s.schoolId && s.yearId && s.grade && s.classNo),
+        /**
+         * Welcome 화면으로 보내야 하는가. 흐름은 `Welcome → 개요`다.
+         *
+         * **첫 실행 여부가 아니라 학급이 정해졌는지로 판단한다.** `firstRun`은 DB 파일을
+         * 이번 실행에서 만들었다는 뜻이라, 교사가 Welcome을 끝내지 않고 앱을 닫으면
+         * 다음 실행부터 영영 거짓이 된다. 그러면 사이드바에 항목도 없는 Welcome에
+         * 다시 닿을 길이 없어진다. 학급이 없으면 할 수 있는 일도 없으므로, 그 상태가
+         * 곧 "아직 시작하지 않았다"는 뜻이다.
+         */
+        needsWelcome: (s) => s.booted && !s.ready,
         /** 하루의 마지막 교시. 화면이 앱 상수를 알지 않게 한다. */
         maxSlot: (s) => s.school?.maxSlot ?? 7,
         currentYear: (s) => s.years.find((y) => y.id === s.yearId) ?? null,
@@ -40,7 +52,11 @@ export const useAppStore = defineStore('app', {
         async boot() {
             this.error = ''
             try {
-                await invoke('init_db')
+                // 파일이 이번에 만들어졌는지는 `init_db`만 안다. 버리면 첫 실행인지
+                // 알 방법이 없어, 처음 켠 교사가 안내 없이 개요에 놓인다.
+                const status = await invoke('init_db')
+                this.firstRun = Boolean(status?.created)
+
                 const schools = await invoke('get_schools')
                 this.schoolId = schools[0]?.id ?? null
                 this.school = schools[0] ?? null

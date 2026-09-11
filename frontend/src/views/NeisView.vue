@@ -12,7 +12,6 @@
 import {onMounted, ref} from 'vue'
 import {useAppStore} from '../stores/app'
 import {useAxisStore} from '../stores/axis'
-import {useDayStore} from '../stores/day'
 import {MONTHS, calendarYearOf} from '../services/academicYear'
 import {usePendingStore} from '../stores/pending'
 import {useSchoolStore} from '../stores/school'
@@ -22,7 +21,6 @@ import {useDownloadStore} from '../stores/download'
 
 const app = useAppStore()
 const axis = useAxisStore()
-const day = useDayStore()
 const pending = usePendingStore()
 const school = useSchoolStore()
 const download = useDownloadStore()
@@ -59,6 +57,8 @@ async function saveFocus(items) {
     })
 }
 
+// 한쪽이 실패해도 나머지는 그린다. 실패는 각 스토어의 error에 담겨 화면 아래
+// UiNotice가 그대로 보여준다 — 사유 후보와 태그가 빈 것이 "없다"로 읽히면 안 된다.
 onMounted(async () => {
     if (!app.ready) return
     await Promise.all([
@@ -134,6 +134,8 @@ function saveCsv(kind, args, suggested) {
         </div>
 
         <UiNotice :text="pending.error" kind="error"/>
+        <UiNotice :text="axis.error" kind="error"/>
+        <UiNotice :text="school.error" kind="error"/>
 
         <FocusEntryModal :day="focusDay" :max-slot="app.maxSlot" :memos="axis.memos"
                          :open="Boolean(focusDay)" :reasons="axis.reasons" :tags="school.tags"

@@ -91,18 +91,51 @@ describe('NEIS 미등재', () => {
         expect(pending.neisDays[1].spans[0].neisDone).toBe(false)
     })
 
-    it('집중 등재는 저장할 때 한꺼번에 반영한다', async () => {
+    /**
+     * 커맨드 이름만 세면 `spanId`가 틀려도, 메모가 빠져도 통과한다. 고친 값이
+     * 그대로 넘어가는지까지 본다 — 저장이 조용히 절반만 되는 것이 이 화면의 위험이다.
+     */
+    it('집중 등재는 한 커맨드로 한꺼번에 저장한다', async () => {
         readyApp()
         const pending = usePendingStore()
         await pending.saveFocus([
             {id: 1, reasonId: 10, typeId: 1, slots: ['2'], memo: '늦잠', tagId: null},
+            {id: 2, reasonId: 11, typeId: 3, slots: [], memo: '', tagId: 7},
         ])
 
-        const called = invoke.mock.calls.map((c) => c[0])
-        expect(called).toContain('edit_span')
-        expect(called).toContain('set_span_memo')
-        expect(called).toContain('set_span_tag')
-        expect(called).toContain('set_neis_done')
+        expect(invoke).toHaveBeenCalledWith('save_focus_entries', {
+            entries: [
+                {spanId: 1, reasonId: 10, typeId: 1, slots: ['2'], memo: '늦잠', tagId: null},
+                {spanId: 2, reasonId: 11, typeId: 3, slots: [], memo: '', tagId: 7},
+            ],
+            today: '2026-09-10',
+        })
+        // 저장이 끝나야 목록을 다시 모은다. 등재한 날은 미등재 목록에서 빠져야 한다.
+        expect(invoke.mock.calls.map((c) => c[0])).toEqual([
+            'save_focus_entries',
+            'get_neis_pending',
+        ])
+    })
+
+    /**
+     * 한 건이라도 실패하면 Rust가 통째로 되돌린다. 그래서 화면의 목록은
+     * 고치기 전 그대로가 맞다 — 절반만 반영된 목록을 그려 두면 교사가 무엇을
+     * 다시 넣어야 하는지 알 수 없다.
+     */
+    it('집중 등재가 실패하면 목록을 건드리지 않고 다시 던진다', async () => {
+        readyApp()
+        const pending = usePendingStore()
+        pending.neisDays = [{date: '2026-09-09', spans: [{id: 1, neisDone: false, memo: ''}]}]
+        invoke.mockRejectedValue('출결 기록을 찾을 수 없습니다: 2')
+
+        await expect(
+            pending.saveFocus([{id: 1, reasonId: 10, typeId: 1, slots: ['2'], memo: '늦잠'}]),
+        ).rejects.toBeTruthy()
+
+        expect(pending.error).toContain('출결 기록을 찾을 수 없습니다')
+        expect(pending.neisDays[0].spans[0]).toEqual({id: 1, neisDone: false, memo: ''})
+        // 실패한 저장 뒤에 목록을 다시 부르지 않는다 — 들어간 것이 없다.
+        expect(invoke.mock.calls.map((c) => c[0])).toEqual(['save_focus_entries'])
     })
 
     it('실패는 error에 담고 다시 던진다', async () => {

@@ -2,7 +2,11 @@
  * 교시 규칙 테스트.
  *
  * 이 규칙이 Rust의 slots.rs와 갈라지면 조용히 엉뚱한 기간이 저장된다.
- * 그래서 양쪽에 같은 경계를 둔다 — 여기를 고칠 때는 slots.rs도 함께 본다.
+ * 순서 · 표기 · 묶기는 두 구현이 같은 규칙을 따로 만든 자리라, 기대값을 양쪽에
+ * 베껴 두는 대신 **고정 벡터 파일 하나**(`src-tauri/src/tests/slot_vectors.json`)를
+ * 양쪽 테스트가 읽는다. 베껴 두면 구현이 갈라질 때 테스트도 함께 갈라진다.
+ *
+ * 나머지(고를 수 있는 기간 · 되돌리기)는 프런트에만 있는 규칙이라 여기서만 확인한다.
  */
 import {describe, expect, it} from 'vitest'
 import {
@@ -19,15 +23,72 @@ import {
     slotOrder,
 } from './slots'
 import {axisPhrase, spanPhrase, stampPhrase} from './phrase'
+/** Rust 테스트가 읽는 것과 같은 파일이다. 복사본을 두면 복사본부터 갈라진다. */
+import vectors from '../../../src-tauri/src/tests/slot_vectors.json'
 
-describe('slotList', () => {
-    it('조회와 종례가 하루의 양 끝이다', () => {
-        expect(slotList(7)).toEqual([HOMEROOM, '1', '2', '3', '4', '5', '6', '7', CLOSING])
+/** 벡터의 null은 순서값이 없다는 뜻이다. Rust는 None, 이쪽은 -1로 돌려준다. */
+const noOrder = (order) => order ?? -1
+
+/** 실패했을 때 그 줄이 왜 있는지 함께 보여준다. */
+const why = (note) => (note ? ` — ${note}` : '')
+
+describe('고정 벡터 — slots.rs와 같은 파일을 읽는다', () => {
+    it('묶음이 하나도 비어 있지 않다', () => {
+        // 항목 이름이 바뀌면 아래 반복문이 조용히 한 번도 돌지 않고 통과한다.
+        const groups = ['slotList', 'ordinal', 'display', 'groupRuns', 'jsOnlyGroupRuns', 'divergences']
+        for (const key of groups) {
+            expect(vectors[key]?.length, `${key} 묶음이 비어 있다`).toBeGreaterThan(0)
+        }
     })
 
-    it('최대 교시는 학교 설정이라 값에 따라 늘고 준다', () => {
-        expect(slotList(3)).toEqual([HOMEROOM, '1', '2', '3', CLOSING])
-        expect(slotList(9)).toHaveLength(11)
+    it('하루의 차례가 벡터와 같다', () => {
+        for (const c of vectors.slotList) {
+            expect(slotList(c.maxSlot), `maxSlot=${c.maxSlot}${why(c.note)}`).toEqual(c.slots)
+        }
+    })
+
+    it('슬롯의 순서값이 벡터와 같다', () => {
+        for (const c of vectors.ordinal) {
+            expect(
+                slotOrder(c.slot, c.maxSlot),
+                `maxSlot=${c.maxSlot}에서 ${JSON.stringify(c.slot)}${why(c.note)}`,
+            ).toBe(noOrder(c.order))
+        }
+    })
+
+    it('표기가 벡터와 같다', () => {
+        for (const c of vectors.display) {
+            expect(slotLabel(c.slot), `${JSON.stringify(c.slot)}${why(c.note)}`).toBe(c.label)
+        }
+    })
+
+    it('이어진 교시를 묶은 결과가 벡터와 같다', () => {
+        // Rust의 group_runs는 이미 숫자인 순서값을 받는다. 이쪽은 화면 버튼이 넘기는
+        // 문자열 토큰을 받으므로 같은 벡터를 문자열로 바꾸어 넣는다.
+        for (const c of vectors.groupRuns) {
+            const slots = c.periods.map(String)
+            expect(groupRuns(slots), `${JSON.stringify(slots)}${why(c.note)}`).toEqual(c.runs)
+        }
+    })
+
+    it('교시가 아닌 토큰은 세지 않는다 — 이쪽에만 있는 규칙이다', () => {
+        // Rust group_runs에는 이미 걸러진 순서값만 도달하므로 같은 값을 요구하면
+        // 거짓 대응이 된다. 그래서 벡터 파일에도 이 묶음만 따로 두었다.
+        for (const c of vectors.jsOnlyGroupRuns) {
+            expect(groupRuns(c.slots), `${JSON.stringify(c.slots)}${why(c.note)}`).toEqual(c.runs)
+        }
+    })
+
+    it('갈라진 자리는 기록된 값 그대로다', () => {
+        // 두 구현이 다르게 답하는 자리를 벡터 파일에 적어 두었다. 이 테스트는 그 차이를
+        // 옳다고 인정하는 것이 아니라, 어느 한쪽이 말없이 또 움직이는 것을 막는다.
+        for (const c of vectors.divergences) {
+            expect(c.fn).toBe('ordinal')
+            expect(
+                slotOrder(c.slot, c.maxSlot),
+                `${JSON.stringify(c.slot)}${why(c.note)}`,
+            ).toBe(noOrder(c.js))
+        }
     })
 })
 
@@ -36,9 +97,11 @@ describe('allowedSlots', () => {
         expect(allowedSlots('none', 7)).toEqual([])
     })
 
-    it('지각에는 조회가 없다. 조회에 이미 왔으면 지각이 아니다', () => {
+    it('지각은 조회도 고른다 — 조회만 놓친 날이 있다', () => {
+        // 지각은 `조회부터 N교시까지`이고, 조회만 놓쳤으면 그 N이 조회다.
+        // 나이스 실파일에도 `질병지각 · 결시교시 조회,`가 있었다.
         const allowed = allowedSlots('end', 7)
-        expect(allowed).not.toContain(HOMEROOM)
+        expect(allowed).toContain(HOMEROOM)
         expect(allowed).toContain(CLOSING)
         expect(allowed).toContain(UNKNOWN)
     })
@@ -62,24 +125,6 @@ describe('allowedSlots', () => {
     })
 })
 
-describe('groupRuns', () => {
-    it('이어진 교시는 한 구간이다', () => {
-        expect(groupRuns(['1', '2', '3'])).toEqual([[1, 3]])
-    })
-
-    it('떨어진 교시는 각각 구간이다 — 이어지지 않은 것을 묶으면 사이가 조용히 포함된다', () => {
-        expect(groupRuns(['1', '3', '5'])).toEqual([[1, 1], [3, 3], [5, 5]])
-    })
-
-    it('순서가 뒤섞이거나 중복돼도 정리한다', () => {
-        expect(groupRuns(['3', '1', '2', '2'])).toEqual([[1, 3]])
-    })
-
-    it('교시가 아닌 토큰은 세지 않는다', () => {
-        expect(groupRuns([HOMEROOM, UNKNOWN, CLOSING])).toEqual([])
-    })
-})
-
 describe('keepUsable', () => {
     it('종류를 바꿔 못 쓰는 기간이 되면 남기지 않는다', () => {
         expect(keepUsable([CLOSING], 'start', 7)).toEqual([])
@@ -94,23 +139,7 @@ describe('keepUsable', () => {
     })
 })
 
-describe('slotOrder · slotLabel', () => {
-    it('최대 교시 밖은 순서가 없다', () => {
-        expect(slotOrder('8', 7)).toBe(-1)
-        expect(slotOrder('7', 7)).toBe(7)
-    })
-
-    it('조회는 처음, 종례는 끝이다', () => {
-        expect(slotOrder(HOMEROOM, 7)).toBe(0)
-        expect(slotOrder(CLOSING, 7)).toBe(8)
-    })
-
-    it('교시에만 "교시"를 붙인다', () => {
-        expect(slotLabel('5')).toBe('5교시')
-        expect(slotLabel(HOMEROOM)).toBe(HOMEROOM)
-        expect(slotLabel(UNKNOWN)).toBe(UNKNOWN)
-    })
-
+describe('isMulti', () => {
     it('여러 교시를 고르는 것은 결과뿐이다', () => {
         expect(isMulti('multi')).toBe(true)
         expect(isMulti('end')).toBe(false)
@@ -192,6 +221,7 @@ describe('picksOf — 저장된 구간을 버튼 선택으로', () => {
     it('아무것도 건드리지 않고 저장해도 기간이 그대로다', () => {
         // Rust `ranges_for`가 이 목록으로 같은 구간을 다시 만들어야 한다.
         for (const s of [
+            span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: HOMEROOM}),
             span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: '3'}),
             span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: null}),
             span({slotPrompt: 'start', startSlot: '4', endSlot: CLOSING}),
@@ -203,16 +233,11 @@ describe('picksOf — 저장된 구간을 버튼 선택으로', () => {
         }
     })
 
-    it('조회까지인 지각은 되돌려도 고르개가 받아 주지 않는다 — 미해결', () => {
-        // 나이스 실파일에 `질병지각 · 결시교시 조회,`가 있고, 가져오기는 그대로 저장한다.
-        // 그런데 고르개는 지각에서 조회를 열지 않기로 되어 있어(교사가 정한 규칙),
-        // 수정 모달에서 종류를 바꿨다 되돌리면 이 값이 미정으로 떨어진다.
-        //
-        // 열어야 하는지는 실무 판단이라 앱이 임의로 바꾸지 않는다. 그 사실을 여기
-        // 적어 둔다 — 규칙이 바뀌면 이 테스트가 먼저 깨져 다시 보게 된다.
+    it('조회까지인 지각도 되돌려 다시 저장할 수 있다', () => {
+        // 나이스 실파일의 `질병지각 · 결시교시 조회,`. 종류를 바꿨다 되돌려도
+        // 살아남아야 한다 — 살아남지 못하면 가져온 기록이 수정 모달에서 지워진다.
         const late = span({slotPrompt: 'end', startSlot: HOMEROOM, endSlot: HOMEROOM})
         expect(picksOf(late, 7)).toEqual([HOMEROOM])
-        expect(allowedSlots('end', 7)).not.toContain(HOMEROOM)
-        expect(keepUsable(picksOf(late, 7), 'end', 7)).toEqual([])
+        expect(keepUsable(picksOf(late, 7), 'end', 7)).toEqual([HOMEROOM])
     })
 })

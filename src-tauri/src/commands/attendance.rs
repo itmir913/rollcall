@@ -458,7 +458,7 @@ fn insert_span(
 
 /// 서류 제출 마감. **만들 때 계산해 박는다** — 설정을 바꿔도 과거 기록의 마감이
 /// 소급 변경되지 않아야 하기 때문이다.
-fn due_for(
+pub(crate) fn due_for(
     date: NaiveDate,
     settings: &SchoolSettings,
     off_days: &HashSet<NaiveDate>,

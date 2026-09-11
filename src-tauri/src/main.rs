@@ -86,6 +86,7 @@ fn main() {
             set_doc_done,
             set_neis_done,
             mark_day_neis,
+            save_focus_entries,
             get_doc_pending,
             get_neis_pending,
             // 나이스 가져오기 — 교체가 아니라 차분이다

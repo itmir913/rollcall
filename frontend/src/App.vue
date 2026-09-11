@@ -7,7 +7,7 @@
  * 대조하는 것이다. 설정과 업데이트는 업무가 아니므로 맨 아래 고정이다.
  */
 import {onMounted} from 'vue'
-import {useRoute} from 'vue-router'
+import {useRoute, useRouter} from 'vue-router'
 import {NAV_FOOT, NAV_GROUPS} from './router'
 import {useAppStore} from './stores/app'
 import {useAxisStore} from './stores/axis'
@@ -15,6 +15,7 @@ import {useHomeStore} from './stores/home'
 import {UiNotice} from './components/ui'
 
 const route = useRoute()
+const router = useRouter()
 const app = useAppStore()
 const axis = useAxisStore()
 const home = useHomeStore()
@@ -28,6 +29,13 @@ function badgeOf(key) {
 onMounted(async () => {
     try {
         await app.boot()
+        // **여기서 보내야 첫 실행에 닿는다.** 라우터 가드는 부팅보다 먼저 도는
+        // 최초 이동을 잡지 못한다 — 그때는 아직 무엇도 알지 못하기 때문이다.
+        // 부팅 전에는 아래 RouterView가 아무것도 그리지 않아 개요가 번쩍이지 않는다.
+        if (app.needsWelcome) {
+            await router.replace({name: 'welcome'})
+            return
+        }
         if (!app.ready) return
         await Promise.all([axis.fetchAll(), home.fetchSummary()])
     } catch {

@@ -49,10 +49,10 @@ describe('축 카드', () => {
         expect(slotButtons(wrapper).every((b) => b.attributes('disabled') !== undefined)).toBe(true)
     })
 
-    it('지각에는 조회가 없다. 조회에 이미 왔으면 지각이 아니다', () => {
+    it('지각은 조회도 고른다 — 조회부터 N교시까지가 지각이다', () => {
         const wrapper = build({reasonId: 10, typeId: 1, slots: []})
         const homeroom = slotButtons(wrapper).find((b) => labelOf(b) === '조회')
-        expect(homeroom.attributes('disabled')).toBeDefined()
+        expect(homeroom.attributes('disabled')).toBeUndefined()
     })
 
     it('조퇴에는 종례가 없다. 종례까지 있었으면 조퇴가 아니다', () => {
@@ -70,14 +70,24 @@ describe('축 카드', () => {
     })
 
     it('종류를 바꿔 못 쓰는 기간이 되면 미정으로 되돌린다', async () => {
-        // 조퇴로 종례까지 고른 상태에서 지각으로 바꾸면 그 기간은 쓸 수 없다.
-        const wrapper = build({reasonId: 10, typeId: 2, slots: ['조회']})
+        // 지각으로 종례까지 고른 상태에서 조퇴로 바꾸면 그 기간은 쓸 수 없다.
+        const wrapper = build({reasonId: 10, typeId: 1, slots: ['종례']})
         await slotButtons(wrapper) // 렌더를 기다린다
         const typeButtons = wrapper.findAll('.axis__line')[0].findAll('button')
-        await typeButtons.find((b) => b.text() === '지각').trigger('click')
+        await typeButtons.find((b) => b.text() === '조퇴').trigger('click')
 
         const emitted = wrapper.emitted('update:modelValue').at(-1)[0]
         expect(emitted.slots).toEqual([])
+    })
+
+    it('종류를 바꿔도 쓸 수 있는 기간은 그대로 남는다', async () => {
+        // 조퇴에서 조회를 고른 뒤 지각으로 바꾸면, 이제 지각도 조회를 받으므로 남는다.
+        const wrapper = build({reasonId: 10, typeId: 2, slots: ['조회']})
+        await slotButtons(wrapper)
+        const typeButtons = wrapper.findAll('.axis__line')[0].findAll('button')
+        await typeButtons.find((b) => b.text() === '지각').trigger('click')
+
+        expect(wrapper.emitted('update:modelValue').at(-1)[0].slots).toEqual(['조회'])
     })
 
     it('결과만 여러 교시가 켜진다', async () => {

@@ -12,15 +12,21 @@
 //! 겹침 표시나 마감 계산이 화면마다 갈라진다. 조건과 별칭은 아래 상수 한 묶음에
 //! 모아 두었다 — 그쪽 질의가 별칭을 바꾸면 고칠 자리가 거기뿐이다.
 //!
+//! 집중 등재의 저장도 여기 있다. 한 명분이 축 · 기간 · 사유 · 태그 · 등재 표시이고,
+//! **그것을 한 트랜잭션으로 묶는 것이 이 화면의 전제**다 — 모달은 [저장]을 누르기
+//! 전까지 아무것도 쓰지 않는다고 약속한다.
+//!
 //! `today`는 화면이 넘긴다. 커맨드 안에서 서버 시계를 읽지 않는다 — 자정 언저리나
 //! 지난 날짜를 정리하는 중에 화면이 보는 날짜와 저장되는 날짜가 어긋나기 때문이다.
 
-use super::attendance::load_spans;
+use super::attendance::{
+    load_spans, max_slot_of, ranges_for, set_span_memo_impl, set_span_tag_impl,
+};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::due::{days_overdue, format_date, format_korean, parse_date};
-use crate::state::DbState;
-use crate::types::{DayGroup, SpanItem};
+use crate::state::{constraint_err, DbState};
+use crate::types::{DayGroup, FocusEntry, SpanEdit, SpanItem};
 use chrono::NaiveDate;
 use rusqlite::{Connection, ToSql};
 use std::collections::BTreeMap;
@@ -162,6 +168,117 @@ pub fn mark_day_neis_impl(
             )
             .map_err(|e| e.to_string())?;
         Ok(changed as i64)
+    })
+}
+
+// ── 집중 등재 저장 ────────────────────────────────────────────
+
+/// 그 구간이 속한 학교와, 고른 종류가 물어야 하는 기간이 어느 쪽인지.
+///
+/// 종류는 **DB에서 읽는다** — 라벨 '결석'으로 비교하면 교사가 종류를 추가하는 순간 틀린다.
+fn span_context(
+    conn: &Connection,
+    span_id: i64,
+    type_id: Option<i64>,
+) -> Result<(i64, Option<String>), String> {
+    let school_id = conn
+        .query_row(
+            "SELECT st.school_id FROM absence_span s
+               JOIN student st ON st.id = s.student_id
+              WHERE s.id = ?1",
+            rusqlite::params![span_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                format!("출결 기록을 찾을 수 없습니다: {span_id}")
+            }
+            other => other.to_string(),
+        })?;
+    let Some(id) = type_id else {
+        return Ok((school_id, None));
+    };
+    let prompt = conn
+        .query_row(
+            "SELECT slot_prompt FROM attendance_type WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get::<_, String>(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => format!("출결 종류를 찾을 수 없습니다: {id}"),
+            other => other.to_string(),
+        })?;
+    Ok((school_id, Some(prompt)))
+}
+
+/// 두 축과 기간을 고친다. **트랜잭션을 열지 않는다.**
+///
+/// `attendance::edit_span_impl`과 같은 일을 하지만 그쪽은 스스로 `with_transaction`을
+/// 연다. SQLite는 트랜잭션을 겹쳐 열 수 없어, 여러 건을 한 트랜잭션으로 묶는 이 경로에서는
+/// 그대로 부를 수 없다. **`edit_span_impl`에서 트랜잭션을 분리하면 이 함수는 지운다.**
+///
+/// 고른 교시를 구간으로 바꾸는 판단은 그쪽과 **같은 `ranges_for`**를 쓴다. 그 규칙까지
+/// 한 벌 더 두면 수정 모달로 고친 것과 이 화면으로 고친 것이 조용히 갈라진다.
+///
+/// 마감은 다시 계산하지 않는다 — `edit_span_impl`과 같다. 이미 교사가 학부모에게
+/// 말해 둔 날짜라, 축을 고쳤다고 소급해 움직이면 그 약속이 달라진다.
+fn edit_axis_in_tx(conn: &Connection, edit: &SpanEdit) -> Result<(), String> {
+    let (school_id, prompt) = span_context(conn, edit.span_id, edit.type_id)?;
+    let max_slot = max_slot_of(conn, school_id)?;
+    let ranges = ranges_for(prompt.as_deref(), &edit.slots, max_slot as usize)?;
+
+    // 한 행은 한 구간이다. 1,3,5처럼 이어지지 않은 교시는 담을 자리가 없다.
+    if ranges.len() > 1 {
+        return Err(
+            "이어지지 않은 교시는 한 구간으로 고칠 수 없습니다. 지운 뒤 다시 찍어주세요."
+                .to_string(),
+        );
+    }
+    let (start, end) = ranges.into_iter().next().unwrap();
+
+    let changed = conn
+        .execute(
+            "UPDATE absence_span
+             SET reason_id = ?1, type_id = ?2, start_slot = ?3, end_slot = ?4
+             WHERE id = ?5",
+            rusqlite::params![
+                edit.reason_id,
+                edit.type_id,
+                start.as_deref(),
+                end.as_deref(),
+                edit.span_id
+            ],
+        )
+        .map_err(|e| constraint_err(&e, "이미 같은 구간이 있습니다."))?;
+    if changed == 0 {
+        return Err(format!("출결 기록을 찾을 수 없습니다: {}", edit.span_id));
+    }
+    Ok(())
+}
+
+/// 집중 등재에서 고친 것을 한꺼번에 저장한다. **한 트랜잭션이다.**
+///
+/// 모달은 [저장]을 누르기 전까지 아무것도 쓰지 않는다는 약속으로 만들어졌다.
+/// 나이스 쪽 저장이 실패하는 날이 있어, 앱만 먼저 등재로 바뀌면 두 곳이 어긋난다.
+/// 항목마다 커맨드를 따로 부르면 셋째에서 실패했을 때 앞의 둘은 이미 들어가고
+/// 셋째만 반쯤 고쳐진 채 남아, 무엇이 저장됐는지 교사가 확인할 방법이 없다.
+///
+/// 어느 저장을 어떤 차례로 부르는지는 업무 규칙이므로 화면이 조립하지 않는다.
+pub fn save_focus_entries_impl(
+    conn: &Connection,
+    entries: &[FocusEntry],
+    today: &str,
+) -> Result<(), String> {
+    let today = iso(today)?;
+    with_transaction(conn, || {
+        for entry in entries {
+            let span_id = entry.edit.span_id;
+            edit_axis_in_tx(conn, &entry.edit)?;
+            set_span_memo_impl(conn, span_id, &entry.memo)?;
+            set_span_tag_impl(conn, span_id, entry.tag_id)?;
+            set_neis_done_impl(conn, span_id, true, &today)?;
+        }
+        Ok(())
     })
 }
 
@@ -318,6 +435,15 @@ pub fn mark_day_neis(
     with_conn(&db, |c| {
         mark_day_neis_impl(c, school_id, year_id, grade, class_no, &date, &today)
     })
+}
+
+#[tauri::command]
+pub fn save_focus_entries(
+    db: State<DbState>,
+    entries: Vec<FocusEntry>,
+    today: String,
+) -> Result<(), String> {
+    with_conn(&db, |c| save_focus_entries_impl(c, &entries, &today))
 }
 
 #[tauri::command]

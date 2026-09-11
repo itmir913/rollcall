@@ -148,7 +148,7 @@ onMounted(() => {
 .roster {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--s-lg);
     width: 100%;
 }
 

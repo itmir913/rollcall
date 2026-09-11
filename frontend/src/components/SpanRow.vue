@@ -20,7 +20,9 @@ const props = defineProps({
     editable: {type: Boolean, default: true},
 })
 
-const emit = defineEmits(['fix', 'drop', 'toggleExpand', 'updateMemo', 'updateTag'])
+// 지우기는 여기서 알리지 않는다. 휴지통은 화면마다 `tail` 슬롯에 놓이고, 그 버튼이
+// 그 화면의 확인 모달을 연다 — 줄이 다시 한 번 중계하면 자리가 둘이 된다.
+const emit = defineEmits(['fix', 'toggleExpand', 'updateMemo', 'updateTag'])
 
 const draft = ref(props.span.memo ?? '')
 

@@ -11,10 +11,10 @@
 //! 않는 이유는, 담아 두면 그 사이에 다른 화면에서 바뀐 기록을 못 본 채로 적용하기
 //! 때문이다. 줄 순번(`key`)만 오가고 판단은 적용 시점의 DB로 다시 한다.
 
-use super::attendance::{load_spans, school_settings, span_text};
+use super::attendance::{due_for, load_spans, school_settings, span_text};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
-use crate::due::{self, format_date, format_korean, parse_date};
+use crate::due::{format_date, format_korean, parse_date};
 use crate::slots;
 use crate::state::DbState;
 use crate::types::{
@@ -85,13 +85,23 @@ fn axis_by_label(
 ///
 /// 학교마다 나이스 표기가 조금씩 다르다(`인정결석` / `출석인정결석`). 그 차이를
 /// 파서에 적어 두면 학교가 늘 때마다 코드를 고쳐야 하므로 **데이터로** 흡수한다.
-fn axis_by_alias(conn: &Connection, raw: &str) -> Result<Option<(i64, i64)>, String> {
+///
+/// **`axis_by_label`과 같은 자로 날짜를 건다.** 코드는 마감 후 추가라, 마감한 코드에
+/// 붙은 별칭이 그 뒤에도 계속 맞으면 9월 줄이 작년 코드의 두 축으로 들어간다.
+/// 그 구간은 그날 살아 있던 코드와 이어지지 않아, 다 채워진 기록인데도 화면의
+/// 코드 이름이 빈칸으로 나온다.
+fn axis_by_alias(
+    conn: &Connection,
+    raw: &str,
+    on_date: &str,
+) -> Result<Option<(i64, i64)>, String> {
     conn.query_row(
         "SELECT c.reason_id, c.type_id
            FROM code_alias a JOIN attendance_code c ON c.id = a.code_id
           WHERE REPLACE(a.raw, ' ', '') = ?1
-          LIMIT 1",
-        params![raw.replace(' ', "")],
+            AND c.valid_from <= ?2 AND (c.valid_to IS NULL OR ?2 < c.valid_to)
+          ORDER BY c.id LIMIT 1",
+        params![raw.replace(' ', ""), on_date],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )
     .map(Some)
@@ -179,6 +189,23 @@ fn unreadable(key: usize, row: &NeisRowInput, why: &str) -> NeisDiffItem {
     }
 }
 
+/// 기간을 묻지 않는 종류(`none`, 결석)는 언제나 조회~종례다.
+///
+/// 앱은 결석을 조회~종례로 저장하는데(`ranges_for`), 나이스 파일에는 결시교시 칸이
+/// 빈 줄이 온다. 그대로 두면 화면에 양쪽 다 "하루 종일"로 보이는 두 줄이 '다름'으로
+/// 남고, 교체해 NULL이 들어가면 `stamp_span_impl`의 `find_exact`가 그 건을 찾지 못해
+/// 같은 조합 재클릭(무르기)이 멎는다. 그래서 **비교도 저장도 같은 자로 맞춘다.**
+fn day_slots<'a>(
+    slot_prompt: Option<&str>,
+    start: Option<&'a str>,
+    end: Option<&'a str>,
+) -> (Option<&'a str>, Option<&'a str>) {
+    if slot_prompt == Some("none") {
+        return (Some(slots::HOMEROOM), Some(slots::CLOSING));
+    }
+    (start, end)
+}
+
 /// 파일의 줄을 DB 식별자로 옮긴다. 못 옮긴 줄은 **조용히 넘기지 않고** 그대로 돌려준다.
 fn resolve(
     conn: &Connection,
@@ -217,9 +244,12 @@ fn resolve(
         };
         if reason_id.is_none() || type_id.is_none() {
             if let Some(raw) = row.code_label.as_deref() {
-                if let Some((r, t)) = axis_by_alias(conn, raw)? {
-                    reason_id = Some(r);
-                    type_id = Some(t);
+                if let Some((r, t)) = axis_by_alias(conn, raw, &date)? {
+                    // **비어 있는 축만 채운다.** 라벨로 맞춘 축은 그날 목록에서 찾은
+                    // 것이라 확실한데, 별칭이 두 축을 한꺼번에 덮으면 파일이 분명히
+                    // 적어 둔 구분이 별칭표의 다른 구분으로 조용히 바뀐다.
+                    reason_id = reason_id.or(Some(r));
+                    type_id = type_id.or(Some(t));
                 }
             }
         }
@@ -232,6 +262,26 @@ fn resolve(
                     row.code_label.as_deref().unwrap_or("")
                 ),
             ));
+            continue;
+        }
+
+        // 파일이 적어 둔 축을 하나라도 못 옮겼으면 **읽지 못한 줄이다.**
+        //
+        // 한쪽만 맞은 줄을 "질병 미정"으로 넣으면 파일이 분명히 말한 절반을 앱이 버린
+        // 것이 되고, 교사는 무엇이 빠졌는지 화면에서 알 방법이 없다. 빈 축이 "아직 안
+        // 정했다"는 뜻인 것은 교사가 직접 찍을 때이고, 파일에서 온 줄은 그 뜻이 아니다.
+        // 그래서 어느 쪽을 못 찾았는지 이름을 적어 미리보기로 돌려준다.
+        let missed = [
+            (reason_id, "구분", row.reason_label.as_deref()),
+            (type_id, "종류", row.type_label.as_deref()),
+        ]
+        .into_iter()
+        .find_map(|(id, axis, label)| match (id, label) {
+            (None, Some(label)) => Some(format!("그날 목록에 없는 {axis}입니다: {label}")),
+            _ => None,
+        });
+        if let Some(why) = missed {
+            bad.push(unreadable(key, row, &why));
             continue;
         }
 
@@ -250,22 +300,23 @@ fn resolve(
         let reason_label = label_of(conn, "attendance_reason", reason_id)?;
         let type_label = label_of(conn, "attendance_type", type_id)?;
         let prompt = slot_prompt_of(conn, type_id)?;
+        let (start_slot, end_slot) = day_slots(
+            prompt.as_deref(),
+            row.start_slot.as_deref(),
+            row.end_slot.as_deref(),
+        );
         ok.push(Resolved {
             key,
             student_id,
             number: row.number,
             name,
             axis: axis_text(reason_label.as_deref(), type_label.as_deref()),
-            span: span_text(
-                prompt.as_deref(),
-                row.start_slot.as_deref(),
-                row.end_slot.as_deref(),
-            ),
+            span: span_text(prompt.as_deref(), start_slot, end_slot),
             date,
             reason_id,
             type_id,
-            start_slot: row.start_slot.clone(),
-            end_slot: row.end_slot.clone(),
+            start_slot: start_slot.map(str::to_string),
+            end_slot: end_slot.map(str::to_string),
             detail: row.detail.clone(),
         });
     }
@@ -273,10 +324,16 @@ fn resolve(
 }
 
 fn same_span(a: &Resolved, b: &SpanItem) -> bool {
+    // 파일 쪽은 `resolve`에서 이미 맞춰 두었고, 앱 쪽도 같은 자로 잰다.
+    let (start, end) = day_slots(
+        b.slot_prompt.as_deref(),
+        b.start_slot.as_deref(),
+        b.end_slot.as_deref(),
+    );
     a.reason_id == b.reason_id
         && a.type_id == b.type_id
-        && a.start_slot == b.start_slot
-        && a.end_slot == b.end_slot
+        && a.start_slot.as_deref() == start
+        && a.end_slot.as_deref() == end
 }
 
 fn item_of(row: &Resolved, verdict: &str, mine: Option<&SpanItem>) -> NeisDiffItem {
@@ -423,6 +480,20 @@ fn diff(
 
 // ── 적용 ──────────────────────────────────────────────────────
 
+/// 짝지어진 내 기록의 id. `item_of`가 same · differ에는 반드시 담는다.
+///
+/// 그래도 꺼내는 자리에서 확인하는 이유는, 비어 있다면 차분이 어긋났다는 뜻이라
+/// **조용히 넘길 일이 아니기** 때문이다. 한 건을 건너뛰면 교사는 고른 것이 왜
+/// 들어가지 않았는지 알 방법이 없다.
+fn paired_span(item: &NeisDiffItem) -> Result<i64, String> {
+    item.span_id.ok_or_else(|| {
+        format!(
+            "고칠 대상을 찾지 못했습니다: {} {}번",
+            item.date_label, item.number
+        )
+    })
+}
+
 /// 교사가 고른 것만 적용한다. **한 트랜잭션이다** — 절반만 들어간 가져오기는 없다.
 ///
 /// 메모는 비어 있을 때만 채운다. 나이스의 사유로 교사가 쓴 문장을 덮으면, 파일을
@@ -456,13 +527,9 @@ pub fn apply_neis_import_impl(
 
             match item.verdict.as_str() {
                 "add" if picked_add.contains(&item.key) => {
-                    let date = parse_date(&hit.date)?;
-                    let due = format_date(due::due_date(
-                        date,
-                        settings.due_days,
-                        settings.due_skip_offdays,
-                        &off_days,
-                    ));
+                    // 마감 계산은 `attendance.rs`의 것을 그대로 쓴다. 같은 규칙을 두
+                    // 벌 두면 한쪽만 고쳐져, 찍어 넣은 건과 가져온 건의 마감이 갈라진다.
+                    let due = due_for(parse_date(&hit.date)?, &settings, &off_days);
                     conn.execute(
                         "INSERT INTO absence_span
                            (student_id, date, reason_id, type_id, start_slot, end_slot,
@@ -485,36 +552,47 @@ pub fn apply_neis_import_impl(
                     added += 1;
                 }
                 "differ" if picked_replace.contains(&item.key) => {
-                    let Some(span_id) = item.span_id else { continue };
+                    let span_id = paired_span(item)?;
                     // 마감은 다시 계산하지 않는다. 이미 박아 둔 값이고, 소급 변경되면
-                    // 교사가 학생에게 말한 날짜와 화면이 달라진다.
-                    conn.execute(
-                        "UPDATE absence_span
-                            SET reason_id = ?1, type_id = ?2, start_slot = ?3, end_slot = ?4,
-                                memo = CASE WHEN memo = '' THEN ?5 ELSE memo END,
-                                neis_done = 1, neis_done_on = ?6
-                          WHERE id = ?7",
-                        params![
-                            hit.reason_id,
-                            hit.type_id,
-                            hit.start_slot,
-                            hit.end_slot,
-                            hit.detail.clone().unwrap_or_default(),
-                            today,
-                            span_id
-                        ],
-                    )
-                    .map_err(|e| e.to_string())?;
+                    // 교사가 학생에게 말한 날짜와 화면이 달라진다. 태그와 서류도
+                    // 건드리지 않는다 — 나이스가 모르는 값이다.
+                    let changed = conn
+                        .execute(
+                            "UPDATE absence_span
+                                SET reason_id = ?1, type_id = ?2, start_slot = ?3, end_slot = ?4,
+                                    memo = CASE WHEN memo = '' THEN ?5 ELSE memo END,
+                                    neis_done = 1, neis_done_on = ?6
+                              WHERE id = ?7",
+                            params![
+                                hit.reason_id,
+                                hit.type_id,
+                                hit.start_slot,
+                                hit.end_slot,
+                                hit.detail.clone().unwrap_or_default(),
+                                today,
+                                span_id
+                            ],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    if changed == 0 {
+                        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+                    }
                     done.insert(item.key);
                     replaced += 1;
                 }
                 "same" if choice.mark_neis && !item.neis_done => {
-                    let Some(span_id) = item.span_id else { continue };
-                    conn.execute(
-                        "UPDATE absence_span SET neis_done = 1, neis_done_on = ?1 WHERE id = ?2",
-                        params![today, span_id],
-                    )
-                    .map_err(|e| e.to_string())?;
+                    let span_id = paired_span(item)?;
+                    let changed = conn
+                        .execute(
+                            "UPDATE absence_span
+                                SET neis_done = 1, neis_done_on = ?1
+                              WHERE id = ?2",
+                            params![today, span_id],
+                        )
+                        .map_err(|e| e.to_string())?;
+                    if changed == 0 {
+                        return Err(format!("출결 기록을 찾을 수 없습니다: {span_id}"));
+                    }
                     marked += 1;
                 }
                 _ => {}

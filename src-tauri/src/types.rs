@@ -294,6 +294,24 @@ pub struct SpanEdit {
     pub slots: Vec<String>,
 }
 
+/// 집중 등재에서 한 명분으로 넘어오는 값. **그 구간의 최종 상태다.**
+///
+/// 모달은 복사본을 고치고 [저장]에서만 넘긴다. 그래서 축 · 기간 · 사유 · 태그를
+/// 한 번에 받아 통째로 반영하고 나이스 등재로 표시한다.
+///
+/// 축과 기간은 `SpanEdit`을 그대로 펼쳐 쓴다. 같은 값을 다시 적으면 수정 모달이
+/// 보내는 것과 이 화면이 보내는 것이 갈라지고, 갈라진 쪽만 고쳐진다.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusEntry {
+    #[serde(flatten)]
+    pub edit: SpanEdit,
+    #[serde(default)]
+    pub memo: String,
+    #[serde(default)]
+    pub tag_id: Option<i64>,
+}
+
 // ── 화면별 묶음 ───────────────────────────────────────────────
 
 /// 오늘의 출결 격자 한 행. 재학 중이면 구간이 없어도 행이 나온다.

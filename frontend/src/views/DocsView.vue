@@ -48,6 +48,8 @@ async function saveFix(patch) {
     await pending.fetchDocs()
 }
 
+// 한쪽이 실패해도 나머지는 그린다. 실패는 각 스토어의 error에 담겨 화면 아래
+// UiNotice가 그대로 보여준다 — 사유 후보와 태그가 빈 것이 "없다"로 읽히면 안 된다.
 onMounted(async () => {
     if (!app.ready) return
     await Promise.all([
@@ -136,6 +138,8 @@ async function setTag(span, tagId) {
 
         <UiNotice :text="pending.error" kind="error"/>
         <UiNotice :text="day.error" kind="error"/>
+        <UiNotice :text="axis.error" kind="error"/>
+        <UiNotice :text="school.error" kind="error"/>
 
         <SpanEditModal :max-slot="app.maxSlot" :open="Boolean(fixing)" :reasons="axis.reasons"
                        :span="fixing" :types="axis.types"

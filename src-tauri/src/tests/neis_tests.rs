@@ -44,19 +44,49 @@ fn sick_absence(number: i64) -> NeisRowInput {
     row(number, "질병결석", "질병", "결석", Some("조회"), Some("종례"))
 }
 
-fn stamp(conn: &Connection, student_id: i64, reason: &str, kind: &str, slots: &[&str]) {
+/// 같은 줄을 다른 날짜로. 나이스 파일 하나에 여러 날이 섞여 오는 것이 보통이다.
+fn on_date(mut row: NeisRowInput, date: &str) -> NeisRowInput {
+    row.date = date.to_string();
+    row
+}
+
+fn stamp_on(
+    conn: &Connection,
+    student_id: i64,
+    date: &str,
+    reason: &str,
+    kind: &str,
+    slots: &[&str],
+) {
     let (reason_id, type_id) = axes(conn, reason, kind);
     stamp_span_impl(
         conn,
         &StampInput {
             student_id,
-            date: DATE.to_string(),
+            date: date.to_string(),
             reason_id,
             type_id,
             slots: slots.iter().map(|s| s.to_string()).collect(),
         },
     )
     .unwrap();
+}
+
+fn stamp(conn: &Connection, student_id: i64, reason: &str, kind: &str, slots: &[&str]) {
+    stamp_on(conn, student_id, DATE, reason, kind, slots);
+}
+
+/// 시드의 구분 × 종류 코드 하나. 별칭표가 이 행을 가리킨다.
+fn code_id(conn: &Connection, reason: &str, kind: &str) -> i64 {
+    conn.query_row(
+        "SELECT c.id FROM attendance_code c
+           JOIN attendance_reason r ON r.id = c.reason_id
+           JOIN attendance_type t ON t.id = c.type_id
+          WHERE r.label = ?1 AND t.label = ?2",
+        rusqlite::params![reason, kind],
+        |r| r.get(0),
+    )
+    .unwrap()
 }
 
 fn nothing() -> NeisImportChoice {
@@ -369,19 +399,9 @@ fn 학교마다_다른_표기는_별칭표가_흡수한다() {
     let conn = setup_test_db();
     let year = insert_year(&conn, 2026);
     insert_student(&conn, year, 5, "학생5");
-    let code: i64 = conn
-        .query_row(
-            "SELECT c.id FROM attendance_code c
-               JOIN attendance_reason r ON r.id = c.reason_id
-               JOIN attendance_type t ON t.id = c.type_id
-              WHERE r.label = '출석인정' AND t.label = '결석'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
     conn.execute(
         "INSERT INTO code_alias (code_id, raw) VALUES (?1, '인정결석')",
-        rusqlite::params![code],
+        rusqlite::params![code_id(&conn, "출석인정", "결석")],
     )
     .unwrap();
 
@@ -528,6 +548,249 @@ fn 자리를_채우지_않은_날짜도_같은_날로_본다() {
     assert_eq!(out.same, 1);
     assert_eq!(out.add, 0);
     assert_eq!(out.from, "2026-09-01");
+}
+
+#[test]
+fn 전출한_학생은_전출일부터_이_반이_아니다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    // 9월 5일에 전출했다. 경계는 `enrolled_from <= 날짜 < enrolled_to`다 —
+    // 전출일 당일은 이미 다른 학교 학생이므로 그날 줄은 이 반의 것이 아니다.
+    conn.execute(
+        "INSERT INTO student (school_id, year_id, grade, class_no, number, name,
+                              enrolled_from, enrolled_to)
+         VALUES (?1, ?2, 3, 6, 7, '전출학생', '2026-03-02', '2026-09-05')",
+        rusqlite::params![school_id(&conn), year],
+    )
+    .unwrap();
+
+    let rows = vec![
+        on_date(sick_absence(7), "2026-09-04"),
+        on_date(sick_absence(7), "2026-09-05"),
+    ];
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &rows, TODAY).unwrap();
+
+    assert_eq!(out.add, 1, "전출 전날은 아직 이 반 학생이다");
+    assert_eq!(out.items[0].date, "2026-09-04");
+    assert_eq!(out.unreadable, 1, "전출일부터는 이 반에 없는 번호다");
+    assert!(out.items[1].why.as_deref().unwrap().contains("명렬표"));
+}
+
+#[test]
+fn 같은_파일을_다시_가져와도_더_들어가지_않는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 5, "학생5");
+
+    let rows = vec![sick_absence(5)];
+    let choice = NeisImportChoice {
+        add: vec![0],
+        replace: vec![],
+        mark_neis: false,
+    };
+    let first = apply_neis_import_impl(&conn, scope(&conn, year), &rows, &choice, TODAY).unwrap();
+    assert_eq!(first.added, 1);
+
+    // 같은 파일을 한 번 더 올린 것. 두 번째는 '같음'이라 더할 것이 없고,
+    // 교사가 고른 줄이 적용되지 않았다는 사실만 세어서 알린다.
+    let again = apply_neis_import_impl(&conn, scope(&conn, year), &rows, &choice, TODAY).unwrap();
+    assert_eq!(again.added, 0);
+    assert_eq!(again.skipped, 1);
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM absence_span", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 1, "두 번 가져왔다고 같은 기록이 둘이 되면 안 된다");
+}
+
+#[test]
+fn 여러_날짜_파일은_그_기간_안에서만_센다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+    // 파일 기간 안에 있지만 파일에는 없는 기록 하나 + 기간 밖의 기록 하나.
+    stamp_on(&conn, student, "2026-09-02", "질병", "결석", &[]);
+    stamp_on(&conn, student, "2026-09-20", "질병", "결석", &[]);
+
+    let rows = vec![
+        on_date(sick_absence(5), "2026-09-01"),
+        on_date(sick_absence(5), "2026-09-03"),
+    ];
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &rows, TODAY).unwrap();
+
+    assert_eq!(out.from, "2026-09-01");
+    assert_eq!(out.to, "2026-09-03");
+    assert_eq!(out.add, 2);
+    assert_eq!(
+        out.only_mine, 1,
+        "기간 밖의 기록은 이 파일이 말하는 바가 아니다"
+    );
+}
+
+#[test]
+fn 다름을_고쳐도_태그와_서류와_마감은_그대로다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+    stamp(&conn, student, "미인정", "결석", &[]);
+    // 나이스는 태그도 서류도 마감도 모른다. 가져오기가 이것들을 건드리면 교사가
+    // 받아 둔 서류와 학부모에게 말해 둔 날짜가 조용히 사라진다.
+    let tag = tag_id(&conn, "체험학습");
+    conn.execute(
+        "UPDATE absence_span
+            SET tag_id = ?1, doc_done = 1, doc_done_on = ?2, doc_due = '2026-09-30'",
+        rusqlite::params![tag, TODAY],
+    )
+    .unwrap();
+
+    let choice = NeisImportChoice {
+        add: vec![],
+        replace: vec![0],
+        mark_neis: false,
+    };
+    let out =
+        apply_neis_import_impl(&conn, scope(&conn, year), &[sick_absence(5)], &choice, TODAY)
+            .unwrap();
+    assert_eq!(out.replaced, 1);
+
+    let (kept, done, due): (Option<i64>, bool, Option<String>) = conn
+        .query_row("SELECT tag_id, doc_done, doc_due FROM absence_span", [], |r| {
+            Ok((r.get(0)?, r.get::<_, i64>(1)? != 0, r.get(2)?))
+        })
+        .unwrap();
+    assert_eq!(kept, Some(tag), "한도는 태그로 센다. 태그가 날아가면 통계가 틀린다");
+    assert!(done, "받아 둔 서류가 가져오기로 없던 일이 되면 안 된다");
+    assert_eq!(due.as_deref(), Some("2026-09-30"), "마감은 만들 때 박은 값이다");
+}
+
+#[test]
+fn 마감된_코드의_별칭은_그_뒤_날짜에_맞지_않는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 5, "학생5");
+    // 코드는 마감 후 추가다. 마감한 코드의 별칭이 계속 맞으면 9월 줄이 작년 코드의
+    // 두 축으로 들어가고, 그 구간은 그날 살아 있던 코드와 이어지지 않는다.
+    let code = code_id(&conn, "출석인정", "결석");
+    conn.execute(
+        "UPDATE attendance_code SET valid_to = '2026-08-01' WHERE id = ?1",
+        rusqlite::params![code],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO code_alias (code_id, raw) VALUES (?1, '인정결석')",
+        rusqlite::params![code],
+    )
+    .unwrap();
+
+    let mut aliased = sick_absence(5);
+    aliased.code_label = Some("인정결석".to_string());
+    aliased.reason_label = None;
+    aliased.type_label = None;
+
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &[aliased], TODAY).unwrap();
+    assert_eq!(out.unreadable, 1);
+    assert!(out.items[0].why.as_deref().unwrap().contains("인정결석"));
+}
+
+#[test]
+fn 별칭은_비어_있는_축만_채운다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 5, "학생5");
+    conn.execute(
+        "INSERT INTO code_alias (code_id, raw) VALUES (?1, '인정결석')",
+        rusqlite::params![code_id(&conn, "출석인정", "결석")],
+    )
+    .unwrap();
+
+    // 파일이 구분만 나눠 왔다. 별칭이 두 축을 한꺼번에 덮으면 분명히 '질병'이라고
+    // 적혀 있던 구분이 별칭표의 '출석인정'으로 조용히 바뀐다.
+    let mut half = sick_absence(5);
+    half.code_label = Some("인정결석".to_string());
+    half.type_label = None;
+
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &[half], TODAY).unwrap();
+    assert_eq!(out.unreadable, 0);
+    assert_eq!(out.items[0].their_axis, "질병 결석");
+}
+
+#[test]
+fn 한쪽_축만_맞은_줄은_절반을_버리지_않는다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    insert_student(&conn, year, 5, "학생5");
+
+    // 구분은 맞았고 종류를 못 찾았다. 이것을 "질병 미정"으로 넣으면 파일이 분명히
+    // 말한 절반을 앱이 버린 것이 되고, 교사는 무엇이 빠졌는지 알 방법이 없다.
+    let mut half = sick_absence(5);
+    half.code_label = Some("질병공결".to_string());
+    half.type_label = Some("공결".to_string());
+
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &[half], TODAY).unwrap();
+    assert_eq!(out.unreadable, 1);
+    let why = out.items[0].why.as_deref().unwrap();
+    assert!(why.contains("종류"), "어느 쪽을 못 찾았는지 적는다: {why}");
+    assert!(why.contains("공결"));
+}
+
+#[test]
+fn 결시교시가_비어_온_결석도_하루_종일로_본다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+    stamp(&conn, student, "질병", "결석", &[]);
+
+    // 결석은 기간을 묻지 않는 종류라 앱이 언제나 조회~종례로 저장한다. 나이스 파일에
+    // 결시교시가 비어 오는 줄이 있는데, 그대로 비교하면 화면에 양쪽 다 "하루 종일"로
+    // 보이는 두 줄이 '다름'으로 남는다.
+    let mut blank = sick_absence(5);
+    blank.start_slot = None;
+    blank.end_slot = None;
+
+    let out = preview_neis_import_impl(&conn, scope(&conn, year), &[blank], TODAY).unwrap();
+    assert_eq!(out.same, 1);
+    assert_eq!(out.differ, 0);
+    assert_eq!(out.items[0].their_span, "하루 종일");
+}
+
+#[test]
+fn 결시교시가_비어_온_결석도_조회부터_종례까지_저장한다() {
+    let conn = setup_test_db();
+    let year = insert_year(&conn, 2026);
+    let student = insert_student(&conn, year, 5, "학생5");
+
+    let mut blank = sick_absence(5);
+    blank.start_slot = None;
+    blank.end_slot = None;
+    let choice = NeisImportChoice {
+        add: vec![0],
+        replace: vec![],
+        mark_neis: false,
+    };
+    apply_neis_import_impl(&conn, scope(&conn, year), &[blank], &choice, TODAY).unwrap();
+
+    let (start, end): (Option<String>, Option<String>) = conn
+        .query_row("SELECT start_slot, end_slot FROM absence_span", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!((start.as_deref(), end.as_deref()), (Some("조회"), Some("종례")));
+
+    // NULL로 들어가면 같은 조합을 다시 찍어도 그 건을 찾지 못해 무르기가 멎고,
+    // 똑같은 기록이 하나 더 쌓인다.
+    let (reason_id, type_id) = axes(&conn, "질병", "결석");
+    let out = stamp_span_impl(
+        &conn,
+        &StampInput {
+            student_id: student,
+            date: DATE.to_string(),
+            reason_id,
+            type_id,
+            slots: vec![],
+        },
+    )
+    .unwrap();
+    assert_eq!(out.action, "cancelled");
 }
 
 #[test]

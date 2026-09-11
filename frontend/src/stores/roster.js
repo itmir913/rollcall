@@ -43,11 +43,23 @@ export const useRosterStore = defineStore('roster', () => {
      * "어느 학급인가"라는 판단만 Rust에 맡긴다.
      */
     async function detectClass(entries) {
-        return await invoke('detect_roster_class', {entries})
+        error.value = ''
+        try {
+            return await invoke('detect_roster_class', {entries})
+        } catch (e) {
+            error.value = String(e)
+            throw e
+        }
     }
 
     async function fetchClasses(yearId) {
-        return await invoke('get_classes', {schoolId: schoolId(), yearId})
+        error.value = ''
+        try {
+            return await invoke('get_classes', {schoolId: schoolId(), yearId})
+        } catch (e) {
+            error.value = String(e)
+            throw e
+        }
     }
 
     async function preview(yearId, grade, classNo, entries) {
@@ -89,12 +101,24 @@ export const useRosterStore = defineStore('roster', () => {
     }
 
     async function fetchContacts(studentId) {
-        return await invoke('get_contacts', {studentId})
+        error.value = ''
+        try {
+            return await invoke('get_contacts', {studentId})
+        } catch (e) {
+            error.value = String(e)
+            throw e
+        }
     }
 
     /** 한 학생의 연락처를 통째로 바꾼다. 화면이 목록 전체를 편집하기 때문이다. */
     async function saveContacts(studentId, contacts) {
-        await invoke('set_contacts', {studentId, contacts})
+        error.value = ''
+        try {
+            await invoke('set_contacts', {studentId, contacts})
+        } catch (e) {
+            error.value = String(e)
+            throw e
+        }
     }
 
     async function withdraw(id, date) {

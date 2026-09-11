@@ -11,6 +11,7 @@ import {useAppStore} from '../stores/app'
 import {useSchoolStore} from '../stores/school'
 import RosterPanel from '../components/RosterPanel.vue'
 import {UiButton, UiLedger, UiNotice} from '../components/ui'
+import {MAX_SLOT_CHOICES} from '../data/slotChoices'
 
 const app = useAppStore()
 const school = useSchoolStore()
@@ -18,8 +19,6 @@ const router = useRouter()
 
 const form = ref({name: '', maxSlot: 7, grade: 3, classNo: 1})
 const error = ref('')
-
-const SLOT_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 const canFinish = computed(() => app.ready)
 
@@ -37,6 +36,8 @@ async function saveSchool() {
     }
 }
 
+// 읽기에 실패해도 화면은 그린다. 실패는 `school.error`에 담겨 아래 UiNotice가
+// 그대로 보여준다 — 첫 화면이 기본값만 놓인 멀쩡한 모습으로 보이면 안 된다.
 onMounted(async () => {
     await school.fetchAll().catch(() => {
     })
@@ -55,6 +56,7 @@ onMounted(async () => {
         </div>
 
         <UiNotice :text="error" kind="error"/>
+        <UiNotice :text="school.error" kind="error"/>
 
         <UiLedger hint="나중에 설정에서 바꿀 수 있습니다" title="학교">
             <div class="set__row">
@@ -66,7 +68,7 @@ onMounted(async () => {
             <div class="set__row">
                 <span class="set__label">최대 교시</span>
                 <span class="set__value">
-                    <button v-for="n in SLOT_CHOICES" :key="n"
+                    <button v-for="n in MAX_SLOT_CHOICES" :key="n"
                             :class="['pick', 'pick--slot', form.maxSlot === n ? 'is-on' : '']"
                             type="button" @click="form.maxSlot = n">
                         {{ n }}

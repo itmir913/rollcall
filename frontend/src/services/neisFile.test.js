@@ -23,6 +23,8 @@ import {
     sortPairs,
     splitCodeLabel,
     toIso,
+    unsupportedSlotText,
+    unsupportedSlotsIn,
 } from './neisFile'
 
 /** DB에서 오는 축. 하드코딩하지 않는다는 사실을 테스트도 따른다. */
@@ -448,6 +450,168 @@ describe('번호 이어받기', () => {
         ])
         expect(out.rows.map((r) => r.number)).toEqual([1])
         expect(out.meta.skipped).toEqual([{line: 6, why: '번호를 읽지 못했습니다.'}])
+    })
+})
+
+describe('종례의 자리', () => {
+    it('마지막 교시부터의 조퇴를 쪼개지 않는다 — 월별 파일에서 가장 흔한 줄이다', () => {
+        // 쪼개면 `7교시~7교시`와 `종례~종례` 두 건이 되어 이미 올바르게 저장된
+        // `7교시~종례`와 어긋나고, `종례~종례` 조퇴는 고르개가 표현할 수도 없다.
+        expect(slotRuns(['7', '종례'])).toEqual([{startSlot: '7', endSlot: '종례'}])
+        expect(slotRuns(['2', '종례'])).toEqual([{startSlot: '2', endSlot: '종례'}])
+        expect(slotRuns(['6', '7', '종례'])).toEqual([{startSlot: '6', endSlot: '종례'}])
+    })
+
+    it('그날의 슬롯을 모르면 흔한 쪽으로 읽는다 — 그날이 거기서 끝났다', () => {
+        // `조회,1교시,종례`는 교시가 하나뿐인 날의 하루 종일일 수도, 1교시까지 지각하고
+        // 종례를 더 빠진 날일 수도 있다. 파일만으로는 구별되지 않아 흔한 쪽으로 읽는다.
+        // 실제 파일에서 그날 교시 수가 3 · 6 · 7로 제각각이었던 것이 그 근거다.
+        expect(slotRuns(['조회', '1', '종례'])).toEqual([{startSlot: '조회', endSlot: '종례'}])
+        expect(slotRuns(['조회', '1', '2', '3', '종례']))
+            .toEqual([{startSlot: '조회', endSlot: '종례'}])
+        expect(slotRuns(['조회', '종례'])).toEqual([{startSlot: '조회', endSlot: '종례'}])
+    })
+
+    it('파일이 그날의 슬롯을 보여주면 가정하지 않는다 — 일일출석부 머리글', () => {
+        const day = ['조회', '1', '2', '3', '4', '5', '6', '7', '종례']
+        // 7교시까지 있는 날이라 종례는 1교시 옆이 아니다.
+        expect(slotRuns(['조회', '1', '종례'], day)).toEqual([
+            {startSlot: '조회', endSlot: '1'},
+            {startSlot: '종례', endSlot: '종례'},
+        ])
+        // 마지막 교시부터 나간 조퇴는 한 구간이다.
+        expect(slotRuns(['7', '종례'], day)).toEqual([{startSlot: '7', endSlot: '종례'}])
+        // 그날 교시가 하나뿐이면 조회~종례가 맞다.
+        expect(slotRuns(['조회', '1', '종례'], ['조회', '1', '종례']))
+            .toEqual([{startSlot: '조회', endSlot: '종례'}])
+    })
+
+    it('월별 파일의 마지막 교시 조퇴는 한 건으로 들어온다', () => {
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병조퇴', '7교시,종례,', '7교시부터 조퇴'],
+        ])
+        expect(out.rows.map((r) => [r.startSlot, r.endSlot])).toEqual([['7', '종례']])
+        expect(out.rows[0].merged).toBe(false)
+        expect(out.meta.merged).toBe(0)
+    })
+
+    it('합쳐진 줄로 세는 것은 실제로 떨어져 있을 때뿐이다', () => {
+        // 나이스가 하루 두 구간을 한 줄로 내보낸 실제 모양. 사이가 비어 있다.
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병조퇴', '조회,1교시,6교시,7교시,종례,', ''],
+        ])
+        expect(out.rows.map((r) => [r.startSlot, r.endSlot]))
+            .toEqual([['조회', '1'], ['6', '종례']])
+        expect(out.meta.merged).toBe(1)
+    })
+
+    it('일일출석부는 머리글이 그날의 교시를 보여주므로 나눌 곳을 안다', () => {
+        const head = ['번호', '성명', '마감', '조회', '1교시', '2교시', '3교시', '4교시', '종례']
+        const out = read([
+            [' ※ 3학년 6반 2026.09.01.(화)'],
+            head,
+            ['1', '학생1', '질병지각', '/', '/', '', '', '', '/'],
+        ])
+        expect(out.rows.map((r) => [r.startSlot, r.endSlot]))
+            .toEqual([['조회', '1'], ['종례', '종례']])
+    })
+
+    it('결석은 기간을 묻지 않는다 — 결시교시가 어떻게 적혀 있든 한 건이다', () => {
+        // 앱도 Rust도 결석을 조회~종례로 저장한다(`ranges_for` · `day_slots`).
+        // 여기서 나누면 같은 하루가 두 건이 되고, 빈 칸이면 기간 미정으로 어긋난다.
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병결석', '조회,1교시,종례,', ''],
+            ['2026.06.02.(화)', '3', '학생3', '질병결석', '', ''],
+        ])
+        expect(out.rows.map((r) => [r.startSlot, r.endSlot]))
+            .toEqual([['조회', '종례'], ['조회', '종례']])
+        expect(out.rows.every((r) => r.spanText === '하루 종일')).toBe(true)
+        expect(out.meta.merged).toBe(0)
+    })
+})
+
+describe('0교시', () => {
+    it('0교시를 조회로 고쳐 읽지 않는다', () => {
+        // 순서값이 조회와 같아 이름이 조회로 바뀐다. 0교시를 쓰는 학교가 실제로 있다.
+        expect(slotTokenOf('0교시')).toBeNull()
+        expect(unsupportedSlotText('0교시')).toBe('0교시')
+        expect(unsupportedSlotText('1교시')).toBeNull()
+        expect(unsupportedSlotsIn('0교시,1교시,')).toEqual(['0교시'])
+    })
+
+    it('0교시가 섞인 줄은 빼고 읽지 않고 이유를 남긴다', () => {
+        // 빼고 읽으면 기간이 한 칸 밀린 채 저장된다. 교사가 직접 넣도록 알린다.
+        const out = read([
+            ['일자', '번호', '성명', '출결구분', '결시교시', '사유'],
+            ['2026.06.01.(월)', '2', '학생2', '질병지각', '0교시,1교시,', ''],
+        ])
+        expect(out.rows).toEqual([])
+        expect(out.meta.skipped)
+            .toEqual([{line: 2, why: '이 앱이 다루지 못하는 교시입니다: 0교시'}])
+    })
+
+    it('일일출석부의 0교시 열에 찍힌 표시도 조용히 사라지지 않는다', () => {
+        const head = ['번호', '성명', '마감', '0교시', '조회', '1교시', '2교시', '종례', '비고']
+        const out = read([
+            [' ※ 3학년 6반 2026.09.01.(화)'],
+            head,
+            ['1', '학생1', '질병지각', '/', '/', '', '', '', ''],
+        ])
+        expect(out.rows).toEqual([])
+        expect(out.meta.skipped)
+            .toEqual([{line: 3, why: '이 앱이 다루지 못하는 교시입니다: 0교시'}])
+    })
+})
+
+describe('표기를 다듬는 자리', () => {
+    it('띄어쓰기는 파일과 DB 양쪽에서 지운다 — `출석 인정`으로 저장한 학교가 있다', () => {
+        const reasons = [{label: '질병'}, {label: '출석 인정'}]
+        const types = [{label: '결석', slotPrompt: 'none'}, {label: '조 퇴', slotPrompt: 'start'}]
+        // 돌려주는 것은 **DB에 적힌 그대로**다. 다듬은 쪽을 넘기면 Rust가 축을 못 찾는다.
+        expect(splitCodeLabel('출석인정결석', reasons, types))
+            .toEqual({reasonLabel: '출석 인정', typeLabel: '결석'})
+        expect(splitCodeLabel('질병조퇴', reasons, types))
+            .toEqual({reasonLabel: '질병', typeLabel: '조 퇴'})
+        // 파일이 통째로 "모르는 출결 표기"로 쌓이던 자리다.
+        const out = buildRecords([
+            ['일자', '번호', '성명', '출결구분', '결시교시'],
+            ['2026.06.01.(월)', '1', '학생1', '출석인정결석', '조회,1교시,종례,'],
+        ], {reasons, types})
+        expect(out.meta.unknownCodes).toEqual([])
+        expect(out.rows[0]).toMatchObject({reasonLabel: '출석 인정', typeLabel: '결석'})
+    })
+
+    it('교시 열의 한두 글자는 무엇이든 결시로 읽는다 — 본 서식이 하나라는 가정이다', () => {
+        // 확인한 일일출석부는 `/`를 쓴다. 표기를 목록으로 두지 않으므로 다른 글자도
+        // 결시다. 나이스가 출석을 표시하는 서식을 내보내면 여기가 먼저 틀린다.
+        const out = read([
+            [' ※ 3학년 6반 2026.09.01.(화)'],
+            DAILY_HEAD,
+            ['1', '학생1', '질병지각', '결', '', '', '', '', ''],
+        ])
+        expect(out.rows[0]).toMatchObject({startSlot: '조회', endSlot: '조회'})
+    })
+})
+
+describe('구분하지 못한 표기', () => {
+    it('모르는 출결 표기를 미정 기록과 일치라고 말하지 않는다', () => {
+        // Rust의 `resolve`는 같은 줄을 "모르는 출결 표기"로 돌려보낸다. 여기서만
+        // 일치라고 하면 검증 화면과 가져오기 화면이 한 줄을 두고 다른 말을 한다.
+        const unread = theirs({codeLabel: '공결', reasonLabel: null, typeLabel: null})
+        const undecided = mine({reasonLabel: null, typeLabel: null})
+        expect(sameRecord(undecided, unread)).toBe(false)
+
+        const out = compareRecords([undecided], [unread])
+        expect(out.same).toHaveLength(0)
+        expect(out.diff).toHaveLength(1)
+    })
+
+    it('출결 표기가 아예 없는 줄은 그대로 비교한다 — 모르는 것이 아니라 없는 것이다', () => {
+        expect(sameRecord(mine({reasonLabel: null, typeLabel: null}),
+            theirs({codeLabel: null, reasonLabel: null, typeLabel: null}))).toBe(true)
     })
 })
 

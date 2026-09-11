@@ -137,7 +137,7 @@ async function downloadSample() {
 .import {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--s-lg);
 }
 
 .drop {
@@ -145,10 +145,10 @@ async function downloadSample() {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 32px 20px;
+    gap: var(--s-xs);
+    padding: var(--s-5xl) var(--s-3xl);
     border: 2px dashed var(--c-line);
-    border-radius: 12px;
+    border-radius: var(--r-xl);
     background: var(--c-raised);
     cursor: pointer;
     text-align: center;
@@ -180,7 +180,7 @@ async function downloadSample() {
 }
 
 .drop__file {
-    margin: 4px 0 0;
+    margin: var(--s-2xs) 0 0;
     color: var(--c-accent);
 }
 
@@ -191,7 +191,7 @@ async function downloadSample() {
 .import__row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--s-lg);
     flex-wrap: wrap;
 }
 
@@ -200,19 +200,21 @@ async function downloadSample() {
 }
 
 .skipped {
-    padding: 12px 14px;
-    border-radius: 8px;
+    padding: var(--s-lg) var(--s-xl);
+    border-radius: var(--r-md);
     border: 1px solid var(--c-warn);
     color: var(--c-warn);
 }
 
 .skipped__title {
-    margin: 0 0 6px;
+    margin: 0 0 var(--s-xs);
     font-weight: 600;
 }
 
 .skipped__list {
     margin: 0;
+    /* 글머리표를 들이는 값이라 여백 눈금과 뜻이 다르다. 상자 안쪽 여백(--s-xl)에
+       점이 걸치지 않으면서 글이 너무 밀리지도 않는 자리를 눈으로 맞춘 값이다. */
     padding-left: 18px;
     line-height: 1.6;
 }

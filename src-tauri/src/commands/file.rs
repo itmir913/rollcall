@@ -24,11 +24,19 @@ fn validate_parent_dir(path: &str) -> Result<(), String> {
     }
 }
 
+/// base64를 풀어 그 바이트를 파일로 저장한다.
+///
+/// DB를 만지지 않으므로 `Connection`을 받지 않지만, 커맨드 본문에 두지 않는 이유는
+/// 같다 — `#[tauri::command]`가 붙은 함수는 테스트에서 호출할 수 없다.
+pub fn write_bytes_file_impl(path: &str, data: &str) -> Result<(), String> {
+    validate_parent_dir(path)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|e| format!("파일 내용을 해독하지 못했습니다: {e}"))?;
+    std::fs::write(path, bytes).map_err(|e| format!("파일을 저장하지 못했습니다: {e}"))
+}
+
 #[tauri::command]
 pub fn write_bytes_file(path: String, data: String) -> Result<(), String> {
-    validate_parent_dir(&path)?;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(&data)
-        .map_err(|e| format!("파일 내용을 해독하지 못했습니다: {e}"))?;
-    std::fs::write(&path, bytes).map_err(|e| format!("파일을 저장하지 못했습니다: {e}"))
+    write_bytes_file_impl(&path, &data)
 }

@@ -24,7 +24,7 @@ import NeisImportModal from '../components/NeisImportModal.vue'
 import SpanDeleteModal from '../components/SpanDeleteModal.vue'
 import SpanEditModal from '../components/SpanEditModal.vue'
 import {useNeisImportStore} from '../stores/neisImport'
-import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
+import {UiButton, UiLedger, UiNotice, UiPage, UiToggle, UiTrashIcon} from '../components/ui'
 import {useDownloadStore} from '../stores/download'
 
 const app = useAppStore()
@@ -156,6 +156,8 @@ async function applyImport() {
     }
 }
 
+// 한쪽이 실패해도 나머지는 그린다. 실패는 각 스토어의 error에 담겨 화면 아래
+// UiNotice가 그대로 보여준다 — 사유 후보와 태그가 빈 것이 "없다"로 읽히면 안 된다.
 onMounted(async () => {
     if (!app.ready) return
     const now = new Date()
@@ -237,14 +239,7 @@ function saveCsv(kind, args, suggested) {
                         <span class="row__acts">
                             <UiButton aria-label="지우기" icon title="지우기" variant="danger"
                                       @click="dropping = span">
-                                <svg aria-hidden="true" class="icon" fill="none" stroke="currentColor"
-                                     stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"
-                                     viewBox="0 0 24 24">
-                                    <path d="M4 7h16"/>
-                                    <path d="M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1z"/>
-                                    <path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12"/>
-                                    <path d="M10 11v6M14 11v6"/>
-                                </svg>
+                                <UiTrashIcon/>
                             </UiButton>
                         </span>
                     </template>
@@ -255,6 +250,8 @@ function saveCsv(kind, args, suggested) {
         <UiNotice :text="log.error" kind="error"/>
         <UiNotice :text="day.error" kind="error"/>
         <UiNotice :text="pending.error" kind="error"/>
+        <UiNotice :text="axis.error" kind="error"/>
+        <UiNotice :text="school.error" kind="error"/>
 
         <SpanEditModal :max-slot="app.maxSlot" :open="Boolean(fixing)" :reasons="axis.reasons"
                        :span="fixing" :types="axis.types"

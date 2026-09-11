@@ -12,7 +12,8 @@ import {useAppStore} from '../stores/app'
 import {useAxisStore} from '../stores/axis'
 import {useSchoolStore} from '../stores/school'
 import RosterPanel from '../components/RosterPanel.vue'
-import {UiButton, UiLedger, UiNotice, UiPage, UiToggle} from '../components/ui'
+import {UiButton, UiLedger, UiModal, UiNotice, UiPage, UiToggle, UiTrashIcon} from '../components/ui'
+import {MAX_SLOT_CHOICES} from '../data/slotChoices'
 import {useTheme} from '../composables/useTheme'
 
 const app = useAppStore()
@@ -20,7 +21,6 @@ const axis = useAxisStore()
 const school = useSchoolStore()
 const theme = useTheme()
 
-const SLOT_CHOICES = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 const THEME_CHOICES = [
     {value: 'light', label: '라이트'},
     {value: 'dark', label: '다크'},
@@ -41,6 +41,9 @@ const newOffDay = ref({date: '', label: ''})
 const newTag = ref('')
 const newRule = ref(blankRule())
 const message = ref('')
+
+/** 지우려고 고른 휴업일. 태그 · 규정의 [마감]과 달리 이것은 행을 지우는 DELETE다. */
+const droppingOffDay = ref(null)
 
 const skipOffDays = computed({
     get: () => Boolean(school.school?.dueSkipOffdays),
@@ -69,6 +72,19 @@ async function addOffDay() {
     newOffDay.value = {date: '', label: ''}
 }
 
+/**
+ * 휴업일 삭제. **확인을 한 번 거친다** — 태그와 규정은 마감이라 되살릴 수 있지만
+ * 이것은 행이 사라지는 DELETE다.
+ */
+async function confirmRemoveOffDay() {
+    const target = droppingOffDay.value
+    droppingOffDay.value = null
+    if (target) {
+        await school.removeOffDay(target.id).catch(() => {
+        })
+    }
+}
+
 async function addTag() {
     const name = newTag.value.trim()
     if (!name) return
@@ -89,6 +105,8 @@ async function addRule() {
     newRule.value = blankRule()
 }
 
+// 한쪽이 실패해도 나머지는 그린다. 실패는 각 스토어의 error에 담겨 화면 위의
+// UiNotice가 그대로 보여준다 — 빈 태그 목록만 남겨 두면 설정이 비었다고 읽힌다.
 onMounted(async () => {
     await Promise.all([
         school.fetchAll().catch(() => {
@@ -104,6 +122,7 @@ onMounted(async () => {
     <UiPage subtitle="학교 · 학급 · 화면" title="설정">
         <UiNotice :text="message" kind="warn"/>
         <UiNotice :text="school.error" kind="error"/>
+        <UiNotice :text="axis.error" kind="error"/>
 
         <UiLedger hint="학교마다 따로 가지는 값이다" title="학교">
             <div class="set__row">
@@ -117,7 +136,7 @@ onMounted(async () => {
             <div class="set__row">
                 <span class="set__label">최대 교시</span>
                 <span class="set__value">
-                    <button v-for="n in SLOT_CHOICES" :key="n"
+                    <button v-for="n in MAX_SLOT_CHOICES" :key="n"
                             :class="['pick', 'pick--slot', school.school?.maxSlot === n ? 'is-on' : '']"
                             type="button" @click="school.saveSchool({maxSlot: n})">
                         {{ n }}
@@ -158,13 +177,13 @@ onMounted(async () => {
                 </span>
             </div>
 
-            <div v-if="school.offDays.length" class="set__row">
-                <span class="set__label"></span>
+            <div v-for="day in school.offDays" :key="day.id" class="set__row">
+                <span class="set__label num">{{ day.date }}</span>
                 <span class="set__value">
-                    <UiButton v-for="day in school.offDays" :key="day.id" size="tight"
-                              @click="school.removeOffDay(day.id)">
-                        <span class="num">{{ day.date }}</span>
-                        {{ day.label ? ` ${day.label}` : '' }} ✕
+                    <span class="set__hint">{{ day.label || '이름 없음' }}</span>
+                    <UiButton aria-label="휴업일 지우기" icon title="휴업일 지우기" variant="danger"
+                              @click="droppingOffDay = day">
+                        <UiTrashIcon/>
                     </UiButton>
                 </span>
             </div>
@@ -271,5 +290,26 @@ onMounted(async () => {
                 </span>
             </div>
         </UiLedger>
+
+        <UiModal :open="Boolean(droppingOffDay)" title="이 휴업일을 지웁니다"
+                 @close="droppingOffDay = null">
+            <div v-if="droppingOffDay" class="modal__what">
+                <span class="modal__key">날짜</span>
+                <span class="modal__val num">{{ droppingOffDay.date }}</span>
+                <span class="modal__key">이름</span>
+                <span class="modal__val">{{ droppingOffDay.label || '—' }}</span>
+            </div>
+            <p class="modal__note">
+                지운 휴업일은 되돌릴 수 없습니다. 이미 계산해 둔 마감일은 그대로 남고,
+                앞으로 만드는 출결의 마감만 이 날을 일수에 포함합니다.
+            </p>
+
+            <template #foot>
+                <UiButton size="wide" @click="droppingOffDay = null">취소</UiButton>
+                <UiButton fill size="wide" variant="danger" @click="confirmRemoveOffDay">
+                    지우기
+                </UiButton>
+            </template>
+        </UiModal>
     </UiPage>
 </template>

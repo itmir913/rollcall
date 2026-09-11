@@ -10,6 +10,7 @@ pub mod home_tests;
 pub mod mark_tests;
 pub mod neis_tests;
 pub mod phrase_tests;
+pub mod project_tests;
 pub mod schema_lock_tests;
 pub mod school_tests;
 pub mod slots_tests;
