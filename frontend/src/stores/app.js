@@ -159,6 +159,9 @@ export const useAppStore = defineStore('app', {
             this.error = ''
             try {
                 this.classes = await invoke('get_teaching_classes', {yearId: this.yearId})
+                // 목록을 새로 읽을 때마다 사라진 번호를 지운다. 마감은 설정에서 일어나고
+                // 그 뒤에 반드시 이 액션이 돌므로, 마감 자리마다 따로 적지 않아도 된다.
+                this.forgetMissing()
             } catch (e) {
                 this.error = String(e)
                 throw e
@@ -172,6 +175,26 @@ export const useAppStore = defineStore('app', {
             } catch (e) {
                 this.error = String(e)
                 throw e
+            }
+        },
+
+        /**
+         * 목록에서 사라진 학급 번호를 기억에서 지운다.
+         *
+         * 마감한 학급이 `lastClassId`에 남아 있으면, 스위치를 눌렀을 때 목록에 없는
+         * 학급으로 돌아간다 — 사이드바는 "맡은 것 없음"을 적는데 화면들은 그 번호로
+         * 질의를 던지므로, 무엇이 잘못됐는지 보이지 않는다.
+         */
+        forgetMissing() {
+            const alive = new Set(this.classes.map((c) => c.id))
+            for (const mode of MODES) {
+                const kept = this.lastClassId[mode]
+                if (kept != null && !alive.has(kept)) {
+                    this.lastClassId[mode] = this.classes.find((c) => c.role === mode)?.id ?? null
+                }
+            }
+            if (this.classId != null && !alive.has(this.classId)) {
+                this.classId = this.lastClassId[this.lastMode] ?? this.classes[0]?.id ?? null
             }
         },
 
@@ -232,23 +255,35 @@ export const useAppStore = defineStore('app', {
          * 흔한 일이고, 그때마다 학급이 늘면 명단이 어느 쪽에 붙었는지 알 수 없게 된다.
          * 담임은 학년 · 반이, 교과는 이름이 같은 것을 가리킨다.
          */
-        async createClass({role = 'homeroom', name = null, grade = null, classNo = null}) {
+        async createClass({
+            role = 'homeroom', name = null, grade = null, classNo = null,
+            // 어느 학교에 만드는가. 비우면 지금 보고 있는 학교다 — 순회 교사가
+            // 새 학교를 만든 직후에는 그 학교를 가리켜야 첫 학급이 제자리에 선다.
+            schoolId = null,
+            // 만든 것을 곧바로 고를지. **설정에서는 고르지 않는다** — 교과 강좌 하나를
+            // 더했다고 화면이 통째로 교과 모드로 넘어가면 무엇을 잘못 눌렀는지 되짚게 된다.
+            select = true,
+        }) {
             this.error = ''
+            // **학교까지 본다.** `classes`는 학년도 전체라 다른 학교의 학급도 들어 있고,
+            // 학교를 보지 않으면 A 학교의 `통합사회`가 B 학교에 만들려던 것을 가로챈다.
+            const school = schoolId ?? this.schoolId
             const same = this.classes.find(
                 (c) =>
                     c.role === role &&
                     !c.validTo &&
+                    c.schoolId === school &&
                     (role === 'homeroom'
                         ? c.grade === grade && c.classNo === classNo
                         : c.name === name),
             )
             if (same) {
-                await this.selectClass(same.id)
+                if (select) await this.selectClass(same.id)
                 return same.id
             }
             try {
                 const id = await invoke('create_teaching_class', {
-                    schoolId: this.schoolId,
+                    schoolId: school,
                     yearId: this.yearId,
                     role,
                     name,
@@ -259,7 +294,7 @@ export const useAppStore = defineStore('app', {
                     validFrom: this.currentYear?.startsOn ?? this.today,
                 })
                 await this.fetchClasses()
-                await this.selectClass(id)
+                if (select) await this.selectClass(id)
                 return id
             } catch (e) {
                 this.error = String(e)

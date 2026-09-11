@@ -19,7 +19,7 @@
 //! 채운다 — **학생의 `enrolled_to`가 아니다.** 내 명단에서 빠진 것과 학교를 떠난 것은
 //! 다른 일이고, 담임이 아는 것은 앞엣것뿐이다.
 
-use crate::commands::class::{homeroom_scope, homeroom_seat, members_of};
+use crate::commands::class::{class_scope, homeroom_scope, homeroom_seat, members_of};
 use crate::commands::with_conn;
 use crate::db::with_transaction;
 use crate::state::{constraint_err, DbState};
@@ -113,8 +113,10 @@ pub fn diff_roster(
 // ── DB ────────────────────────────────────────────────────────
 
 /// 지금 내 명단. 소속은 `class_member`가 말하므로 학년 · 반으로 거르지 않는다.
+/// 그 학급의 명단. **역할을 가리지 않는다** — 교과 강좌도 명단을 가진다.
+/// 갈리는 것은 기록이지 명단이 아니다.
 pub fn get_students_impl(conn: &Connection, class_id: i64) -> Result<Vec<StudentItem>, String> {
-    let scope = homeroom_scope(conn, class_id)?;
+    let scope = class_scope(conn, class_id)?;
     members_of(conn, scope.id)
 }
 
@@ -128,6 +130,13 @@ fn current_tuples(
         .collect())
 }
 
+/// 명렬표 차분. **아직 담임 학급만이다.**
+///
+/// 교과 강좌는 반이 섞여 번호만으로 학생을 가릴 수 없다 — 3학년 1반 4번과
+/// 3학년 6반 4번이 같은 강좌에 있다. 차분의 열쇠를 학적 자리(학년 · 반 · 번호) 전체로
+/// 넓히고 줄마다 그 자리를 들고 다녀야 하는데, 그것은 별도의 일이다.
+/// 그때까지 화면은 교과 강좌에 명렬표 단추를 열지 않는다 — 눌러도 되지 않는 단추가
+/// 아무 말 없이 실패하는 것보다, 아직 없다고 적는 편이 낫다.
 pub fn preview_roster_impl(
     conn: &Connection,
     class_id: i64,

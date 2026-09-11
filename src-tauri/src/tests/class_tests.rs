@@ -8,7 +8,10 @@
 //!   · **두 모드는 한 표에 있되 role로 갈린다.** 이동 · 설정을 두 벌 만들지 않으려는 것이다.
 
 use super::*;
+use crate::commands::class::*;
 use rusqlite::Connection;
+
+const TODAY: &str = "2026-09-11";
 
 fn year(conn: &Connection) -> i64 {
     insert_year(conn, 2026)
@@ -208,6 +211,188 @@ fn 이름_없는_학급은_들어가지_않는다() {
     assert!(bad.is_err(), "화면에 적을 이름이 없으면 고를 수도 없다");
 }
 
+// ── 맡은 것을 더하고 고치고 마감한다 ──────────────────────────
+
+/// 그 학급에 출결 한 건을 남긴다. 마감이 기록을 건드리지 않는 것을 확인할 때 쓴다.
+fn stamp(conn: &Connection, class_id: i64, student_id: i64) {
+    let (reason, r#type) = axes(conn, "질병", "결석");
+    conn.execute(
+        "INSERT INTO absence_span (class_id, student_id, date, reason_id, type_id)
+         VALUES (?1, ?2, '2026-09-01', ?3, ?4)",
+        rusqlite::params![class_id, student_id, reason, r#type],
+    )
+    .unwrap();
+}
+
+fn class_names(conn: &Connection, year_id: i64) -> Vec<String> {
+    get_teaching_classes_impl(conn, year_id, None)
+        .unwrap()
+        .into_iter()
+        .map(|c| c.name)
+        .collect()
+}
+
+#[test]
+fn 맡은_것은_역할로_걸러_온다() {
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let s = school_id(&conn);
+    create_teaching_class_impl(&conn, s, y, "homeroom", "3학년 6반", Some(3), Some(6), TODAY)
+        .unwrap();
+    create_teaching_class_impl(&conn, s, y, "subject", "지구과학Ⅰ", None, None, TODAY).unwrap();
+
+    assert_eq!(class_names(&conn, y).len(), 2);
+    let only = get_teaching_classes_impl(&conn, y, Some("subject")).unwrap();
+    assert_eq!(only.len(), 1);
+    assert_eq!(only[0].name, "지구과학Ⅰ");
+}
+
+#[test]
+fn 담임_학급은_학년과_반이_있어야_들어간다() {
+    // 그 둘이 명렬표가 학생을 앉힐 학적 자리다. 나중에 채우게 두면 명렬표를
+    // 가져오는 자리에서야 빠진 것을 알게 된다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let s = school_id(&conn);
+
+    let err = create_teaching_class_impl(&conn, s, y, "homeroom", "3학년 6반", None, None, TODAY)
+        .unwrap_err();
+    assert!(err.contains("담임 학급은 학년과 반이 필요합니다"), "{err}");
+
+    let err = create_teaching_class_impl(&conn, s, y, "homeroom", "3학년 6반", Some(3), None, TODAY)
+        .unwrap_err();
+    assert!(err.contains("담임 학급은 학년과 반이 필요합니다"), "{err}");
+
+    assert!(class_names(&conn, y).is_empty(), "거절된 학급이 새어 들어갔다");
+}
+
+#[test]
+fn 교과_강좌에_학년과_반이_들어오면_거절한다() {
+    // 교과 강좌는 여러 반에서 모이므로 가리킬 반이 없다. 한 반을 적어 두면
+    // 그 값을 믿는 화면이 나머지 반 학생을 조용히 빠뜨린다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let s = school_id(&conn);
+
+    let err = create_teaching_class_impl(&conn, s, y, "subject", "지구과학Ⅰ", Some(3), Some(6), TODAY)
+        .unwrap_err();
+    assert!(err.contains("학년 · 반을 두지 않습니다"), "{err}");
+
+    // 고치는 길로도 같은 규칙이 걸린다.
+    let subject = insert_class(&conn, y, "subject", "지구과학Ⅰ", None, None);
+    let err = update_teaching_class_impl(&conn, subject, "지구과학Ⅱ", Some(3), Some(6)).unwrap_err();
+    assert!(err.contains("학년 · 반을 두지 않습니다"), "{err}");
+
+    let home = insert_class(&conn, y, "homeroom", "3학년 6반", Some(3), Some(6));
+    let err = update_teaching_class_impl(&conn, home, "3학년 7반", None, None).unwrap_err();
+    assert!(err.contains("담임 학급은 학년과 반이 필요합니다"), "{err}");
+}
+
+#[test]
+fn 이름_학년_반을_고치면_같은_줄이_그대로_남는다() {
+    // 학급 이름은 화면에 적히는 이름표이고 기록은 class_id로 가리킨다. 여기서
+    // 마감 후 추가를 하면 지난 출결이 마감된 학급에 남아 화면에서 통째로 사라진다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let class = insert_class(&conn, y, "homeroom", "3학년 6반", Some(3), Some(6));
+    let student = insert_student_at(&conn, y, 3, 6, 1, "학생1");
+    join_class(&conn, class, student);
+    stamp(&conn, class, student);
+
+    update_teaching_class_impl(&conn, class, "  3학년 7반  ", Some(3), Some(7)).unwrap();
+
+    let classes = get_teaching_classes_impl(&conn, y, None).unwrap();
+    assert_eq!(classes.len(), 1, "줄이 늘지 않았다");
+    assert_eq!(classes[0].id, class, "id가 그대로라 지난 기록이 따라온다");
+    assert_eq!(classes[0].name, "3학년 7반");
+    assert_eq!(classes[0].class_no, Some(7));
+
+    let kept: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM absence_span WHERE class_id = ?1",
+            [class],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept, 1);
+}
+
+#[test]
+fn 이름이_비면_만들지도_고치지도_않는다() {
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let s = school_id(&conn);
+    let class = insert_class(&conn, y, "subject", "지구과학Ⅰ", None, None);
+
+    assert!(
+        create_teaching_class_impl(&conn, s, y, "subject", "   ", None, None, TODAY)
+            .unwrap_err()
+            .contains("비어")
+    );
+    assert!(update_teaching_class_impl(&conn, class, "  ", None, None)
+        .unwrap_err()
+        .contains("비어"));
+    assert_eq!(class_names(&conn, y), vec!["지구과학Ⅰ"]);
+}
+
+#[test]
+fn 마감한_학급은_목록에서_빠진다() {
+    let conn = setup_test_db();
+    let y = year(&conn);
+    insert_class(&conn, y, "homeroom", "3학년 6반", Some(3), Some(6));
+    let last_year = insert_class(&conn, y, "homeroom", "2학년 4반", Some(2), Some(4));
+
+    retire_teaching_class_impl(&conn, last_year, TODAY).unwrap();
+
+    assert_eq!(class_names(&conn, y), vec!["3학년 6반"]);
+    // 두 번 마감하지 않는다. 마감된 학급은 고칠 수도 없다.
+    assert!(retire_teaching_class_impl(&conn, last_year, TODAY)
+        .unwrap_err()
+        .contains("유효한 학급을 찾을 수 없습니다"));
+    assert!(
+        update_teaching_class_impl(&conn, last_year, "2학년 5반", Some(2), Some(5))
+            .unwrap_err()
+            .contains("유효한 학급을 찾을 수 없습니다")
+    );
+}
+
+#[test]
+fn 학급을_마감해도_그_학급의_출결은_남는다() {
+    // absence_span.class_id가 ON DELETE CASCADE다. 지우는 방식이었다면 3월에
+    // 지난해 학급을 정리하는 동작이 지난해 출결을 지우는 동작이 된다.
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let class = insert_class(&conn, y, "homeroom", "3학년 6반", Some(3), Some(6));
+    let student = insert_student_at(&conn, y, 3, 6, 1, "학생1");
+    join_class(&conn, class, student);
+    stamp(&conn, class, student);
+
+    retire_teaching_class_impl(&conn, class, TODAY).unwrap();
+
+    let rows: i64 = conn
+        .query_row("SELECT COUNT(*) FROM teaching_class", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 1, "마감이지 삭제가 아니다");
+    let spans: i64 = conn
+        .query_row("SELECT COUNT(*) FROM absence_span", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(spans, 1);
+    // 명단도 그대로다.
+    assert_eq!(members(&conn, class).len(), 1);
+}
+
+#[test]
+fn 마감일은_ISO여야_한다() {
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let class = insert_class(&conn, y, "homeroom", "3학년 6반", Some(3), Some(6));
+
+    assert!(retire_teaching_class_impl(&conn, class, "2026.09.11.(금)")
+        .unwrap_err()
+        .contains("날짜 형식"));
+    assert_eq!(class_names(&conn, y), vec!["3학년 6반"], "아무것도 마감되지 않았다");
+}
+
 // ── 교과 수업 한 칸 ───────────────────────────────────────────
 
 #[test]
@@ -348,4 +533,28 @@ fn 관계도_번호도_비어_있을_수_없다() {
     };
     assert!(blank("", "010-0000-0001").is_err());
     assert!(blank("모", "").is_err());
+}
+
+#[test]
+fn 맡은_것에_명단_인원이_함께_온다() {
+    let conn = setup_test_db();
+    let y = year(&conn);
+    let class = insert_class(&conn, y, "subject", "인공지능기초A", None, None);
+    // 반이 섞인 강좌. 이름만으로는 어느 쪽인지 못 가릴 때 이 숫자가 가른다.
+    for (grade, class_no, number) in [(3, 1, 4), (3, 6, 11), (2, 3, 20)] {
+        let s = insert_student_at(&conn, y, grade, class_no, number, "학생");
+        join_class(&conn, class, s);
+    }
+    // 명단에서 빠진 학생은 세지 않는다. 줄은 남지만 지금 명단은 아니다.
+    let gone = insert_student_at(&conn, y, 3, 2, 7, "학생");
+    join_class(&conn, class, gone);
+    conn.execute(
+        "UPDATE class_member SET left_on = '2026-09-01' WHERE student_id = ?1",
+        [gone],
+    )
+    .unwrap();
+
+    let rows = get_teaching_classes_impl(&conn, y, None).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].member_count, 3);
 }

@@ -140,6 +140,61 @@ fn every_school_setting_survives_a_round_trip() {
 }
 
 #[test]
+fn a_travelling_teacher_can_register_a_second_school() {
+    // 학교 단위 값(최대 교시 · 제출 기한)이 school 행에 있는 이유가 이것이다.
+    // 두 학교가 같은 목록에 나란히 서고, 각자의 설정을 따로 들고 있어야 한다.
+    let conn = setup_test_db();
+    let mut second = get_school_impl(&conn, school_id(&conn)).unwrap();
+    second.id = 0;
+    second.name = "  나다고등학교  ".to_string();
+    second.max_slot = 6;
+    second.due_days = 3;
+
+    let id = create_school_impl(&conn, &second).unwrap();
+    let schools = get_schools_impl(&conn).unwrap();
+    assert_eq!(schools.len(), 2);
+    // 뒤에 붙는다.
+    assert_eq!(schools.last().unwrap().id, id);
+
+    let made = get_school_impl(&conn, id).unwrap();
+    assert_eq!(made.name, "나다고등학교");
+    assert_eq!(made.max_slot, 6);
+    assert_eq!(made.due_days, 3);
+    assert!(made.active);
+    // 먼저 있던 학교의 설정은 그대로다.
+    assert_eq!(get_school_impl(&conn, school_id(&conn)).unwrap().max_slot, 7);
+}
+
+#[test]
+fn a_new_school_is_validated_the_same_way_an_edited_one_is() {
+    // 확인을 나누어 두면 새로 만드는 길로만 최대 교시 10이 들어온다.
+    let conn = setup_test_db();
+    let base = get_school_impl(&conn, school_id(&conn)).unwrap();
+
+    let mut blank = base.clone();
+    blank.name = "   ".to_string();
+    assert!(create_school_impl(&conn, &blank)
+        .unwrap_err()
+        .contains("학교 이름"));
+
+    let mut wide = base.clone();
+    wide.name = "라마고등학교".to_string();
+    wide.max_slot = 10;
+    assert!(create_school_impl(&conn, &wide)
+        .unwrap_err()
+        .contains("최대 교시"));
+
+    let mut negative = base.clone();
+    negative.name = "라마고등학교".to_string();
+    negative.due_days = -1;
+    assert!(create_school_impl(&conn, &negative)
+        .unwrap_err()
+        .contains("제출 기한"));
+
+    assert_eq!(count(&conn, "school"), 1, "거절된 학교가 새어 들어갔다");
+}
+
+#[test]
 fn an_inactive_school_leaves_the_list_but_can_still_be_read() {
     let conn = setup_test_db();
     let mut school = get_school_impl(&conn, school_id(&conn)).unwrap();

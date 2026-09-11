@@ -9,8 +9,11 @@
  */
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {flushPromises, mount} from '@vue/test-utils'
+import {nextTick} from 'vue'
 import {createPinia, setActivePinia} from 'pinia'
 import {createRouter, createWebHashHistory} from 'vue-router'
+import App from '../App.vue'
+import {modeRedirect} from '../router'
 import {useAppStore} from '../stores/app'
 import {useAxisStore} from '../stores/axis'
 import {useDayStore} from '../stores/day'
@@ -25,6 +28,7 @@ import LogView from './LogView.vue'
 import DocsView from './DocsView.vue'
 import NeisView from './NeisView.vue'
 import StatsView from './StatsView.vue'
+import MoveView from './MoveView.vue'
 import SettingsView from './SettingsView.vue'
 import VerifyView from './VerifyView.vue'
 import UpdateView from './UpdateView.vue'
@@ -73,6 +77,38 @@ const span = (over = {}) => ({
 
 function render(view) {
     return mount(view, {global: {plugins: [router]}})
+}
+
+/**
+ * 앱 껍데기를 그린다. 부팅은 막는다 — App.vue가 onMounted에서 부르는 `boot()`는
+ * 가짜 invoke의 빈 응답으로 아래에서 넣어 둔 학급을 통째로 덮는다.
+ */
+function renderApp() {
+    vi.spyOn(useAppStore(), 'boot').mockResolvedValue()
+    return mount(App, {global: {plugins: [router]}})
+}
+
+/** 사이드바에 실제로 보이는 항목. 모드가 갈리는 것이 여기서 드러난다. */
+function railLabels(wrapper) {
+    return wrapper.findAll('.rail__link').map((link) => link.text())
+}
+
+/** 담임과 교과를 함께 맡은 교사. 스위치와 두 목록이 이 상태에서만 만들어진다. */
+function bothRoles() {
+    const app = useAppStore()
+    app.classes = [
+        {
+            id: 10, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 6반',
+            grade: 3, classNo: 6, validTo: null,
+        },
+        {
+            id: 20, schoolId: 1, yearId: 2, role: 'subject', name: '화학Ⅰ 3반',
+            grade: null, classNo: null, validTo: null,
+        },
+    ]
+    app.lastClassId = {homeroom: 10, subject: 20}
+    app.classId = 10
+    return app
 }
 
 beforeEach(() => {
@@ -328,6 +364,129 @@ describe('설정', () => {
 
         expect(wrapper.text()).toContain('학교 설정을 읽지 못했습니다.')
         expect(wrapper.text()).toContain('출결 구분을 읽지 못했습니다.')
+    })
+})
+
+describe('담임 · 교과 모드', () => {
+    const HOMEROOM_RAIL = [
+        '개요', '이동',
+        '오늘의 출결', '출결 기록', '서류 미제출자', 'NEIS 미등재',
+        '통계', 'NEIS 검증',
+        '설정', '업데이트 확인',
+    ]
+
+    it('모드를 바꾸면 사이드바가 통째로 갈린다 — 교과에 담임 항목이 하나도 없다', async () => {
+        const app = bothRoles()
+        const wrapper = renderApp()
+        await flushPromises()
+
+        expect(railLabels(wrapper)).toEqual(HOMEROOM_RAIL)
+
+        // 모드는 고른 학급이 정한다. 교과 강좌로 옮기면 사이드바가 함께 바뀐다.
+        app.classId = 20
+        await nextTick()
+
+        expect(railLabels(wrapper)).toEqual(['개요', '이동', '설정', '업데이트 확인'])
+        // 목록 비교만으로도 걸리지만, 무엇이 새면 안 되는지를 문장으로 남긴다.
+        for (const homeroomOnly of ['오늘의 출결', '출결 기록', '서류 미제출자', 'NEIS 미등재', '통계', 'NEIS 검증']) {
+            expect(wrapper.text()).not.toContain(homeroomOnly)
+        }
+    })
+
+    it('한쪽만 맡으면 스위치를 그리지 않는다 — 누를 것 없는 단추를 매일 보이지 않는다', async () => {
+        const wrapper = renderApp()
+        await flushPromises()
+        expect(wrapper.find('.rail__switch').exists()).toBe(false)
+    })
+
+    it('둘 다 맡으면 스위치가 뜨고, 누르면 그 모드로 옮긴다', async () => {
+        const app = bothRoles()
+        const setMode = vi.spyOn(app, 'setMode').mockImplementation(async (mode) => {
+            app.lastMode = mode
+            app.classId = app.lastClassId[mode]
+        })
+
+        const wrapper = renderApp()
+        await flushPromises()
+
+        const modes = wrapper.findAll('.rail__mode')
+        expect(modes.map((button) => button.text())).toEqual(['담임', '교과'])
+        expect(modes[0].classes()).toContain('is-on')
+
+        await modes[1].trigger('click')
+        await flushPromises()
+
+        expect(setMode).toHaveBeenCalledWith('subject')
+        expect(railLabels(wrapper)).toEqual(['개요', '이동', '설정', '업데이트 확인'])
+    })
+
+    it('학급 이름 자리를 누르면 이동 화면으로 간다', async () => {
+        bothRoles()
+        const wrapper = renderApp()
+        await flushPromises()
+
+        const here = wrapper.find('.rail__here')
+        expect(here.text()).toContain('3학년 6반')
+        expect(here.attributes('href')).toContain('/move')
+    })
+
+    it('교과 모드에서 담임 화면 주소로 들어오면 개요로 되돌린다', () => {
+        const app = bothRoles()
+        app.classId = 20
+
+        expect(modeRedirect(app, {meta: {mode: 'homeroom'}})).toEqual({name: 'overview'})
+        // 두 모드가 함께 쓰는 화면은 그대로 통과한다.
+        expect(modeRedirect(app, {meta: {}})).toBe(true)
+
+        app.classId = 10
+        expect(modeRedirect(app, {meta: {mode: 'homeroom'}})).toBe(true)
+    })
+})
+
+describe('이동', () => {
+    it('현재 모드의 것만 나열한다 — 모드를 넘나드는 길은 스위치뿐이다', async () => {
+        const app = bothRoles()
+        const wrapper = render(MoveView)
+
+        const names = () => wrapper.findAll('.move__name').map((cell) => cell.text())
+        expect(names()).toEqual(['3학년 6반'])
+
+        app.classId = 20
+        await nextTick()
+        expect(names()).toEqual(['화학Ⅰ 3반'])
+    })
+
+    it('지금 있는 곳을 표시하고, 다른 줄을 누르면 옮긴다', async () => {
+        const app = bothRoles()
+        app.classes.push({
+            id: 11, schoolId: 1, yearId: 2, role: 'homeroom', name: '3학년 7반',
+            grade: 3, classNo: 7, validTo: null,
+        })
+        const select = vi.spyOn(app, 'selectClass').mockResolvedValue()
+
+        const wrapper = render(MoveView)
+        const rows = wrapper.findAll('.move')
+        expect(rows[0].classes()).toContain('is-on')
+        expect(rows[0].find('.move__here').text()).toBe('지금 보는 중')
+        // 빈 줄에도 칸은 남는다. 접히면 줄마다 열 폭이 달라져 목록이 흔들린다.
+        expect(rows[1].find('.move__here').exists()).toBe(true)
+        expect(rows[1].find('.move__here').text()).toBe('')
+
+        await rows[1].trigger('click')
+        expect(select).toHaveBeenCalledWith(11)
+
+        // 이미 보고 있는 줄은 누를 것이 없다.
+        await rows[0].trigger('click')
+        expect(select).toHaveBeenCalledTimes(1)
+    })
+
+    it('학교 이름표는 학교가 둘 이상일 때만 붙는다', async () => {
+        const app = bothRoles()
+        expect(render(MoveView).find('.move__school').exists()).toBe(false)
+
+        app.schools = [...app.schools, {id: 2, name: '푸른중학교', maxSlot: 6}]
+        await nextTick()
+        expect(render(MoveView).find('.move__school').text()).toBe('한빛고등학교')
     })
 })
 

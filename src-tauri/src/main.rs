@@ -37,6 +37,7 @@ fn main() {
             // 학교 설정 — 최대 교시 · 제출 기한 · 휴업일 · 태그 · 한도 규정
             get_schools,
             get_school,
+            create_school,
             update_school,
             get_off_days,
             add_off_day,
@@ -52,6 +53,8 @@ fn main() {
             // 내가 맡은 것 — 담임 학급 · 교과 강좌. 화면의 범위가 이 행의 id다
             get_teaching_classes,
             create_teaching_class,
+            update_teaching_class,
+            retire_teaching_class,
             // 학생 · 연락처
             detect_roster_class,
             get_students,

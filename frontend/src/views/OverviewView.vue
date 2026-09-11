@@ -33,6 +33,21 @@ onMounted(() => {
     <UiNotice v-if="!app.ready" kind="warn"
               text="아직 학생 명단이 없습니다. 설정에서 학급과 명렬표를 넣으면 시작할 수 있습니다."/>
 
+    <!-- 교과 모드에는 담임 어휘가 한 줄도 오지 않는다. 서류 · NEIS · 구분 · 종류는
+         담임이 쓰는 말이라, 비담임 교사에게는 매일 남의 일을 보는 화면이 된다. -->
+    <UiPage v-else-if="!app.isHomeroom" :subtitle="app.currentClass?.name ?? ''" title="개요">
+        <UiLedger hint="교시마다 있었는지 없었는지만 기록한다" title="교과">
+            <div class="row">
+                <span class="row__label">지금 보는 강좌</span>
+                <span class="row__value">{{ app.currentClass?.name ?? '없음' }}</span>
+            </div>
+            <div class="row">
+                <span class="row__label">수업 기록</span>
+                <span class="row__value">아직 만들지 않았습니다.</span>
+            </div>
+        </UiLedger>
+    </UiPage>
+
     <UiPage v-else :subtitle="summary?.dateLabel ?? ''" title="개요">
         <template #actions>
             <UiButton variant="primary" @click="router.push('/today')">오늘의 출결 입력하기</UiButton>

@@ -1,9 +1,15 @@
 <script setup>
 /**
- * 설정 — 학교 · 한도 규정 · 학급 · 화면.
+ * 설정 — 학교 · 한도 규정 · 맡은 것 · 명렬표 · 화면.
  *
  * **학교 단위 값이 여기 모인다.** 최대 교시와 제출 기한은 앱 상수가 아니라 학교가
  * 들고 있는 값이다. 순회 교사가 학교를 둘 이상 등록하는 날이 와도 자리를 옮기지 않는다.
+ *
+ * **맡은 것을 더하고 마감하는 곳도 여기다.** 담임 학급과 교과 강좌가 한 목록에 나란히
+ * 서는 화면은 여기뿐이다 — 기록 화면은 모드로 완전히 갈리지만, 무엇을 맡았는지 정하는
+ * 일은 두 갈래를 함께 봐야 한다. 여기에 나오는 것은 맡은 것의 목록일 뿐 한쪽의 기록이
+ * 다른 쪽에 새는 것이 아니다. **학급을 옮기는 길은 여기 두지 않는다** — 그것은 이동
+ * 화면과 모드 스위치가 맡는다.
  *
  * 명렬표 가져오기도 여기 있다 — 학기에 한두 번 쓰는 일이라 사이드바에 둘 이유가 없다.
  */
@@ -40,10 +46,32 @@ const dueDays = ref(7)
 const newOffDay = ref({date: '', label: ''})
 const newTag = ref('')
 const newRule = ref(blankRule())
+const newHomeroom = ref({grade: 3, classNo: 1})
+const newSubjectName = ref('')
+const newSchoolName = ref('')
 const message = ref('')
 
 /** 지우려고 고른 휴업일. 태그 · 규정의 [마감]과 달리 이것은 행을 지우는 DELETE다. */
 const droppingOffDay = ref(null)
+
+/** 마감하려고 고른 맡은 것. 지우는 것이 아니라 목록에서 내리는 것이다. */
+const closingClass = ref(null)
+
+/** 새로 만드는 담임 · 교과가 들어갈 학교. 고르기 전에는 지금 보고 있는 학교다. */
+const targetSchoolId = ref(null)
+const schoolFor = computed(() => targetSchoolId.value ?? app.schoolId)
+
+/**
+ * 명렬표를 넣을 학급. 고르기 전에는 지금 보고 있는 학급이다.
+ *
+ * 줄마다 명렬표 상자를 펼치지 않고 **고르개만 둔다** — 상자가 생겼다 사라지면 아래
+ * 단추들의 자리가 그때마다 달라진다. 자리는 그대로 두고 무엇을 가리키는지만 바꾼다.
+ */
+const rosterClassId = ref(null)
+const rosterTarget = computed(() => rosterClassId.value ?? app.classId)
+const rosterClass = computed(
+    () => app.classes.find((c) => c.id === rosterTarget.value) ?? null,
+)
 
 const skipOffDays = computed({
     get: () => Boolean(school.school?.dueSkipOffdays),
@@ -93,6 +121,93 @@ async function addTag() {
     newTag.value = ''
 }
 
+/** 그 맡은 것이 걸린 학교 이름. 순회 교사는 같은 학년 · 반을 학교마다 가진다. */
+function schoolNameOf(cls) {
+    return app.schools.find((s) => s.id === cls.schoolId)?.name ?? ''
+}
+
+/**
+ * 맡은 것을 더한다. **더하는 것은 옮겨 가는 일이 아니다.**
+ *
+ * 새로 만든 것을 곧바로 고르는 동작은 첫 실행 화면을 위한 것이라, 설정에서는 보던
+ * 학급으로 되돌린다 — 교과 강좌 하나를 더했다고 화면 전체가 교과 모드로 넘어가면
+ * 교사는 무엇을 잘못 눌렀는지 되짚게 된다.
+ */
+async function addClass(spec) {
+    // **고르지 않는다.** 고르면 `app.classId`가 바뀌고, App.vue의 `RouterView :key`가
+    // 이 화면을 통째로 다시 만든다 — 펼쳐 둔 명렬표 미리보기와 고르던 학교가 함께
+    // 날아가, 이어서 누른 [추가]가 엉뚱한 학교로 들어간다.
+    await school.createClass({schoolId: schoolFor.value, ...spec, select: false})
+        .catch(() => {
+        })
+}
+
+/** 담임 학급 이름은 학년 · 반으로 짓는다 — 첫 실행 화면과 같은 규칙이다. */
+async function addHomeroom() {
+    const grade = Number(newHomeroom.value.grade)
+    const classNo = Number(newHomeroom.value.classNo)
+    if (!Number.isInteger(grade) || !Number.isInteger(classNo) || grade < 1 || classNo < 1) {
+        message.value = '학년과 반을 1 이상의 수로 적어주세요.'
+        return
+    }
+    message.value = ''
+    await addClass({role: 'homeroom', name: `${grade}학년 ${classNo}반`, grade, classNo})
+}
+
+/** 교과 강좌는 여러 반에서 모이므로 학년 · 반을 두지 않는다. 이름만 받는다. */
+async function addSubject() {
+    const name = newSubjectName.value.trim()
+    if (!name) {
+        message.value = '강좌 이름을 적어주세요.'
+        return
+    }
+    message.value = ''
+    await addClass({role: 'subject', name})
+    newSubjectName.value = ''
+}
+
+/** 이름을 고친다. **빈 이름은 되돌린다** — 이름 없는 학급은 목록에서 고를 수 없다. */
+async function renameClass(cls, event) {
+    const name = event.target.value.trim()
+    if (!name || name === cls.name) {
+        event.target.value = cls.name
+        message.value = name ? '' : '학급 이름을 비울 수 없습니다.'
+        return
+    }
+    message.value = ''
+    await school.renameClass(cls.id, {
+        name, grade: cls.grade ?? null, classNo: cls.classNo ?? null,
+    }).catch(() => {
+    })
+}
+
+/**
+ * 맡은 것을 마감한다. **확인을 한 번 거치되 "지웁니다"라고 말하지 않는다** —
+ * 지난 출결이 이 학급을 가리키므로 행은 그대로 남고 목록에서만 내려간다.
+ */
+async function confirmRetireClass() {
+    const target = closingClass.value
+    closingClass.value = null
+    if (!target) return
+    // 명렬표 고르개가 마감한 학급을 가리킨 채 남지 않게 한다.
+    if (rosterClassId.value === target.id) rosterClassId.value = null
+    await school.retireClass(target.id).catch(() => {
+    })
+}
+
+/** 학교를 더한다. 더한 뒤 위의 [학교] 고르개가 그 학교를 가리킨다. */
+async function addSchool() {
+    const name = newSchoolName.value.trim()
+    if (!name) {
+        message.value = '학교 이름을 적어주세요.'
+        return
+    }
+    message.value = ''
+    const id = await school.createSchool({name}).catch(() => null)
+    if (id != null) targetSchoolId.value = id
+    newSchoolName.value = ''
+}
+
 async function addRule() {
     const rule = {...newRule.value, limitN: Number(newRule.value.limitN)}
     if (!rule.name.trim()) {
@@ -119,7 +234,7 @@ onMounted(async () => {
 </script>
 
 <template>
-    <UiPage subtitle="학교 · 학급 · 화면" title="설정">
+    <UiPage subtitle="학교 · 맡은 것 · 명렬표 · 화면" title="설정">
         <UiNotice :text="message" kind="warn"/>
         <UiNotice :text="school.error" kind="error"/>
         <UiNotice :text="axis.error" kind="error"/>
@@ -244,30 +359,86 @@ onMounted(async () => {
             </div>
         </UiLedger>
 
-        <UiLedger hint="맡은 학급을 고른다. 학년도는 학급이 들고 있으므로 따로 고르지 않는다" title="학급">
-            <div class="set__row">
-                <span class="set__label">지금 보는 학급</span>
+        <UiLedger hint="마감은 삭제가 아니다. 목록에서 내려갈 뿐 지난 기록은 그대로 남는다"
+                  title="맡은 것">
+            <!-- 담임과 교과를 한 목록에 나란히 둔다. 기록 화면은 모드로 완전히 갈리지만,
+                 무엇을 맡았는지 정하는 일은 두 갈래를 함께 봐야 한다.
+                 **옮겨 가는 단추는 두지 않는다** — 모드를 넘나드는 길은 스위치 하나다. -->
+            <div v-for="cls in app.homeroomClasses" :key="cls.id" class="set__row">
+                <span class="set__label">담임</span>
                 <span class="set__value">
-                    <!-- 담임 학급만 올린다. 교과 강좌로 넘어가는 길은 아직 없어서,
-                         여기서 고를 수 있게 두면 담임 화면이 교과 강좌를 가리킨 채로 돈다. -->
-                    <button v-for="cls in app.homeroomClasses" :key="cls.id"
-                            :class="['pick', app.classId === cls.id ? 'is-on' : '']"
-                            type="button" @click="app.selectClass(cls.id)">
-                        {{ cls.name }}
+                    <input :value="cls.name" class="field" type="text"
+                           @change="renameClass(cls, $event)"/>
+                    <span class="set__hint">{{ schoolNameOf(cls) }}</span>
+                    <button :class="['pick', rosterTarget === cls.id ? 'is-on' : '']"
+                            type="button" @click="rosterClassId = cls.id">명렬표</button>
+                    <UiButton size="tight" @click="closingClass = cls">마감</UiButton>
+                </span>
+            </div>
+
+            <div class="set__row">
+                <span class="set__label">담임 추가</span>
+                <span class="set__value">
+                    <input v-model="newHomeroom.grade" class="field num" min="1" type="number"/>
+                    <span class="set__hint">학년</span>
+                    <input v-model="newHomeroom.classNo" class="field num" min="1" type="number"/>
+                    <span class="set__hint">반</span>
+                    <UiButton size="tight" variant="primary" @click="addHomeroom">추가</UiButton>
+                    <span class="set__hint">이름은 학년 · 반으로 짓습니다. 나중에 고칠 수 있습니다</span>
+                </span>
+            </div>
+
+            <div v-for="cls in app.subjectClasses" :key="cls.id" class="set__row">
+                <span class="set__label">교과</span>
+                <span class="set__value">
+                    <input :value="cls.name" class="field" type="text"
+                           @change="renameClass(cls, $event)"/>
+                    <span class="set__hint">{{ schoolNameOf(cls) }}</span>
+                    <!-- 교과 강좌는 반이 섞여 번호만으로 학생을 가릴 수 없다. 명렬표
+                         들이기가 아직 담임만이라 단추를 열지 않는다 — 자리는 그대로
+                         두어 담임 줄과 폭이 어긋나지 않게 한다. -->
+                    <button class="pick" disabled title="다음 판에서 만듭니다"
+                            type="button">명렬표는 아직</button>
+                    <UiButton size="tight" @click="closingClass = cls">마감</UiButton>
+                </span>
+            </div>
+
+            <div class="set__row">
+                <span class="set__label">교과 추가</span>
+                <span class="set__value">
+                    <input v-model="newSubjectName" class="field" placeholder="3학년 통합사회"
+                           type="text" @keyup.enter="addSubject"/>
+                    <UiButton size="tight" variant="primary" @click="addSubject">추가</UiButton>
+                    <span class="set__hint">강좌는 여러 반에서 모이므로 학년 · 반을 두지 않습니다</span>
+                </span>
+            </div>
+
+            <div class="set__row">
+                <span class="set__label">학교</span>
+                <span class="set__value">
+                    <button v-for="s in app.schools" :key="s.id"
+                            :class="['pick', schoolFor === s.id ? 'is-on' : '']"
+                            type="button" @click="targetSchoolId = s.id">
+                        {{ s.name }}
                     </button>
+                    <input v-model="newSchoolName" class="field" placeholder="새 학교"
+                           type="text" @keyup.enter="addSchool"/>
+                    <UiButton size="tight" @click="addSchool">학교 추가</UiButton>
                     <span class="set__hint">
-                        {{
-                            app.homeroomClasses.length
-                                ? '학급마다 명단도 출결도 따로 쌓인다'
-                                : '아직 맡은 학급이 없습니다 — 첫 화면에서 학급을 먼저 만듭니다'
-                        }}
+                        여기서 고른 학교에 위의 담임 · 교과가 들어갑니다 — 순회 교사는 둘 이상을 맡습니다
                     </span>
                 </span>
             </div>
+        </UiLedger>
+
+        <UiLedger :hint="rosterClass ? `${rosterClass.name} 명단에 넣습니다` : '학급을 먼저 만들어주세요'"
+                  title="명렬표">
             <div class="set__row">
-                <span class="set__label">명렬표</span>
+                <span class="set__label">파일에서 가져오기</span>
                 <span class="set__value">
-                    <RosterPanel/>
+                    <!-- 자리는 늘 여기다. 위에서 [명렬표]를 누르면 상자가 새로 생기는 것이
+                         아니라 이 상자가 가리키는 학급만 바뀐다. -->
+                    <RosterPanel :class-id="rosterTarget"/>
                 </span>
             </div>
         </UiLedger>
@@ -306,6 +477,27 @@ onMounted(async () => {
                 <UiButton fill size="wide" variant="danger" @click="confirmRemoveOffDay">
                     지우기
                 </UiButton>
+            </template>
+        </UiModal>
+
+        <UiModal :open="Boolean(closingClass)" title="이 학급을 목록에서 내립니다"
+                 @close="closingClass = null">
+            <div v-if="closingClass" class="modal__what">
+                <span class="modal__key">맡은 것</span>
+                <span class="modal__val">{{ closingClass.name }}</span>
+                <span class="modal__key">구분</span>
+                <span class="modal__val">
+                    {{ closingClass.role === 'homeroom' ? '담임 학급' : '교과 강좌' }}
+                </span>
+            </div>
+            <p class="modal__note">
+                지우는 것이 아닙니다. 목록에서 내려가 더 고를 수 없게 될 뿐이고,
+                이 학급에 쌓인 지난 기록은 그대로 남습니다.
+            </p>
+
+            <template #foot>
+                <UiButton size="wide" @click="closingClass = null">취소</UiButton>
+                <UiButton size="wide" variant="primary" @click="confirmRetireClass">마감</UiButton>
             </template>
         </UiModal>
     </UiPage>

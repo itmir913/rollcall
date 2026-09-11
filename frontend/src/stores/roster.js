@@ -27,11 +27,17 @@ export const useRosterStore = defineStore('roster', () => {
         return useAppStore().schoolId
     }
 
+    /**
+     * 그 학급의 재학 명단. **읽은 것을 돌려주기도 한다** — 명렬표 화면이 학급마다
+     * 하나씩 뜰 수 있어(첫 실행이 학급 여럿에 차례로 넣는다), 공유하는 `students`
+     * 하나만 보면 나중에 읽은 학급의 명단이 앞의 화면까지 덮는다.
+     */
     async function fetchStudents(classId) {
         loading.value = true
         error.value = ''
         try {
             students.value = await invoke('get_students', {classId})
+            return students.value
         } catch (e) {
             error.value = String(e)
             throw e

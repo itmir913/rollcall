@@ -70,6 +70,9 @@ pub struct TeachingClassItem {
     pub sort_order: i64,
     pub valid_from: String,
     pub valid_to: Option<String>,
+    /// 지금 명단에 있는 인원. 이동 화면이 "어느 쪽이 내가 찾던 강좌인지"를
+    /// 이름만으로 못 가릴 때 이 숫자가 가른다.
+    pub member_count: i64,
 }
 
 // ── 학생 ──────────────────────────────────────────────────────

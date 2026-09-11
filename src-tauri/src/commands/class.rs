@@ -14,6 +14,7 @@
 //! 교과 강좌는 여러 반에서 모이므로 아예 담을 수 없다.
 
 use crate::commands::with_conn;
+use crate::due::parse_date;
 use crate::state::{constraint_err, DbState};
 use crate::types::{StudentItem, TeachingClassItem};
 use rusqlite::Connection;
@@ -31,12 +32,28 @@ pub(crate) struct ClassScope {
     pub class_no: Option<i64>,
 }
 
+/// 역할을 가리지 않는 범위. **명단은 두 모드가 함께 쓰는 개념이다.**
+///
+/// `class_member`에는 역할이 없다 — 담임 학급이든 교과 강좌든 "누가 내 명단에 있는가"는
+/// 같은 물음이고, 교과 강좌도 명렬표를 받아야 한다. 갈리는 것은 **기록**이지 명단이 아니다.
+pub(crate) fn class_scope(conn: &Connection, class_id: i64) -> Result<ClassScope, String> {
+    scope_of(conn, class_id, None)
+}
+
 /// 담임 커맨드가 쓰는 범위. **교과 강좌가 오면 거절한다.**
 ///
 /// 스키마의 `trg_span_homeroom_only`가 같은 것을 막지만, 트리거는 쓰기에만 걸린다.
 /// 읽기까지 막지 않으면 교과 `classId`로 담임 목록을 불러 빈 화면을 보여주게 되고,
 /// 교사는 기록이 사라진 것인지 화면을 잘못 연 것인지 알 방법이 없다.
 pub(crate) fn homeroom_scope(conn: &Connection, class_id: i64) -> Result<ClassScope, String> {
+    scope_of(conn, class_id, Some("homeroom"))
+}
+
+fn scope_of(
+    conn: &Connection,
+    class_id: i64,
+    want: Option<&str>,
+) -> Result<ClassScope, String> {
     let (school_id, year_id, role, name, grade, class_no) = conn
         .query_row(
             "SELECT school_id, year_id, role, name, grade, class_no
@@ -58,7 +75,7 @@ pub(crate) fn homeroom_scope(conn: &Connection, class_id: i64) -> Result<ClassSc
             other => other.to_string(),
         })?;
 
-    if role != "homeroom" {
+    if want.is_some_and(|w| role != w) {
         return Err(format!("담임 학급이 아닙니다: {name}"));
     }
     Ok(ClassScope {
@@ -194,11 +211,15 @@ fn map_class(row: &rusqlite::Row) -> rusqlite::Result<TeachingClassItem> {
         sort_order: row.get(7)?,
         valid_from: row.get(8)?,
         valid_to: row.get(9)?,
+        member_count: row.get(10)?,
     })
 }
 
 const CLASS_SELECT: &str = "SELECT id, school_id, year_id, role, name, grade, class_no,
-                                   sort_order, valid_from, valid_to
+                                   sort_order, valid_from, valid_to,
+                                   (SELECT COUNT(*) FROM class_member m
+                                     WHERE m.class_id = teaching_class.id
+                                       AND m.left_on IS NULL)
                             FROM teaching_class";
 
 /// 그 학년도에 내가 맡은 것. `role`을 주면 담임만 · 교과만 골라 온다.
@@ -237,6 +258,51 @@ fn next_class_order(conn: &Connection, year_id: i64) -> Result<i64, String> {
     .map_err(|e| e.to_string())
 }
 
+/// 역할이 요구하는 학적 자리를 확인한다.
+///
+/// 만들 때와 고칠 때가 같은 규칙이어야 하므로 한 곳에 둔다. 나누면 한쪽에만 조건이
+/// 붙어, 설정 화면에서 고치는 길로만 학년 · 반이 빈 담임 학급이 생긴다.
+fn check_role_seat(role: &str, grade: Option<i64>, class_no: Option<i64>) -> Result<(), String> {
+    match role {
+        "homeroom" => {
+            if grade.is_none() || class_no.is_none() {
+                return Err("담임 학급은 학년과 반이 필요합니다.".to_string());
+            }
+        }
+        "subject" => {
+            if grade.is_some() || class_no.is_some() {
+                return Err("교과 강좌는 반이 섞이므로 학년 · 반을 두지 않습니다.".to_string());
+            }
+        }
+        other => return Err(format!("알 수 없는 역할입니다: {other}")),
+    }
+    Ok(())
+}
+
+/// 이름 칸을 다듬고 비어 있으면 거절한다. 화면에 적을 이름이 없으면 고를 수도 없다.
+fn check_class_name(name: &str) -> Result<&str, String> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err("학급 이름이 비어 있습니다.".to_string());
+    }
+    Ok(name)
+}
+
+/// 아직 마감하지 않은 학급의 역할. 마감된 줄은 목록에 나오지 않으므로 고칠 수도 없다.
+fn live_class_role(conn: &Connection, class_id: i64) -> Result<String, String> {
+    conn.query_row(
+        "SELECT role FROM teaching_class WHERE id = ?1 AND valid_to IS NULL",
+        rusqlite::params![class_id],
+        |r| r.get(0),
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => {
+            format!("유효한 학급을 찾을 수 없습니다: {class_id}")
+        }
+        other => other.to_string(),
+    })
+}
+
 /// 맡은 것 하나를 만든다.
 ///
 /// 담임 학급은 학년 · 반을 함께 받는다. 그 둘이 명렬표가 학생을 앉힐 학적 자리이고,
@@ -253,23 +319,8 @@ pub fn create_teaching_class_impl(
     class_no: Option<i64>,
     valid_from: &str,
 ) -> Result<i64, String> {
-    let name = name.trim();
-    if name.is_empty() {
-        return Err("학급 이름이 비어 있습니다.".to_string());
-    }
-    match role {
-        "homeroom" => {
-            if grade.is_none() || class_no.is_none() {
-                return Err("담임 학급은 학년과 반이 필요합니다.".to_string());
-            }
-        }
-        "subject" => {
-            if grade.is_some() || class_no.is_some() {
-                return Err("교과 강좌는 반이 섞이므로 학년 · 반을 두지 않습니다.".to_string());
-            }
-        }
-        other => return Err(format!("알 수 없는 역할입니다: {other}")),
-    }
+    let name = check_class_name(name)?;
+    check_role_seat(role, grade, class_no)?;
 
     let sort_order = next_class_order(conn, year_id)?;
     conn.execute(
@@ -282,6 +333,58 @@ pub fn create_teaching_class_impl(
     )
     .map_err(|e| constraint_err(&e, "이미 같은 학급이 있습니다."))?;
     Ok(conn.last_insert_rowid())
+}
+
+/// 맡은 것의 이름 · 학년 · 반을 고친다. **UPDATE이고, 마감 후 추가가 아니다.**
+///
+/// "수정은 마감 후 추가"는 코드 · 태그처럼 과거 기록이 **뜻으로** 가리키는 것에 붙는
+/// 규칙이다. 학급 이름은 화면에 적히는 이름표일 뿐이고 기록은 `class_id`로 가리키므로,
+/// 이름을 고쳐도 지난 출결이 가리키는 대상이 달라지지 않는다. 오히려 여기서 마감 후
+/// 추가를 하면 지난 기록이 마감된 학급에 남아 화면에서 통째로 사라진다.
+///
+/// 역할은 고치지 않는다. 담임과 교과는 기록하는 것 자체가 달라, 역할을 바꾸는 것은
+/// 이름표를 고치는 일이 아니라 다른 것을 맡는 일이다 — 새로 만들고 옛것을 마감한다.
+pub fn update_teaching_class_impl(
+    conn: &Connection,
+    class_id: i64,
+    name: &str,
+    grade: Option<i64>,
+    class_no: Option<i64>,
+) -> Result<(), String> {
+    let name = check_class_name(name)?;
+    let role = live_class_role(conn, class_id)?;
+    check_role_seat(&role, grade, class_no)?;
+
+    conn.execute(
+        "UPDATE teaching_class SET name = ?1, grade = ?2, class_no = ?3 WHERE id = ?4",
+        rusqlite::params![name, grade, class_no, class_id],
+    )
+    .map_err(|e| constraint_err(&e, "이미 같은 학급이 있습니다."))?;
+    Ok(())
+}
+
+/// 맡은 것을 마감한다. **지우지 않는다.**
+///
+/// 지난 출결이 이 학급을 가리키고 있고 `absence_span.class_id`가 `ON DELETE CASCADE`라,
+/// 행을 지우면 그 학급의 기록이 함께 사라진다. 3월에 지난해 학급을 정리하는 동작이
+/// 지난해 출결을 지우는 동작이어서는 안 된다. 마감한 학급은 `get_teaching_classes`가
+/// 빼고 돌려주므로 학급 고르개에도 나오지 않는다.
+pub fn retire_teaching_class_impl(
+    conn: &Connection,
+    class_id: i64,
+    valid_to: &str,
+) -> Result<(), String> {
+    parse_date(valid_to)?;
+    let changed = conn
+        .execute(
+            "UPDATE teaching_class SET valid_to = ?1 WHERE id = ?2 AND valid_to IS NULL",
+            rusqlite::params![valid_to, class_id],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        return Err(format!("유효한 학급을 찾을 수 없습니다: {class_id}"));
+    }
+    Ok(())
 }
 
 // ── 커맨드 ────────────────────────────────────────────────────
@@ -312,4 +415,26 @@ pub fn create_teaching_class(
             c, school_id, year_id, &role, &name, grade, class_no, &valid_from,
         )
     })
+}
+
+#[tauri::command]
+pub fn update_teaching_class(
+    db: State<DbState>,
+    class_id: i64,
+    name: String,
+    grade: Option<i64>,
+    class_no: Option<i64>,
+) -> Result<(), String> {
+    with_conn(&db, |c| {
+        update_teaching_class_impl(c, class_id, &name, grade, class_no)
+    })
+}
+
+#[tauri::command]
+pub fn retire_teaching_class(
+    db: State<DbState>,
+    class_id: i64,
+    valid_to: String,
+) -> Result<(), String> {
+    with_conn(&db, |c| retire_teaching_class_impl(c, class_id, &valid_to))
 }

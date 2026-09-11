@@ -86,7 +86,9 @@ pub fn get_school_impl(conn: &Connection, school_id: i64) -> Result<SchoolItem, 
         })
 }
 
-pub fn update_school_impl(conn: &Connection, school: &SchoolItem) -> Result<(), String> {
+/// 저장 전에 학교 설정을 확인한다. 만들 때와 고칠 때가 같은 규칙이어야 하므로
+/// 한 곳에 둔다 — 나누면 새로 만드는 길로만 최대 교시 10이 들어온다.
+fn validate_school(school: &SchoolItem) -> Result<&str, String> {
     let name = school.name.trim();
     if name.is_empty() {
         return Err("학교 이름이 비어 있습니다.".to_string());
@@ -103,6 +105,47 @@ pub fn update_school_impl(conn: &Connection, school: &SchoolItem) -> Result<(), 
             school.due_days
         ));
     }
+    Ok(name)
+}
+
+fn next_school_order(conn: &Connection) -> Result<i64, String> {
+    conn.query_row(
+        "SELECT COALESCE(MAX(sort_order), 0) + 10 FROM school WHERE active = 1",
+        [],
+        |r| r.get(0),
+    )
+    .map_err(|e| e.to_string())
+}
+
+/// 학교를 하나 더 등록한다. 순회 교사는 학교를 둘 이상 맡는다.
+///
+/// `update_school`과 짝이 되도록 `SchoolItem`을 그대로 받는다 — 설정 화면이 같은 폼으로
+/// 만들고 고치므로, 받는 모양이 다르면 화면이 두 벌의 조립 규칙을 들게 된다.
+pub fn create_school_impl(conn: &Connection, school: &SchoolItem) -> Result<i64, String> {
+    let name = validate_school(school)?;
+    let sort_order = if school.sort_order == 0 {
+        next_school_order(conn)?
+    } else {
+        school.sort_order
+    };
+    conn.execute(
+        "INSERT INTO school (name, max_slot, due_days, due_skip_offdays, sort_order, active)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        rusqlite::params![
+            name,
+            school.max_slot,
+            school.due_days,
+            school.due_skip_offdays,
+            sort_order,
+            school.active
+        ],
+    )
+    .map_err(|e| constraint_err(&e, "이미 있는 학교입니다."))?;
+    Ok(conn.last_insert_rowid())
+}
+
+pub fn update_school_impl(conn: &Connection, school: &SchoolItem) -> Result<(), String> {
+    let name = validate_school(school)?;
     let changed = conn
         .execute(
             "UPDATE school
@@ -592,6 +635,11 @@ pub fn get_schools(db: State<DbState>) -> Result<Vec<SchoolItem>, String> {
 #[tauri::command]
 pub fn get_school(db: State<DbState>, school_id: i64) -> Result<SchoolItem, String> {
     with_conn(&db, |c| get_school_impl(c, school_id))
+}
+
+#[tauri::command]
+pub fn create_school(db: State<DbState>, school: SchoolItem) -> Result<i64, String> {
+    with_conn(&db, |c| create_school_impl(c, &school))
 }
 
 #[tauri::command]

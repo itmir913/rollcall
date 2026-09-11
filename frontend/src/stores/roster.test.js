@@ -37,6 +37,16 @@ describe('명렬표', () => {
         expect(invoke).toHaveBeenCalledWith('get_students', {classId: 9})
     })
 
+    it('읽은 명단을 돌려주기도 한다 — 명렬표 화면이 학급마다 하나씩 뜬다', async () => {
+        // 첫 실행은 만든 학급에 차례로 명렬표를 넣는다. 화면이 공유하는 `students`
+        // 하나만 보면, 나중에 읽은 학급의 명단이 앞의 화면까지 덮는다.
+        invoke.mockResolvedValue([{id: 1, number: 1, name: '학생1'}])
+
+        const list = await useRosterStore().fetchStudents(9)
+
+        expect(list).toHaveLength(1)
+    })
+
     it('미리보기와 저장 모두 학급을 넘긴다 — 재가져오기는 차분이다', async () => {
         const roster = useRosterStore()
         await roster.preview(9, [{number: 1, name: '학생1'}])
