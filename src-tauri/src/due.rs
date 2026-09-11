@@ -86,7 +86,7 @@ pub fn days_overdue(due: NaiveDate, today: NaiveDate) -> i64 {
 
 const WEEKDAY_KO: [&str; 7] = ["월", "화", "수", "목", "금", "토", "일"];
 
-/// 화면·내보내기 표기. 저장은 언제나 ISO다.
+/// 화면·파일 저장 표기. 저장은 언제나 ISO다.
 pub fn format_korean(d: NaiveDate) -> String {
     format!(
         "{}.{:02}.{:02}.({})",

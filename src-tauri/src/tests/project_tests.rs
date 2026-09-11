@@ -165,7 +165,7 @@ fn a_file_from_a_newer_app_is_refused_in_korean() {
     clean(&dir);
 }
 
-// ── 백업 내보내기 ─────────────────────────────────────────────
+// ── 백업 파일 저장 ─────────────────────────────────────────────
 
 #[test]
 fn a_backup_is_a_copy_that_opens_on_its_own() {

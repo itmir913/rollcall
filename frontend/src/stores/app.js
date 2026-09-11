@@ -565,7 +565,7 @@ export function isoToday(now = new Date()) {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-/** 화면·내보내기 표기. `2026.09.10.(목)` */
+/** 화면·파일 저장 표기. `2026.09.10.(목)` */
 export function formatKorean(iso) {
     if (!iso) return ''
     const [y, m, d] = iso.split('-').map(Number)

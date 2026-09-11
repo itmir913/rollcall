@@ -228,7 +228,7 @@ describe('명렬표 가져오기 — 교과 강좌', () => {
         expect(roster.preview).not.toHaveBeenCalled()
         const stop = wrapper.find('.roster__stop')
         expect(stop.text()).toContain('학년 · 반 열이')
-        expect(stop.findAll('button').some((b) => b.text() === '양식 내려받기')).toBe(true)
+        expect(stop.findAll('button').some((b) => b.text() === '명렬표 예시 저장')).toBe(true)
     })
 
     it('담임은 학년 · 반 열이 없어도 그대로 간다 — 열쇠가 번호 하나다', async () => {

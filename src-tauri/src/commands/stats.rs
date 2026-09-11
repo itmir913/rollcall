@@ -165,7 +165,7 @@ fn year_of(conn: &Connection, year_id: i64) -> Result<i64, String> {
 
 struct ClassStudent {
     id: i64,
-    /// 그 학생의 학적. 내보내기가 학급의 학년 · 반이 아니라 이것을 쓴다.
+    /// 그 학생의 학적. 파일 저장가 학급의 학년 · 반이 아니라 이것을 쓴다.
     grade: i64,
     class_no: i64,
     number: i64,

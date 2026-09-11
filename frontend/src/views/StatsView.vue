@@ -54,7 +54,7 @@ onMounted(async () => {
         }),
     ])
 })
-/** 내보내기 실패를 화면에 남긴다. 눌러도 아무 일이 없는 단추를 두지 않는다. */
+/** 파일 저장 실패를 화면에 남긴다. 눌러도 아무 일이 없는 단추를 두지 않는다. */
 function saveCsv(kind, args, suggested) {
     download.csv(kind, args, suggested).catch(() => {
     })

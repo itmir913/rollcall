@@ -56,7 +56,7 @@ pub fn display(slot: &str) -> String {
 /// 구간 요약 표기. 열린 쪽은 `?`.
 ///
 /// 사람이 읽는 문구는 `attendance.rs`의 `span_text`가 만든다(조회부터 2교시까지).
-/// 이것은 **기계가 읽는 짧은 표기**다 — 검증·내보내기에서 두 구간을 나란히 비교할 때 쓴다.
+/// 이것은 **기계가 읽는 짧은 표기**다 — 검증·파일 저장에서 두 구간을 나란히 비교할 때 쓴다.
 #[allow(dead_code)]
 pub fn format_span(start: Option<&str>, end: Option<&str>) -> String {
     let s = start.unwrap_or(UNKNOWN);

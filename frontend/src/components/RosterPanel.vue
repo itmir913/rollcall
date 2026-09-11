@@ -344,22 +344,22 @@ async function apply() {
 }
 
 /**
- * 명렬표 양식을 내려받는다. **고칠 수단이 멈춘 자리에 함께 있어야 한다** —
+ * 명렬표 예시를 파일로 저장한다. **고칠 수단이 멈춘 자리에 함께 있어야 한다** —
  * 학년 · 반 열이 없어 멈춘 교사가 위로 올라가 다른 단추를 찾게 하지 않는다.
  */
 async function downloadSample() {
     error.value = ''
     try {
         const path = await save({
-            title: '명렬표 양식 저장',
+            title: '명렬표 예시 저장',
             defaultPath: '명렬표_양식.xlsx',
             filters: [{name: '엑셀 파일', extensions: ['xlsx']}],
         })
         if (!path) return
         await download.saveBytes(path, bufferToBase64(await buildSampleWorkbook()))
-        message.value = `양식을 저장했습니다: ${path}`
+        message.value = `명렬표 예시를 저장했습니다: ${path}`
     } catch (e) {
-        error.value = `양식을 저장하지 못했습니다: ${e}`
+        error.value = `명렬표 예시를 저장하지 못했습니다: ${e}`
     }
 }
 
@@ -376,7 +376,7 @@ async function exportRoster() {
     try {
         const name = target.value?.name ?? '명단'
         const path = await save({
-            title: '명렬표 내보내기',
+            title: '명렬표 파일로 저장',
             defaultPath: `${name} 명렬표.xlsx`,
             filters: [{name: '엑셀 파일', extensions: ['xlsx']}],
         })
@@ -384,9 +384,9 @@ async function exportRoster() {
         if (!path) return
         const buffer = await buildRosterWorkbook(rosterRowsOf(students.value))
         await download.saveBytes(path, bufferToBase64(buffer))
-        message.value = `명렬표를 내보냈습니다 — ${path}`
+        message.value = `명렬표를 파일로 저장했습니다 — ${path}`
     } catch (e) {
-        error.value = `명렬표를 내보내지 못했습니다: ${e}`
+        error.value = `명렬표를 파일로 저장하지 못했습니다: ${e}`
     }
 }
 
@@ -441,7 +441,7 @@ onMounted(reload)
                 교과 강좌는 학년 · 반 · 번호로 학생을 구별하는데 이 파일에는 학년 · 반 열이
                 없습니다 — 머리글에 학년과 반을 넣어 다시 가져와 주세요.
             </span>
-            <UiButton @click="downloadSample">양식 내려받기</UiButton>
+            <UiButton @click="downloadSample">명렬표 예시 저장</UiButton>
         </div>
 
         <UiLedger v-if="rows.length"
@@ -484,7 +484,7 @@ onMounted(reload)
                   :note="`재학 ${students.length}명`"
                   :title="target ? `${target.name} 명단` : '지금 명단'">
             <template #actions>
-                <UiButton @click="exportRoster">명렬표 내보내기</UiButton>
+                <UiButton @click="exportRoster">명렬표 파일로 저장</UiButton>
             </template>
             <div v-for="student in students" :key="student.id" class="row is-calm">
                 <span v-if="isSubject" class="row__seat num">{{ seatOf(student) }}</span>
@@ -532,7 +532,7 @@ onMounted(reload)
     color: var(--c-ink-3);
 }
 
-/* 멈춘 자리. 고칠 수단(양식 내려받기)이 이 상자 안에 함께 있다. */
+/* 멈춘 자리. 고칠 수단(명렬표 예시 저장)이 이 상자 안에 함께 있다. */
 .roster__stop {
     display: flex;
     align-items: center;

@@ -1,4 +1,4 @@
-//! CSV 내보내기.
+//! CSV 파일 저장.
 //!
 //! 세 가지를 CSV **문자열**로 만든다. 파일로 쓰는 일은 하지 않는다 —
 //! 저장 위치를 고르는 것은 화면의 일이고, 프런트의 `write_bytes_file`이 그 바이트를
@@ -14,7 +14,7 @@
 //!
 //! 목록을 고르고 정렬하는 규칙은 여기에 두지 않는다. 미제출 명단은 `mark`의 두
 //! 함수를, 구간 조회는 `attendance::load_spans`를, 한도 집계는 `stats`를 그대로 부른다 —
-//! 같은 규칙을 두 곳에 두면 화면에서 본 순서와 내보낸 파일의 순서가 달라진다.
+//! 같은 규칙을 두 곳에 두면 화면에서 본 순서와 저장한 파일의 순서가 달라진다.
 
 use crate::commands::attendance::load_spans;
 use crate::commands::class::{homeroom_scope, ClassScope};
@@ -50,7 +50,7 @@ pub fn csv_line(cells: &[String]) -> String {
         .join(",")
 }
 
-/// 머리글 한 줄. 행이 하나도 없어도 이 줄은 나간다 — 빈 파일은 내보내기가 실패한
+/// 머리글 한 줄. 행이 하나도 없어도 이 줄은 나간다 — 빈 파일은 파일 저장가 실패한
 /// 것인지 대상이 없는 것인지 구분되지 않는다.
 fn header(cells: &[&str]) -> String {
     let owned: Vec<String> = cells.iter().map(|c| c.to_string()).collect();
@@ -66,8 +66,8 @@ fn push_row(out: &mut String, cells: Vec<String>) {
 
 // ── 값 표기 ───────────────────────────────────────────────────
 
-/// ISO 날짜를 화면 표기로. 형식이 깨진 값은 원문 그대로 내보낸다 —
-/// 내보내기가 통째로 실패하는 것보다 교사가 그 값을 직접 보는 편이 낫다.
+/// ISO 날짜를 화면 표기로. 형식이 깨진 값은 원문 그대로 저장한다 —
+/// 파일 저장가 통째로 실패하는 것보다 교사가 그 값을 직접 보는 편이 낫다.
 fn date_label(iso: &str) -> String {
     parse_date(iso)
         .map(format_korean)
@@ -448,7 +448,7 @@ pub fn export_spans_csv_impl(
 
 /// 미제출 명단. `kind`는 `doc`(증빙 서류) 또는 `neis`(나이스 등재)다.
 ///
-/// 두 목록을 한 커맨드에 담은 이유는 화면이 같은 자리의 버튼 하나로 내보내기
+/// 두 목록을 한 커맨드에 담은 이유는 화면이 같은 자리의 버튼 하나로 파일 저장
 /// 때문이다. 고르는 기준과 정렬은 각 화면이 쓰는 함수를 그대로 부른다 — 화면에서
 /// 본 순서와 파일의 순서가 같아야 교사가 둘을 대조할 수 있다.
 pub fn export_pending_csv_impl(

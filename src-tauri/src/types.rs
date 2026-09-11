@@ -475,7 +475,7 @@ pub struct HomeSummary {
 #[serde(rename_all = "camelCase")]
 pub struct QuotaRow {
     pub student_id: i64,
-    /// 그 학생의 학적. 내보내기가 이 세 값으로 수신자를 찾게 한다.
+    /// 그 학생의 학적. 파일 저장가 이 세 값으로 수신자를 찾게 한다.
     pub grade: i64,
     pub class_no: i64,
     pub number: i64,

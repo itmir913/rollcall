@@ -117,7 +117,7 @@ fn main() {
             // 개요 · 통계
             get_home_summary,
             get_quota_reports,
-            // 내보내기
+            // 파일 저장
             export_spans_csv,
             export_pending_csv,
             export_quota_csv,

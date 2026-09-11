@@ -536,7 +536,7 @@ onMounted(async () => {
                         <input v-model="newOffDay.label" class="field" placeholder="개교기념일"
                                type="text"/>
                         <UiButton size="tight" @click="addOffDay">추가</UiButton>
-                        <span class="set__hint">공휴일 목록을 내려받지 않는다. 재량휴업일은 어차피 학교마다 다르다</span>
+                        <span class="set__hint">공휴일 목록을 조회하지 않는다. 재량휴업일은 어차피 학교마다 다르다</span>
                     </span>
                 </div>
 

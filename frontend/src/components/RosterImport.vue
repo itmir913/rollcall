@@ -81,16 +81,16 @@ async function downloadSample() {
     error.value = ''
     try {
         const path = await save({
-            title: '명렬표 양식 저장',
+            title: '명렬표 예시 저장',
             defaultPath: '명렬표_양식.xlsx',
             filters: [{name: '엑셀 파일', extensions: ['xlsx']}],
         })
         if (!path) return
         const buffer = await buildSampleWorkbook()
         await download.saveBytes(path, bufferToBase64(buffer))
-        notice.value = `양식을 저장했습니다: ${path}`
+        notice.value = `명렬표 예시를 저장했습니다: ${path}`
     } catch (e) {
-        error.value = `양식을 저장하지 못했습니다: ${e}`
+        error.value = `명렬표 예시를 저장하지 못했습니다: ${e}`
     }
 }
 </script>
@@ -114,7 +114,7 @@ async function downloadSample() {
         </div>
 
         <div class="import__row">
-            <UiButton @click.stop="downloadSample">양식 내려받기</UiButton>
+            <UiButton @click.stop="downloadSample">명렬표 예시 저장</UiButton>
             <span class="import__hint">
                 머리글은 <b>학년 · 반 · 번호 · 이름</b>입니다. 열 순서는 상관없고,
                 모르는 열은 무시합니다.

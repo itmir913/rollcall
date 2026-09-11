@@ -66,7 +66,7 @@ export function cellText(value) {
 /**
  * 바이트 앞머리의 BOM이 말하는 인코딩. 없으면 null.
  *
- * **UTF-16을 반드시 본다.** 엑셀의 `유니코드 텍스트` 저장과 일부 도구의 CSV 내보내기가
+ * **UTF-16을 반드시 본다.** 엑셀의 `유니코드 텍스트` 저장과 일부 도구의 CSV 저장이
  * UTF-16LE다. 이것을 놓치면 한글이 섞인 파일은 깨진 글자로, **ASCII만 있는 파일은
  * UTF-8 디코드가 통과해 버려** 글자 사이에 NUL이 끼어 들어간다. 그러면 번호 칸이
  * 숫자로 읽히지 않아 서른 줄이 전부 버려지는데, 교사는 파일이 잘못된 줄 안다.
@@ -482,7 +482,7 @@ export const SAMPLE_HEADERS = ['학년', '반', '번호', '이름']
 /**
  * 반을 섞어 둔다. 교과 강좌는 선택과목이라 여러 반이 한 명단에 모이고, **번호 하나로는
  * 학생을 구별할 수 없다** — 3학년 1반 4번과 3학년 6반 4번이 같은 강좌에 있다. 한 반으로만
- * 된 양식을 내려받으면 학년 · 반 열을 비워 두어도 되는 줄 알고, 그 파일은 교과 강좌에
+ * 된 예시를 저장하면 학년 · 반 열을 비워 두어도 되는 줄 알고, 그 파일은 교과 강좌에
  * 들어가지 못한다. 담임 명렬표로 쓸 때는 학년 · 반을 읽지 않으므로 섞여 있어도 무방하다.
  */
 export const SAMPLE_ROWS = [
@@ -498,8 +498,8 @@ export const SAMPLE_ROWS = [
  * 언제나 읽고 쓸 수 있는 것은 이 양식 하나다. 그래서 내보낸 파일은 `readRosterFile`이
  * 그대로 다시 읽는다 — 학교를 옮기든 컴퓨터를 바꾸든 명단은 이 파일로 따라간다.
  *
- * 머리글을 `SAMPLE_HEADERS` 하나에서 가져오는 이유가 그것이다. 내보내기와 양식
- * 내려받기가 각각 머리글을 적으면 한쪽만 고쳐져 **내보낸 파일을 자기가 못 읽는다.**
+ * 머리글을 `SAMPLE_HEADERS` 하나에서 가져오는 이유가 그것이다. 파일 저장과 예시
+ * 예시 저장이 각각 머리글을 적으면 한쪽만 고쳐져 **내보낸 파일을 자기가 못 읽는다.**
  */
 export async function buildRosterWorkbook(rows) {
     const workbook = new Workbook()
@@ -516,7 +516,7 @@ export function rosterRowsOf(students) {
     return (students ?? []).map((s) => [s.grade, s.classNo, s.number, s.name])
 }
 
-/** 샘플 명렬표를 xlsx 바이트로 만든다. 내보내기와 **같은 양식**이다. */
+/** 샘플 명렬표를 xlsx 바이트로 만든다. 파일 저장과 **같은 양식**이다. */
 export async function buildSampleWorkbook() {
     return await buildRosterWorkbook(SAMPLE_ROWS)
 }

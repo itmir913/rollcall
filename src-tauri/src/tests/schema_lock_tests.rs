@@ -288,7 +288,7 @@ fn every_reason_type_pair_has_a_code() {
     assert_eq!(missing, 0, "코드가 없는 구분 × 종류 조합이 있다");
 }
 
-/// 코드 라벨은 구분 라벨 + 종류 라벨이다. 화면과 내보내기가 이 규칙을 전제한다.
+/// 코드 라벨은 구분 라벨 + 종류 라벨이다. 화면과 파일 저장가 이 규칙을 전제한다.
 #[test]
 fn code_label_is_the_two_axis_labels_joined() {
     let conn = setup_seed_db();

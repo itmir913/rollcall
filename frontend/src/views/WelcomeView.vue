@@ -1045,16 +1045,21 @@ onMounted(async () => {
     bottom: 0;
     z-index: 2;
     display: flex;
+    align-items: center;
     justify-content: space-between;
     gap: var(--s-lg);
+    min-height: var(--acts-h);
     padding: var(--s-lg) var(--s-3xl);
     border-top: 1px solid var(--c-line);
     background: var(--c-surface);
 }
 
-/* 고정한 띠가 마지막 내용을 가리지 않게 그만큼 비워 둔다. */
+/* 고정한 띠가 마지막 내용을 가리지 않게 **그 높이만큼** 비워 둔다.
+ * 띠에 `min-height`를 함께 걸어 두 값이 어긋나지 않게 한다 — 여백만 짐작으로 두면
+ * 단추 크기가 바뀌는 날 마지막 줄이 다시 가려지고, 그것은 화면에서 보이지 않는다. */
 .wiz {
-    padding-bottom: var(--s-5xl);
+    --acts-h: 72px;
+    padding-bottom: calc(var(--acts-h) + var(--s-3xl));
 }
 
 /* 학년도를 지울 때 함께 사라지는 것. `.modal__what`을 쓰지 않는 이유는 그쪽 라벨 칸이
